@@ -31,8 +31,9 @@ worklab onboard
 
 `worklab onboard` is the first-run setup wizard. It checks Codex and Claude
 Code availability, installs the Worklab host skill into available tools,
-configures a local provider such as Ollama or LM Studio, optionally installs
-the default embedding model, and finishes with service and doctor checks.
+guides hosted auth setup, configures a local provider such as Ollama or LM
+Studio, optionally installs the default embedding model, and finishes with
+service and doctor checks.
 
 `worklab start` builds the UI, installs or refreshes the per-user service, and
 starts Worklab in the background. `worklab onboard` runs it for you unless you
@@ -49,6 +50,48 @@ worklab status
 worklab restart
 worklab stop
 ```
+
+## Auth And Embeddings
+
+Worklab can run with only local providers, but hosted models need credentials.
+`worklab onboard` reports what is missing and prints the exact follow-up
+commands.
+
+Pi OpenAI Codex auth:
+
+```bash
+worklab auth pi openai-codex
+```
+
+This starts the Pi OAuth flow and stores credentials in
+`~/.worklab/pi-auth.json`. If you use a custom data directory, pass the same
+`--data-dir` flag you use for the service. `OPENAI_CODEX_API_KEY` or
+`CODEX_API_KEY` still take precedence when set.
+
+OpenAI API key auth:
+
+1. Create an API key in the OpenAI dashboard:
+   <https://platform.openai.com/api-keys>
+2. Add it to the active Worklab data directory:
+
+   ```bash
+   echo 'OPENAI_API_KEY=sk-...' >> ~/.worklab/.env
+   worklab restart
+   ```
+
+`OPENAI_API_KEY` enables OpenAI API-backed models and optional OpenAI
+embeddings. During onboarding you can choose local embeddings, OpenAI
+embeddings, or no embeddings:
+
+```bash
+worklab onboard --embedding local
+worklab onboard --embedding openai
+worklab onboard --embedding no
+```
+
+OpenAI embeddings use `openai:text-embedding-3-small` by default. Local
+embeddings use Ollama `nomic-embed-text` or an embedding-capable LM Studio
+model when available.
 
 ## First Setup
 
@@ -93,6 +136,24 @@ Agents that need stdio MCP access to Worklab can run:
 ```bash
 worklab mcp
 ```
+
+## Useful Commands
+
+| Command | Purpose |
+| --- | --- |
+| `worklab onboard` | First-install wizard for tools, skills, auth guidance, providers, embeddings, service startup, and doctor checks. |
+| `worklab auth pi openai-codex` | Create Pi OAuth credentials for OpenAI Codex under the active data directory. |
+| `worklab install-skill --target codex\|claude\|all` | Install the Worklab host skill into Codex or Claude Code. |
+| `worklab start` | Build the UI, install or refresh the user service, and start Worklab. |
+| `worklab status` | Show service, coordinator, health, and runtime configuration status. |
+| `worklab restart` | Rebuild the UI and restart the managed service. |
+| `worklab stop` | Stop the managed service. |
+| `worklab doctor` | Check runtime health, service wiring, database integrity, MCP config, and embeddings. |
+| `worklab doctor performance` | Measure endpoint timings, response sizes, database size, and large event logs. |
+| `worklab mcp` | Run the full-access Worklab admin MCP bridge over stdio. |
+| `worklab update --apply --version <latest>` | Apply a supported global npm update and restart the service. |
+| `worklab backup` | Create a tar.gz backup of the active data directory. |
+| `worklab compact-logs --apply` | Compact old large SQLite run logs while preserving raw JSONL logs. |
 
 ## Configuration
 
