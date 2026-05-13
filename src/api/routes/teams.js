@@ -457,8 +457,8 @@ export function registerTeamRoutes(app, { db, broker, watcher, dataDir }) {
       }
       const results = [];
       for (const project of targets) {
-        // Pre-create the synthetic root so an empty-roster team still gets a
-        // visible anchor row in the UI even if the spawn is skipped.
+        // Pre-create the internal root so lead-cycle runs have a stable
+        // parent even if the spawn is skipped.
         try { ensureTeamRootTask(db, { teamId: existing.id, projectId: project.id, now: Date.now() }); }
         catch { /* best-effort */ }
         const out = watcher.spawnLeadCycle({ teamId: existing.id, projectId: project.id, reason });

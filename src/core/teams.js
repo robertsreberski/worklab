@@ -529,7 +529,8 @@ export function listTeamProjectGoals(db, teamId, { includeArchived = true, now =
   return listProjectsForTeam(db, teamId)
     .filter((project) => includeArchived || !project.archived)
     .map((project) => {
-      const root = ensureTeamRootTask(db, { teamId, projectId: project.id, now });
+      const root = getTeamRootTask(db, { teamId, projectId: project.id });
+      if (!root) return null;
       const goal = ensureNativeGoalForRoot(db, { team, project, root, now });
       return teamProjectGoalFromRows({
         team,
@@ -688,31 +689,53 @@ export function enforceTeamRoster(db, { teamId, candidates = [] } = {}) {
 
 export { hasInFlightLeadCycleRow as hasInFlightLeadCycle };
 
+function teamRootTaskTitle(team, project) {
+  return `Lead cycle: ${team.name || "Team"} / ${project.name || "Project"}`;
+}
+
+function teamRootTaskInstructions(team, project) {
+  const header = `Lead cycle anchor for ${team.name || "this team"} on ${project.name || "this project"}.`;
+  const footer = "Managed by Worklab. Review and edit goal fields from the Goal page instead of modifying this task directly.";
+  if (!team.goal) return `${header}\n\n${footer}`;
+  return `${header}\n\nTeam charter:\n${team.goal}\n\n${footer}`;
+}
+
 // Idempotent: ensure the synthetic root task for (team, project) exists. The
 // row is hidden from default listings (is_team_root = 1) and acts as the
 // anchor for all lead_cycle runs and the parent of lead-created subtasks.
 export function ensureTeamRootTask(db, { teamId, projectId, now = Date.now() } = {}) {
   if (!teamId || !projectId) return null;
-  const existing = getTeamRootTask(db, { teamId, projectId });
   const team = getTeamById(db, teamId);
   const project = getProjectById(db, projectId);
   if (!team || !project) return null;
+  const title = teamRootTaskTitle(team, project);
+  const instructions = teamRootTaskInstructions(team, project);
+  const ownerAgent = team.lead_agent || null;
+  const existing = getTeamRootTask(db, { teamId, projectId });
   if (existing) {
-    ensureNativeGoalForRoot(db, { team, project, root: existing, now });
-    return existing;
+    if (
+      existing.title !== title
+      || existing.instructions !== instructions
+      || (existing.owner_agent || null) !== ownerAgent
+    ) {
+      db.prepare(`
+        UPDATE tasks
+        SET title = ?, instructions = ?, owner_agent = ?, updated_at = ?
+        WHERE id = ?
+      `).run(title, instructions, ownerAgent, now, existing.id);
+    }
+    const root = getTeamRootTask(db, { teamId, projectId }) || existing;
+    ensureNativeGoalForRoot(db, { team, project, root, now });
+    return root;
   }
   const id = newTaskId();
-  const title = `[team] ${team.name} → ${project.name}`;
-  const instructions = team.goal
-    ? `Team goal:\n${team.goal}\n\n(synthetic root task; lead cycle anchor for team "${team.name}" on project "${project.name}")`
-    : `(synthetic root task; lead cycle anchor for team "${team.name}" on project "${project.name}")`;
   db.prepare(`
     INSERT INTO tasks (
       id, project_id, team_id, is_team_root, root_task_id, title, instructions,
       stage, run_policy, owner_agent, goal_status, goal_contract_json, created_at, updated_at
     ) VALUES (?, ?, ?, 1, ?, ?, ?, 'execute', 'manual', ?, 'in_progress', ?, ?, ?)
   `).run(
-    id, projectId, teamId, id, title, instructions, team.lead_agent || null,
+    id, projectId, teamId, id, title, instructions, ownerAgent,
     serializeTeamGoalContract(initialTeamGoalContract(team, now)),
     now, now,
   );
