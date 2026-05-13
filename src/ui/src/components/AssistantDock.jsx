@@ -147,7 +147,7 @@ function AssistantMessage({ message, active, onRunDone }) {
   return (
     <article class={`assistant-message ${isUser ? "user" : "assistant"}`.trim()}>
       <div class="assistant-message-meta">
-        <span>{isUser ? "Robert" : "Assistant"}</span>
+        <span>{isUser ? "You" : "Assistant"}</span>
       </div>
       <div class="assistant-bubble">
         {message.body ? (

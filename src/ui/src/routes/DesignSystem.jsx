@@ -934,7 +934,7 @@ export function DesignSystem() {
             <CommentList
               agents={DEMO_AGENTS}
               comments={[
-                { id: "c1", author_type: "human", author_id: "Robert", created_at: Date.now() - 60000, body: "Please keep the catalog 1:1." },
+                { id: "c1", author_type: "human", author_id: "User", created_at: Date.now() - 60000, body: "Please keep the catalog 1:1." },
                 { id: "c2", author_type: "agent", author_id: "builder", created_at: Date.now() - 30000, body: "Updated shared component coverage." },
               ]}
             />
