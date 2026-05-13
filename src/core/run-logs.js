@@ -95,6 +95,14 @@ function parseJsonlEvents(content) {
   return out;
 }
 
+export function readJsonlEventsFromFile(filePath, { dataDir = null, limitBytes = 2 * 1024 * 1024 } = {}) {
+  if (!filePath) return [];
+  const rawPath = dataDir ? assertInsideDataDir(filePath, dataDir) : filePath;
+  if (!existsSync(rawPath)) return [];
+  const payload = tailFile(rawPath, normalizeLimitBytes(limitBytes));
+  return parseJsonlEvents(payload.content);
+}
+
 function oneLine(value, limit = 240) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   return text.length <= limit ? text : `${text.slice(0, limit - 3).trimEnd()}...`;

@@ -143,7 +143,7 @@ export function createTaskWatcher({
     }
   }
 
-  reconcileStaleRunningRuns(db, logger);
+  reconcileStaleRunningRuns(db, logger, { dataDir });
 
   // R5: drained-resume reconcile. Scheduling defers to a microtask so the
   // watcher closures (spawnRun, postSystemComment, …) are bound before we

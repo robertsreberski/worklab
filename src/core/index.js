@@ -226,7 +226,7 @@ export {
 
 export { resolveRunArtifactDir } from "./run-artifact-paths.js";
 
-export { readRunLog } from "./run-logs.js";
+export { readJsonlEventsFromFile, readRunLog } from "./run-logs.js";
 
 export {
   DEFAULT_SQLITE_LOG_COMPACTION_OPTIONS,
