@@ -6,6 +6,7 @@ import {
   parseRuntimeModelReference,
 } from "@worklab/agent-runtime/ai/runtime/model-refs.js";
 import { claudeModelSupportsOneMillionContext } from "@worklab/agent-runtime/ai/runtime/context-windows.js";
+import { codexModelSupportsFastMode } from "@worklab/agent-runtime/ai/runtime/fast-mode.js";
 import { createRuntime } from "@worklab/agent-runtime";
 import { customPricingResolverFor } from "./custom-pricing.js";
 import { resolvePiApiKey } from "./pi-oauth.js";
@@ -229,13 +230,18 @@ function piModelMetadata(provider, modelId, { labelPrefix = "", description = nu
 }
 
 function codexModelMetadata(modelId) {
+  const supportsFastMode = codexModelSupportsFastMode(modelId);
   return {
     value: `codex:${modelId}`,
     label: `Codex ${MODEL_SHORT_LABELS[modelId] || modelId}`,
     description: `Codex CLI / ${modelId}`,
     sdk: "codex",
     model: modelId,
-    capabilities: openaiReasoningCapabilities(modelId, "cli"),
+    capabilities: {
+      ...openaiReasoningCapabilities(modelId, "cli"),
+      supports_fast_mode: supportsFastMode,
+      fast_mode_default: supportsFastMode,
+    },
   };
 }
 

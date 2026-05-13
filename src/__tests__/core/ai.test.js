@@ -119,6 +119,8 @@ describe("explicit model references", () => {
         runtime_kind: "cli",
         mcp_mode: "inline-config",
         skills_mode: "prompt-index",
+        supports_fast_mode: true,
+        fast_mode_default: true,
       },
     });
   });

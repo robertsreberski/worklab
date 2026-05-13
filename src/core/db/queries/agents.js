@@ -75,6 +75,7 @@ export function listAgentsWithRunStats(db, since) {
       a.model,
       a.effort,
       a.context_window,
+      a.fast_mode,
       a.instructions,
       a.skills_allowlist,
       a.skills_allowlist_mode,
@@ -122,6 +123,7 @@ export function listAgentSummariesWithRunStats(db, since) {
       a.model,
       a.effort,
       a.context_window,
+      a.fast_mode,
       a.subagent_mode,
       a.execution_mode,
       a.enabled,
@@ -158,6 +160,7 @@ export function insertAgent(db, {
   model,
   effort,
   contextWindow,
+  fastMode,
   instructions,
   skillsAllowlistJson,
   skillsAllowlistMode,
@@ -175,13 +178,13 @@ export function insertAgent(db, {
 }) {
   db.prepare(`
     INSERT INTO agents
-      (name, display_name, description, sdk, model, effort, context_window, instructions,
+      (name, display_name, description, sdk, model, effort, context_window, fast_mode, instructions,
        skills_allowlist, skills_allowlist_mode, mcp_allowlist, mcp_allowlist_mode,
        builtin_allowlist, builtin_allowlist_mode, allow_self_review,
        browser_tools_review_only, subagent_mode, execution_mode, enabled, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    name, displayName, description, sdk, model, effort, contextWindow || "default", instructions,
+    name, displayName, description, sdk, model, effort, contextWindow || "default", fastMode === false ? 0 : 1, instructions,
     skillsAllowlistJson, skillsAllowlistMode,
     mcpAllowlistJson, mcpAllowlistMode,
     builtinAllowlistJson, builtinAllowlistMode,

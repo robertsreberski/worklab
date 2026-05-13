@@ -22,6 +22,10 @@ import {
   normalizeContextWindow,
   ONE_MILLION_CONTEXT_WINDOW,
 } from "@worklab/agent-runtime/ai/runtime/context-windows.js";
+import {
+  codexModelSupportsFastMode,
+  normalizeFastMode,
+} from "@worklab/agent-runtime/ai/runtime/fast-mode.js";
 
 const allowlistModeSchema = z.enum(["all", "custom"]).optional();
 const effortSchema = z.enum(["none", "low", "medium", "high", "xhigh", "max"]).optional();
@@ -36,6 +40,7 @@ export const agentCreateSchema = z.object({
   execution_mode: executionModeSchema,
   effort: effortSchema,
   context_window: contextWindowSchema,
+  fast_mode: z.boolean().optional(),
   description: z.string().optional(),
   instructions: z.string().optional(),
   skills_allowlist: z.array(z.string()).optional(),
@@ -107,7 +112,17 @@ function validateContextWindow({ resolved, contextWindow }) {
   throw new Error("1M context is only available for Claude Opus 4.7 and Opus 4.6.");
 }
 
+function validateFastMode({ resolved, fastMode, explicit = false }) {
+  const supported = resolved.sdk === "codex" && codexModelSupportsFastMode(resolved.model);
+  const normalized = normalizeFastMode(fastMode, supported);
+  if (explicit && normalized && !supported) {
+    throw new Error("Fast mode is only available for Codex GPT models.");
+  }
+  return supported ? normalized : false;
+}
+
 function agentSummary(row) {
+  const supportsFastMode = row.sdk === "codex" && codexModelSupportsFastMode(String(row.model || "").slice("codex:".length));
   return {
     name: row.name,
     display_name: row.display_name,
@@ -115,6 +130,7 @@ function agentSummary(row) {
     sdk: row.sdk,
     effort: row.effort,
     context_window: row.context_window || "default",
+    fast_mode: supportsFastMode && normalizeFastMode(row.fast_mode, true),
     execution_mode: row.execution_mode || "sdk",
     enabled: !!row.enabled,
     skills_allowlist_mode: row.skills_allowlist_mode,
@@ -139,6 +155,7 @@ export const definitions = [
         execution_mode: { type: "string", enum: ["cli", "sdk"], description: "Execution mode. codex:* requires cli; pi:* requires sdk." },
         effort: { type: "string", enum: ["none", "low", "medium", "high", "xhigh", "max"] },
         context_window: { type: "string", enum: ["default", "1m"], description: "1m is only available for Claude Opus 4.7 and Opus 4.6." },
+        fast_mode: { type: "boolean", description: "Codex app fast mode. Available for codex:gpt-* agents and defaults on there." },
         description: { type: "string" },
         instructions: { type: "string" },
         skills_allowlist: { type: "array", items: { type: "string" } },
@@ -169,6 +186,11 @@ export function buildHandlers(context) {
         const modeReason = executionModeIncompatibilityReason(resolved, executionMode);
         if (modeReason) throw new Error(modeReason);
         const contextWindow = validateContextWindow({ resolved, contextWindow: parsed.context_window });
+        const fastMode = validateFastMode({
+          resolved,
+          fastMode: parsed.fast_mode,
+          explicit: Object.prototype.hasOwnProperty.call(parsed, "fast_mode"),
+        });
         const finalName = parsed.name || uniqueSlug(parsed.display_name, (candidate) =>
           agentExists(db, candidate),
           { fallback: "agent" },
@@ -185,12 +207,12 @@ export function buildHandlers(context) {
         const effort = normalizeReasoningEffortForModel(resolved, parsed.effort || "medium");
         db.prepare(`
           INSERT INTO agents
-            (name, display_name, description, sdk, model, effort, context_window, instructions,
+            (name, display_name, description, sdk, model, effort, context_window, fast_mode, instructions,
              skills_allowlist, skills_allowlist_mode, mcp_allowlist, mcp_allowlist_mode,
              builtin_allowlist, builtin_allowlist_mode, allow_self_review,
              browser_tools_review_only,
              subagent_mode, execution_mode, enabled, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           finalName,
           parsed.display_name,
@@ -199,6 +221,7 @@ export function buildHandlers(context) {
           model,
           effort,
           contextWindow,
+          fastMode ? 1 : 0,
           parsed.instructions || "",
           JSON.stringify(skillsAllow.list),
           skillsAllow.mode,
