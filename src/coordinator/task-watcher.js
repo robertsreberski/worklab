@@ -3,11 +3,7 @@ import {
   DEFAULT_MAX_REJECTIONS,
   nextStage,
 } from "../core/state-machine.js";
-import { appendFileSync } from "node:fs";
 import { newCommentId, newTaskId } from "../core/ids.js";
-import { parseVerdict } from "../core/review.js";
-import { formatWorklabResultText, stripWorklabResultJson, synthesizeWorklabResult } from "../core/worklab-result/contract.js";
-import { normalizeLeadTaskTitle } from "../core/worklab-result/lead-cycle-contract.js";
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import {
   reconcileRequiredChildBlockedParents,
@@ -19,9 +15,7 @@ import { recordRunResultLearning } from "../core/agent-learning.js";
 import { supportsLiveInputProvider } from "../core/live-input.js";
 import { buildRunLifecycleEvent } from "../core/run-events.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "../core/task-agents.js";
-import { retryableProviderFailureInfo } from "@worklab/agent-runtime/ai/failure.js";
 import { delegationDepth } from "../core/delegation.js";
-import { reconcileRunWorktree } from "../core/worktrees.js";
 import { loadTaskArtifacts } from "../core/run-artifacts.js";
 import {
   crossCheckVerificationEvidence,
@@ -32,7 +26,6 @@ import {
   getRunById,
   getRunCoreFields,
   getRunDiagnostics,
-  getRunTranscriptTail,
   overrideRunFailureKind,
 } from "../core/db/queries/runs.js";
 import {
@@ -50,43 +43,15 @@ import {
   listSubtaskChildAgents,
 } from "../core/db/queries/task-edges.js";
 import {
-  agentCommentBody,
-  assistantTextsFromEvents,
-  firstMeaningfulParagraph,
-  sanitizeAgentText,
-  structuredFinalText,
-} from "./watcher/final-text.js";
-import {
-  appendKbLink,
-  firstKnowledgeSlugFromText,
-  successfulKbWriteFromEvents,
-} from "./watcher/kb-publisher.js";
-import {
   appendDelegationDoneCriteria,
   detectSubtaskCycles,
   enforceTeamRoster,
   isQaChildAgent,
-  looksLikePlanBody,
   resolveParentReviewPolicy,
 } from "./watcher/delegation-handler.js";
 import {
-  appendTeamGoalCheckpoint,
-  applyTeamGoalRefinement,
   effectiveTeamForTask,
-  ensureTeamRootTask,
-  hasInFlightLeadCycle,
-  leadCycleBlockedByGoal,
 } from "../core/teams.js";
-import {
-  consumeLeadCycleFollowup,
-  listDueLeadCycleFollowups,
-  listMatchingLeadCycleEventFollowups,
-  recordLeadCycleCompleted,
-  recordLeadCycleFailed,
-  recordLeadCycleStarted,
-} from "../core/goals.js";
-import { getTeamById, getTeamRosterAgentNames } from "../core/db/queries/teams.js";
-import { compactRecoveryRunSummary } from "./watcher/failure-classifier.js";
 import {
   buildFallbackResult,
   modeForStage,
@@ -96,35 +61,20 @@ import {
 import { checkBudget, recordPerRunBudgetOverage } from "./watcher/budget.js";
 import { spawnTaskRun } from "./watcher/spawn-run.js";
 import { findDrainedResumeCandidates, reconcileStaleRunningRuns } from "./watcher/stale-runs.js";
+import { createLeadCycleCoordinator } from "./watcher/lead-cycle-coordinator.js";
+import { createWorktreeReconciler } from "./watcher/worktree-reconciler.js";
+import { createRecoveryContinuation } from "./watcher/recovery-continuation.js";
+import { buildDelegationContextBlock } from "./watcher/delegation-context.js";
+import { planBodySideEffect } from "./watcher/plan-body.js";
+import {
+  appendRunWarning,
+  postAgentFinalComment,
+  updateRunResult,
+} from "./watcher/run-result-effects.js";
+
+export { buildDelegationContextBlock } from "./watcher/delegation-context.js";
 
 const AUTO_RUN_POLICY = "auto_plan_execute";
-
-// intelligence-ramp Phase 5.4: build a short markdown block (parent task ref +
-// parent's final_text + summary) that gets appended to each child's
-// instructions so the child agent has the parent's reasoning + last outcome
-// without rerunning the parent's investigation. Returns "" when there's
-// nothing useful to add. Exported for unit testing.
-export function buildDelegationContextBlock({ parentTask, parentRunId, parentResult } = {}) {
-  if (!parentTask) return "";
-  const lines = ["## Parent task context"];
-  const parentRef = parentTask.task_key || parentTask.id;
-  lines.push(`Delegated by parent task **${parentRef}** ("${parentTask.title || ""}").`);
-  if (parentRunId) lines.push(`Parent run id: \`${parentRunId}\``);
-  const summary = parentResult?.summary && String(parentResult.summary).trim();
-  const finalText = parentResult?.final_text && String(parentResult.final_text).trim();
-  const details = parentResult?.details && String(parentResult.details).trim();
-  if (summary) lines.push(`Parent summary: ${summary}`);
-  if (finalText) {
-    lines.push("", "**Parent final_text (read this; don't redo work it already covers):**", finalText);
-  } else if (details) {
-    lines.push("", "**Parent details:**", details.slice(0, 2000));
-  }
-  lines.push(
-    "",
-    "Use this context to skip rediscovery of work the parent already did. Build on it; don't restart from zero. If the parent's findings conflict with what you observe, surface the conflict in your final result rather than silently overriding.",
-  );
-  return lines.join("\n");
-}
 
 export function createTaskWatcher({
   db,
@@ -150,9 +100,7 @@ export function createTaskWatcher({
   // children complete in the same tick or a child finishes during a fresh
   // delegation round.
   const pendingStarts = new Set();
-  const pendingLeadCycleRequests = new Map();
   const recoveryTimers = new Set();
-  let leadCycleFollowupTimer = null;
 
   function canAutoStart(taskId) {
     const task = getTaskById(db, taskId);
@@ -320,183 +268,45 @@ export function createTaskWatcher({
     });
   }
 
-  function leadCycleRequestKey(teamId, projectId) {
-    return `${teamId || ""}::${projectId || ""}`;
-  }
+  const leadCycle = createLeadCycleCoordinator({
+    db,
+    broker,
+    logger,
+    active,
+    pendingStarts,
+    leadCycleFollowupIntervalMs,
+    spawnRun,
+    postSystemComment,
+    patchRunDiagnostics,
+    maybeAutoStartTask,
+    validateDelegationRequest,
+    createDelegatedSubtasks,
+    maybeRunDelegatedChildren,
+    autoRunPolicy: AUTO_RUN_POLICY,
+  });
 
-  function queueLeadCycleRequest({ teamId, projectId, reason }) {
-    if (!teamId || !projectId) return;
-    pendingLeadCycleRequests.set(leadCycleRequestKey(teamId, projectId), reason || "task_unassigned");
-  }
+  const worktreeReconciler = createWorktreeReconciler({
+    db,
+    broker,
+    logger,
+    spawnRun,
+    postSystemComment,
+    applySideEffects,
+    patchRunDiagnostics,
+  });
 
-  function drainQueuedLeadCycleRequest({ teamId, projectId }) {
-    if (!teamId || !projectId) return;
-    const key = leadCycleRequestKey(teamId, projectId);
-    const reason = pendingLeadCycleRequests.get(key);
-    if (!reason) return;
-    pendingLeadCycleRequests.delete(key);
-    setTimeout(() => {
-      const out = spawnLeadCycleRunInternal({ teamId, projectId, reason });
-      if (!out.ok && out.skipped === "in_flight") {
-        queueLeadCycleRequest({ teamId, projectId, reason });
-      } else if (!out.ok) {
-        logger?.warn?.({ teamId, projectId, reason, err: out.error }, "queued lead cycle skipped");
-      }
-    }, 0);
-  }
-
-  // v33: spawn a lead_cycle run against the synthetic root for (team, project).
-  // Runs through the same spawnTaskRun path so lifecycle events, drain
-  // semantics, transcript handling, and budget reconciliation all reuse the
-  // existing machinery — only the result handling diverges (handleLeadCycleExit).
-  function spawnLeadCycleRunInternal({ teamId, projectId, reason = "manual" } = {}) {
-    if (!teamId || !projectId) return { ok: false, error: "teamId and projectId required" };
-    if (hasInFlightLeadCycle(db, { teamId, projectId })) {
-      return { ok: false, error: "lead cycle already in flight", skipped: "in_flight" };
-    }
-    const team = getTeamById(db, teamId);
-    if (!team) return { ok: false, error: "team not found" };
-    if (!team.lead_agent) return { ok: false, error: "team has no lead_agent" };
-    if (team.status !== "active") return { ok: false, error: "team is archived" };
-    const root = ensureTeamRootTask(db, { teamId, projectId, now: Date.now() });
-    if (!root) return { ok: false, error: "could not resolve synthetic root task" };
-    const goalBlock = leadCycleBlockedByGoal(db, { teamId, projectId, reason });
-    if (goalBlock) return { ok: false, ...goalBlock };
-    if (active.has(root.id)) return { ok: false, error: "lead cycle already running on this root" };
-    const budget = checkBudget({ db, agentName: team.lead_agent, teamId });
-    if (!budget.ok) return { ok: false, error: budget.message, scope: budget.scope };
-    try {
-      const startedAt = Date.now();
-      const handle = spawnRun({
-        task: root,
-        stage: "execute",
-        mode: "execute",
-        agentName: team.lead_agent,
-        kind: "lead_cycle",
-        teamId,
-        diagnosticsSeed: { lead_cycle_reason: reason, lead_cycle_team_id: teamId, lead_cycle_project_id: projectId },
-      });
-      try {
-        recordLeadCycleStarted(db, {
-          goalId: root.id,
-          runId: handle.runId,
-          taskId: root.id,
-          teamId,
-          projectId,
-          reason,
-          startedAt,
-        });
-      } catch (err) {
-        logger?.warn?.({ err: err.message, runId: handle.runId }, "lead cycle timeline start write failed");
-      }
-      try {
-        db.prepare("UPDATE teams SET last_lead_cycle_at = ? WHERE id = ?").run(startedAt, teamId);
-      } catch (err) {
-        logger?.warn?.({ err: err.message }, "team last_lead_cycle_at update failed");
-      }
-      broker?.broadcast?.("global", {
-        type: "lead_cycle_started",
-        team_id: teamId,
-        project_id: projectId,
-        run_id: handle.runId,
-        reason,
-      });
-      return { ok: true, runId: handle.runId, taskId: root.id };
-    } catch (err) {
-      logger?.warn?.({ err: err.message, teamId, projectId }, "lead cycle spawn failed");
-      return { ok: false, error: err.message };
-    }
-  }
-
-  // Event-trigger hook. Called from handleSuccessfulExit when a task with an
-  // effective team transitions to done/blocked. Debounced via the in-flight
-  // gate; concurrent completions on the same (team, project) collapse to one
-  // cycle. Errors are non-fatal — the task transition has already applied.
-  function maybeScheduleLeadCycle(taskId, taskStageValue) {
-    try {
-      const task = getTaskById(db, taskId);
-      if (!task || task.is_team_root) return;
-      const teamId = effectiveTeamForTask(db, task);
-      if (!teamId) return;
-      const projectId = task.project_id;
-      if (!projectId) return;
-      const reason = taskStageValue === "blocked" ? "task_blocked" : "task_completed";
-      consumeMatchingLeadCycleEventHints({ teamId, projectId, event: reason });
-      spawnLeadCycleRunInternal({ teamId, projectId, reason });
-    } catch (err) {
-      logger?.warn?.({ err: err.message, taskId }, "maybeScheduleLeadCycle failed");
-    }
-  }
-
-  function maybeScheduleUnassignedTeamTask(taskId, reason = "task_unassigned") {
-    try {
-      const task = getTaskById(db, taskId);
-      if (!task || task.is_team_root) return { ok: false, skipped: "not_applicable" };
-      if (String(task.owner_agent || "").trim()) return { ok: false, skipped: "already_owned" };
-      const stage = taskStage(task);
-      if (stage === "done" || stage === "blocked") return { ok: false, skipped: "terminal" };
-      const teamId = effectiveTeamForTask(db, task);
-      if (!teamId) return { ok: false, skipped: "no_team" };
-      const projectId = task.project_id || null;
-      if (!projectId) return { ok: false, skipped: "no_project" };
-      const out = spawnLeadCycleRunInternal({ teamId, projectId, reason });
-      if (!out.ok && out.skipped === "in_flight") {
-        queueLeadCycleRequest({ teamId, projectId, reason });
-      }
-      return out;
-    } catch (err) {
-      logger?.warn?.({ err: err.message, taskId }, "maybeScheduleUnassignedTeamTask failed");
-      return { ok: false, error: err.message };
-    }
-  }
-
-  function consumeMatchingLeadCycleEventHints({ teamId, projectId, event, now = Date.now() } = {}) {
-    const matches = listMatchingLeadCycleEventFollowups(db, { teamId, projectId, event, limit: 20 });
-    for (const cycle of matches) {
-      consumeLeadCycleFollowup(db, cycle.id, now);
-    }
-    return matches.length;
-  }
-
-  function tickLeadCycleFollowups(now = Date.now()) {
-    const due = listDueLeadCycleFollowups(db, { now, limit: 20 });
-    let started = 0;
-    let skipped = 0;
-    for (const cycle of due) {
-      consumeLeadCycleFollowup(db, cycle.id, now);
-      const out = spawnLeadCycleRunInternal({
-        teamId: cycle.team_id,
-        projectId: cycle.project_id,
-        reason: "review_due",
-      });
-      if (out?.ok) started += 1;
-      else skipped += 1;
-      if (!out?.ok && out?.skipped === "in_flight") {
-        queueLeadCycleRequest({
-          teamId: cycle.team_id,
-          projectId: cycle.project_id,
-          reason: "review_due",
-        });
-      } else if (!out?.ok) {
-        logger?.warn?.(
-          { teamId: cycle.team_id, projectId: cycle.project_id, cycleId: cycle.id, err: out?.error },
-          "due lead cycle follow-up skipped",
-        );
-      }
-    }
-    return { checked: due.length, started, skipped };
-  }
-
-  if (Number(leadCycleFollowupIntervalMs) > 0) {
-    leadCycleFollowupTimer = setInterval(() => {
-      try {
-        tickLeadCycleFollowups(Date.now());
-      } catch (err) {
-        logger?.warn?.({ err: err.message }, "lead cycle follow-up tick failed");
-      }
-    }, Number(leadCycleFollowupIntervalMs));
-    leadCycleFollowupTimer.unref?.();
-  }
+  const recovery = createRecoveryContinuation({
+    db,
+    logger,
+    active,
+    pendingStarts,
+    recoveryTimers,
+    spawnRun,
+    postSystemComment,
+    patchRunDiagnostics,
+    applySideEffects,
+    reviewSubjectRunIdFor,
+  });
 
   async function handleRunRequested(taskId, options = {}) {
     const task = getTaskById(db, taskId);
@@ -567,118 +377,11 @@ export function createTaskWatcher({
     return { ok: true };
   }
 
-  function postAgentFinalComment(taskId, agentName, result, finalText, options = {}) {
-    let body = agentCommentBody(result, finalText);
-    const linkedSlug = firstKnowledgeSlugFromText(body) || firstKnowledgeSlugFromText(finalText);
-    const kbWrite = linkedSlug ? { wrote: true, slug: linkedSlug } : successfulKbWriteFromEvents(options.events);
-    if (kbWrite.wrote) {
-      if (kbWrite.slug) body = appendKbLink(body, kbWrite.slug);
-    }
-    if (!body) return;
-    db.prepare(
-      `INSERT INTO task_comments (id, task_id, author_type, author_id, body, created_at)
-       VALUES (?, ?, 'agent', ?, ?, ?)`,
-    ).run(newCommentId(), taskId, agentName, body, Date.now());
-  }
-
-  function updateRunResult(runId, result) {
-    if (!result) return;
-    db.prepare(
-      `UPDATE task_runs
-       SET decision = ?, summary = COALESCE(summary, ?), details = COALESCE(details, ?),
-           result_json = COALESCE(result_json, ?)
-       WHERE id = ?`,
-    ).run(result.decision || null, result.summary || null, result.details || null, JSON.stringify(result), runId);
-  }
-
-  function planCandidateScore(body) {
-    const text = String(body || "").trim();
-    if (!text) return 0;
-    const lower = text.toLowerCase();
-    let score = 0;
-    if (looksLikePlanBody(text)) score += 20;
-    const headingMatches = text.match(/^#{1,4}\s+(?:execplan|proposed plan|implementation plan|plan|summary|key changes|api\/interfaces\/types|test plan|verification|verification gates|assumptions|context|context & assumptions|step-by-step implementation|steps?|risks?|risks & recovery notes)\b.*$/gim) || [];
-    score += headingMatches.length * 8;
-    const boldHeadingMatches = text.match(/^\*\*(?:execplan|proposed plan|implementation plan|plan|summary|key changes|test plan|verification|assumptions|steps?|risks?)\b.*\*\*/gim) || [];
-    score += boldHeadingMatches.length * 5;
-    const numberedSteps = text.match(/^\s*\d+\.\s+\S/gm) || [];
-    score += Math.min(numberedSteps.length, 8) * 2;
-    if (/\b(execplan|implementation plan|test plan|verification gates|completion criteria|step-by-step implementation)\b/i.test(text)) score += 10;
-    if (text.length >= 800) score += 8;
-    else if (text.length >= 350) score += 4;
-    if (/\b(message above|plan above|see above|mirrored in the structured|schema validator|re-emit|structured output)\b/i.test(lower)) score -= 12;
-    return Math.max(0, score);
-  }
-
-  function bestPlanCandidate(candidates) {
-    let best = null;
-    candidates.forEach((candidate) => {
-      const body = sanitizeAgentText(candidate);
-      if (!body) return;
-      const score = planCandidateScore(body);
-      if (score < 24) return;
-      if (!best || score > best.score || (score === best.score && body.length > best.body.length)) {
-        best = { body, score };
-      }
-    });
-    return best?.body || "";
-  }
-
-  function planBodyFromRun(result, finalText, events = []) {
-    const structuredPlan = sanitizeAgentText(result?.details);
-    const rawPlan = sanitizeAgentText(finalText);
-    const assistantPlans = assistantTextsFromEvents(events).reverse().map((text) => sanitizeAgentText(text));
-    const selectedPlan = bestPlanCandidate([structuredPlan, rawPlan, ...assistantPlans]);
-    if (selectedPlan) return selectedPlan;
-    for (const candidate of [structuredPlan, result?.summary, rawPlan]) {
-      const body = sanitizeAgentText(candidate);
-      if (body) return body;
-    }
-    return "";
-  }
-
-  function planBodySideEffect(runId, agentName, result, finalText, events = []) {
-    const body = planBodyFromRun(result, finalText, events);
-    if (!body) return null;
-    return {
-      type: "set_plan_body",
-      body,
-      runId,
-      updatedBy: agentName || "agent",
-    };
-  }
-
   function postSystemComment(taskId, body) {
     db.prepare(
       `INSERT INTO task_comments (id, task_id, author_type, body, created_at)
        VALUES (?, ?, 'system', ?, ?)`,
     ).run(newCommentId(), taskId, body, Date.now());
-  }
-
-  // R9: append a warning to the run's warnings_json. Used to surface non-
-  // fatal events (e.g. delegation outside the project allowlist permitted
-  // by the override flag) without changing run status.
-  function appendRunWarning(runId, warning) {
-    const row = db
-      .prepare("SELECT warnings_json FROM task_runs WHERE id = ?")
-      .get(runId);
-    if (!row) return;
-    const warnings = safeParseJson(row.warnings_json, []);
-    warnings.push(warning);
-    db.prepare("UPDATE task_runs SET warnings_json = ? WHERE id = ?")
-      .run(JSON.stringify(warnings), runId);
-  }
-
-  function loadResumeSnapshot(runId) {
-    if (!runId) return null;
-    try {
-      const row = getRunTranscriptTail(db, runId);
-      if (!row?.transcript_tail_json) return null;
-      const parsed = safeParseJson(row.transcript_tail_json, null);
-      return parsed && typeof parsed === "object" ? parsed : null;
-    } catch {
-      return null;
-    }
   }
 
   function patchRunDiagnostics(runId, patch) {
@@ -692,648 +395,6 @@ export function createTaskWatcher({
       }),
       runId,
     );
-  }
-
-  function setRunWorktreeMetadata(runId, metadata) {
-    db.prepare("UPDATE task_runs SET worktree_json = ? WHERE id = ?")
-      .run(metadata ? JSON.stringify(metadata) : null, runId);
-  }
-
-  function shortSha(value) {
-    return value ? String(value).slice(0, 7) : null;
-  }
-
-  function baseWorktreeBlockMessage(result) {
-    const status = result?.status || "worktree_merge_blocked";
-    if (status === "missing_worktree_metadata" || status === "missing_worktree") {
-      return "Worktree merge paused because the run's AI worktree metadata is missing. Retry the execute run after checking the run workspace.";
-    }
-    if (status === "blocked_dirty_source") {
-      return `Worktree merge paused because the source checkout has uncommitted changes: ${(result.dirty_paths || []).join(", ") || "unknown paths"}.`;
-    }
-    if (status === "blocked_uncommitted_worktree") {
-      return `Worktree merge paused because the AI worktree has uncommitted changes: ${(result.dirty_paths || []).join(", ") || "unknown paths"}. Commit or discard those changes before retrying.`;
-    }
-    if (status === "merge_conflict") {
-      return `Worktree merge paused because current source changes conflict with AI work: ${(result.conflict_paths || []).join(", ") || "unknown paths"}. Resolve in the AI worktree with the source checkout treated as authoritative, then retry.`;
-    }
-    if (status === "source_moved") {
-      return "Worktree merge paused because the source checkout moved during reconciliation. Retry when the source checkout is stable.";
-    }
-    return `Worktree merge paused: ${status}.`;
-  }
-
-  function worktreeAuditMessage(audit, result) {
-    const branch = audit.branch || "the AI branch";
-    const branchHead = shortSha(audit.branch_head);
-    const sourceBefore = shortSha(audit.source_head_before);
-    const sourceAfter = shortSha(audit.source_head_after);
-    if (audit.status === "merged") {
-      return `Worktree merged into source checkout: ${sourceBefore || "unknown"} -> ${sourceAfter || "unknown"} from ${branch} (${branchHead || "unknown"}). AI branch preserved; temporary worktree ${audit.cleaned ? "cleaned" : "not cleaned"}.`;
-    }
-    if (audit.status === "already_up_to_date") {
-      return `Worktree already in source checkout at ${sourceAfter || branchHead || "unknown"}; AI branch ${branch} is preserved.`;
-    }
-    const base = baseWorktreeBlockMessage(result);
-    if (!audit.branch && !audit.branch_head) {
-      return `${base} AI branch state could not be verified; source checkout was not changed.`;
-    }
-    return `${base} AI commits remain on ${branch}${branchHead ? ` at ${branchHead}` : ""}; source checkout was not changed.`;
-  }
-
-  function buildWorktreeAudit({ runId, taskId, metadata, reconcile, now = Date.now() }) {
-    const status = reconcile?.status || "worktree_merge_blocked";
-    const audit = {
-      status,
-      ok: !!reconcile?.ok,
-      branch: reconcile?.metadata?.branch || metadata?.branch || null,
-      source_workdir: reconcile?.metadata?.source_workdir || metadata?.source_workdir || null,
-      source_git_root: reconcile?.metadata?.source_git_root || metadata?.source_git_root || null,
-      worktree_root: reconcile?.metadata?.worktree_root || metadata?.worktree_root || null,
-      source_head_before: reconcile?.previous_source_head || reconcile?.source_head || metadata?.source_head || null,
-      source_head_after: reconcile?.ok ? (reconcile?.source_head || null) : null,
-      branch_head: reconcile?.branch_head || null,
-      cleaned: reconcile?.cleaned === true,
-      merged_at: reconcile?.ok ? (reconcile?.merged_at || now) : null,
-      dirty_paths: reconcile?.dirty_paths || [],
-      conflict_paths: reconcile?.conflict_paths || [],
-      run_id: runId,
-      task_id: taskId,
-    };
-    audit.message = worktreeAuditMessage(audit, reconcile);
-    return audit;
-  }
-
-  function worktreeAuditEvent(audit) {
-    return {
-      type: "worktree_reconcile",
-      source: "worklab_coordinator",
-      runId: audit.run_id,
-      taskId: audit.task_id,
-      status: audit.status,
-      ok: audit.ok,
-      message: audit.message,
-      branch: audit.branch,
-      sourceWorkdir: audit.source_workdir,
-      sourceGitRoot: audit.source_git_root,
-      worktreeRoot: audit.worktree_root,
-      sourceHeadBefore: audit.source_head_before,
-      sourceHeadAfter: audit.source_head_after,
-      branchHead: audit.branch_head,
-      cleaned: audit.cleaned,
-      dirtyPaths: audit.dirty_paths,
-      conflictPaths: audit.conflict_paths,
-      ts: audit.merged_at || Date.now(),
-    };
-  }
-
-  function worktreeConflictRetryAlreadyUsed(run) {
-    if (run?.parent_relationship === "worktree_conflict_retry") return true;
-    const diagnostics = safeParseJson(run?.diagnostics_json, {});
-    return diagnostics?.worktree_conflict_retry === true
-      || diagnostics?.worktree_conflict_retry_of_run_id
-      || diagnostics?.worktree_conflict_retry?.retry_run_id;
-  }
-
-  function patchWorktreeConflictRetryDiagnostics(runId, patch) {
-    const row = getRunDiagnostics(db, runId);
-    const existing = safeParseJson(row?.diagnostics_json, {});
-    const previous = existing?.worktree_conflict_retry && typeof existing.worktree_conflict_retry === "object"
-      ? existing.worktree_conflict_retry
-      : {};
-    patchRunDiagnostics(runId, {
-      worktree_conflict_retry: {
-        ...previous,
-        ...patch,
-      },
-    });
-  }
-
-  function worktreeConflictRetrySeed({ runId, audit }) {
-    return {
-      worktree_conflict_retry: true,
-      worktree_conflict_retry_of_run_id: runId,
-      source_workdir: audit.source_workdir || null,
-      source_git_root: audit.source_git_root || null,
-      source_head: audit.source_head_before || null,
-      previous_branch: audit.branch || null,
-      previous_branch_head: audit.branch_head || null,
-      previous_worktree_root: audit.worktree_root || null,
-      conflict_paths: audit.conflict_paths || [],
-      guidance: [
-        "The previous AI worktree conflicted with the current source checkout during merge-back.",
-        "Treat the source checkout as authoritative. Use the previous AI branch only as reference.",
-        "Reapply only the current task's intended changes and commit them on this fresh AI worktree branch.",
-      ].join(" "),
-    };
-  }
-
-  function worktreeConflictRetryComment({ audit, retryRunId }) {
-    const branchHead = shortSha(audit.branch_head);
-    const sourceHead = shortSha(audit.source_head_before);
-    const conflicts = (audit.conflict_paths || []).map((path) => `\`${path}\``).join(", ") || "unknown paths";
-    return [
-      "Automatic worktree conflict retry started.",
-      `Retry run: \`${retryRunId}\`.`,
-      audit.branch ? `Previous AI branch: \`${audit.branch}\`${branchHead ? ` at ${branchHead}` : ""}.` : "",
-      sourceHead ? `Source checkout head: ${sourceHead}.` : "",
-      `Conflict paths: ${conflicts}.`,
-      "The source checkout is authoritative; the retry starts from a fresh worktree based on current source truth and should use the previous AI branch only as reference.",
-    ].filter(Boolean).join("\n");
-  }
-
-  function maybeStartWorktreeConflictRetry({ taskId, runId, run, task, stage, audit }) {
-    if (stage !== "execute" || audit?.status !== "merge_conflict") return { started: false, reason: "not_retryable" };
-    if (worktreeConflictRetryAlreadyUsed(run)) {
-      patchWorktreeConflictRetryDiagnostics(runId, {
-        skipped: true,
-        skip_reason: "already_retried",
-        conflict_paths: audit.conflict_paths || [],
-        previous_branch: audit.branch || null,
-        previous_branch_head: audit.branch_head || null,
-        source_head: audit.source_head_before || null,
-      });
-      return { started: false, reason: "already_retried" };
-    }
-
-    const agentName = run?.agent_name || agentForTaskStage(task, "execute");
-    if (!agentName) return { started: false, reason: "missing_agent" };
-    const teamId = effectiveTeamForTask(db, task);
-    const budget = checkBudget({ db, agentName, teamId });
-    if (!budget.ok) {
-      patchWorktreeConflictRetryDiagnostics(runId, {
-        skipped: true,
-        skip_reason: "budget_exceeded",
-        message: budget.message,
-      });
-      return { started: false, reason: "budget_exceeded", message: budget.message };
-    }
-
-    const diagnosticsSeed = worktreeConflictRetrySeed({ runId, audit });
-    try {
-      const retry = spawnRun({
-        task: { ...task, stage: "execute" },
-        stage: "execute",
-        mode: run?.mode || "execute",
-        agentName,
-        parentRunId: runId,
-        diagnosticsSeed,
-      });
-      patchWorktreeConflictRetryDiagnostics(runId, {
-        scheduled: true,
-        retry_run_id: retry.runId,
-        conflict_paths: audit.conflict_paths || [],
-        previous_branch: audit.branch || null,
-        previous_branch_head: audit.branch_head || null,
-        previous_worktree_root: audit.worktree_root || null,
-        source_head: audit.source_head_before || null,
-      });
-      postSystemComment(taskId, worktreeConflictRetryComment({ audit, retryRunId: retry.runId }));
-      applySideEffects(taskId, [
-        { type: "clear_error_text" },
-        { type: "set_stage_reason", reason: "retrying after worktree merge conflict" },
-        { type: "clear_pending_actions" },
-        { type: "clear_pending_questions" },
-        { type: "clear_blocking_issues" },
-      ], taskStage(getTaskById(db, taskId)), "execute", { running: true });
-      return { started: true, runId: retry.runId };
-    } catch (err) {
-      patchWorktreeConflictRetryDiagnostics(runId, {
-        skipped: true,
-        skip_reason: "spawn_failed",
-        message: err?.message || String(err),
-      });
-      postSystemComment(taskId, `Automatic worktree conflict retry failed to start: ${err?.message || String(err)}`);
-      return { started: false, reason: "spawn_failed", message: err?.message || String(err) };
-    }
-  }
-
-  function appendCoordinatorRunEvent(runId, event) {
-    const row = db.prepare("SELECT raw_output_path FROM task_runs WHERE id = ?").get(runId);
-    const log = db.prepare("SELECT id, events FROM agent_logs WHERE task_run_id = ?").get(runId);
-    const events = safeParseJson(log?.events, []);
-    const safeEvents = Array.isArray(events) ? events : [];
-    const maxSeq = safeEvents.reduce((max, item, index) => {
-      const seq = Number(item?._event_seq);
-      return Math.max(max, Number.isFinite(seq) ? seq : index + 1);
-    }, 0);
-    const nextEvent = {
-      ...event,
-      _event_seq: event._event_seq ?? maxSeq + 1,
-      ts: event.ts || Date.now(),
-    };
-    if (log?.id) {
-      db.prepare("UPDATE agent_logs SET events = ? WHERE id = ?")
-        .run(JSON.stringify([...safeEvents, nextEvent]), log.id);
-    }
-    if (row?.raw_output_path) {
-      try {
-        appendFileSync(row.raw_output_path, `${JSON.stringify(nextEvent)}\n`);
-      } catch (err) {
-        logger?.warn?.({ err: err?.message || String(err), runId, rawLogPath: row.raw_output_path }, "raw run log write failed");
-      }
-    }
-    broker?.broadcast?.(runId, nextEvent);
-    broker?.broadcast?.("global", {
-      type: "run_progress",
-      runId,
-      eventSeq: nextEvent._event_seq,
-      eventCount: safeEvents.length + 1,
-      lastEvent: nextEvent,
-    });
-    return nextEvent;
-  }
-
-  function reconcileSuccessfulWorktreeRun({ taskId, runId, run, stage, result }) {
-    if (stage !== "execute" || result?.decision !== "advance") return { ok: true, skipped: true };
-    if (run?.workspace_mode !== "worktree") return { ok: true, skipped: true };
-    const metadata = safeParseJson(run.worktree_json, null);
-    const reconcile = metadata?.worktree_root
-      ? reconcileRunWorktree({ metadata, cleanup: true })
-      : { ok: false, status: "missing_worktree_metadata", metadata };
-    const audit = buildWorktreeAudit({ runId, taskId, metadata, reconcile });
-    const nextMetadata = reconcile.metadata
-      ? {
-        ...reconcile.metadata,
-        ...audit,
-        last_reconcile_status: reconcile.status,
-        last_reconcile_at: Date.now(),
-      }
-      : metadata;
-    setRunWorktreeMetadata(runId, nextMetadata);
-    patchRunDiagnostics(runId, { worktree: audit });
-    appendCoordinatorRunEvent(runId, worktreeAuditEvent(audit));
-    if (reconcile.ok) return { ...reconcile, audit };
-
-    const retry = maybeStartWorktreeConflictRetry({ taskId, runId, run, task: getTaskById(db, taskId), stage, audit });
-    if (retry?.started) return { ...reconcile, audit, autoRetry: retry };
-
-    postSystemComment(taskId, audit.message);
-    applySideEffects(taskId, [
-      { type: "clear_error_text" },
-      { type: "set_stage_reason", reason: audit.message },
-      { type: "set_pending_actions", pendingActions: [audit.message] },
-      { type: "clear_pending_questions" },
-      { type: "clear_blocking_issues" },
-    ], taskStage(getTaskById(db, taskId)), "awaiting_user");
-    return { ...reconcile, audit };
-  }
-
-  function continuationParentRun(run) {
-    const diagnostics = safeParseJson(run?.diagnostics_json, {});
-    const diagnosticParentId = diagnostics.continuation_of_run_id || null;
-    if (diagnosticParentId) {
-      return db.prepare("SELECT id, parent_run_id, mode, stage, diagnostics_json FROM task_runs WHERE id = ?").get(diagnosticParentId) || null;
-    }
-    if (!run?.parent_run_id) return null;
-    const parent = db.prepare("SELECT id, parent_run_id, mode, stage, diagnostics_json FROM task_runs WHERE id = ?").get(run.parent_run_id);
-    if (!parent) return null;
-    const runMode = run.mode || null;
-    const parentMode = parent.mode || null;
-    const runStage = run.stage || runMode;
-    const parentStage = parent.stage || parentMode;
-    if (runMode && parentMode && runMode !== parentMode) return null;
-    if (runStage && parentStage && runStage !== parentStage) return null;
-    return parent;
-  }
-
-  function hasRecoveryContinuation(runId) {
-    return Boolean(db.prepare(`
-      SELECT id
-      FROM task_runs
-      WHERE parent_run_id = ?
-         OR (CASE
-           WHEN diagnostics_json IS NOT NULL AND json_valid(diagnostics_json)
-           THEN json_extract(diagnostics_json, '$.continuation_of_run_id')
-           ELSE NULL
-         END) = ?
-      LIMIT 1
-    `).get(runId, runId));
-  }
-
-  function continuationLineage(run) {
-    const seen = new Set();
-    const lineage = [run.id];
-    let parent = continuationParentRun(run);
-    while (parent && !seen.has(parent.id) && lineage.length < 50) {
-      seen.add(parent.id);
-      lineage.push(parent.id);
-      parent = continuationParentRun(parent);
-    }
-    return {
-      rootRunId: lineage[lineage.length - 1] || run.id,
-      depth: lineage.length - 1,
-      lineage,
-    };
-  }
-
-  function providerRecoveryDelay(settings, attempt) {
-    const base = Number(settings.agent_provider_recovery_base_delay_ms ?? 30000);
-    if (!Number.isFinite(base) || base <= 0) return 0;
-    const raw = Math.min(300000, Math.floor(base * (2 ** Math.max(0, attempt - 1))));
-    const jitter = Math.floor(raw * 0.2 * Math.random());
-    return raw + jitter;
-  }
-
-  function warningKindSet(value) {
-    const warnings = Array.isArray(value) ? value : [];
-    return new Set(warnings.map((warning) => warning?.kind || warning?.warning_kind || warning?.warningKind).filter(Boolean));
-  }
-
-  function schemaCorrectionFailure({ failureKind, res, run }) {
-    if (failureKind === "invalid_delegation") return true;
-    if (failureKind !== "invalid_result") return false;
-    if (res?.resultError) return true;
-    const diagnostics = {
-      ...safeParseJson(run?.diagnostics_json, {}),
-      ...(res?.diagnostics || {}),
-    };
-    const errorDetails = diagnostics.error_details || {};
-    if (
-      errorDetails.structured_output_retry_exhausted
-      || errorDetails.claude_error_subtype === "error_max_structured_output_retries"
-      || diagnostics.claude_error_subtype === "error_max_structured_output_retries"
-    ) {
-      return true;
-    }
-    const kinds = warningKindSet([
-      ...safeParseJson(run?.warnings_json, []),
-      ...(Array.isArray(res?.warnings) ? res.warnings : []),
-    ]);
-    return kinds.has("worklab_result_validation")
-      || kinds.has("review_result_parse")
-      || kinds.has("unstructured_result_fallback");
-  }
-
-  function recoveryReason({ failureKind, res, run, settings }) {
-    if (failureKind === "usage_limit") {
-      return { reason: "usage_limit", providerInfo: null };
-    }
-    if (schemaCorrectionFailure({ failureKind, res, run })) {
-      return { reason: "schema_correction", providerInfo: null };
-    }
-    if (failureKind !== "provider_unavailable") return null;
-    if (settings.agent_provider_recovery_enabled === false) return null;
-    const diagnostics = {
-      ...safeParseJson(run?.diagnostics_json, {}),
-      ...(res?.diagnostics || {}),
-    };
-    const providerInfo = diagnostics.retryable_provider_error
-      ? {
-          retryable: true,
-          subkind: diagnostics.provider_error_subkind || "retryable_request",
-          requestId: diagnostics.provider_request_id || null,
-        }
-      : retryableProviderFailureInfo({
-          errorText: res?.error || run?.error_text || "",
-          stderrTail: diagnostics.stderr_tail || "",
-          failureKind,
-        });
-    if (!providerInfo.retryable) return null;
-    // R2 — terminated_after_completion: the audit observed Codex runs that
-    // completed real work (final journal_summary call, clean worktree after a
-    // commit) and *then* dropped the provider connection before emitting the
-    // worklab.v2 envelope. The default provider_retry path discards the work
-    // and re-runs from scratch. Detect this pattern from the captured
-    // error_details and switch to a one-shot finalisation continuation that
-    // just inspects the workdir and emits the JSON envelope.
-    const errorDetails = diagnostics.error_details || {};
-    const lastToolName = errorDetails.last_tool_name || diagnostics.last_tool_name || null;
-    const hadPartialProgress = !!(errorDetails.had_partial_progress || diagnostics.had_partial_progress);
-    if (hadPartialProgress && lastToolName === "journal_summary") {
-      return {
-        reason: "finalisation",
-        providerInfo: {
-          ...providerInfo,
-          subkind: "terminated_after_completion",
-        },
-      };
-    }
-    return {
-      reason: diagnostics.context_risk === "high" ? "provider_retryable_context_risk" : "provider_retryable",
-      providerInfo,
-    };
-  }
-
-  function maybeStartRecoveryContinuation({ taskId, runId, res, task, run, stage, failureKind, processStatus, nextStageValue }) {
-    if (processStatus !== "failed") return null;
-    if (!["plan", "execute", "review"].includes(stage)) return null;
-    if (hasRecoveryContinuation(runId)) return null;
-    const settings = readSettings(db);
-    const recovery = recoveryReason({ failureKind, res, run, settings });
-    if (!recovery) return null;
-    const baseContinuationLimit = Number(settings.agent_recovery_continuation_limit ?? 3);
-    // Schema-correction is bounded tighter than provider-recovery: if the
-    // agent can't emit valid worklab.v2 JSON twice in a row, escalate to the
-    // operator instead of burning the full provider-recovery budget on what
-    // is almost certainly a stuck reviewer. Finalisation is single-shot: the
-    // work is already done, all the agent has to do is re-emit the envelope.
-    const continuationLimit = recovery.reason === "schema_correction"
-      ? Math.min(2, baseContinuationLimit)
-      : recovery.reason === "finalisation"
-        ? Math.min(1, baseContinuationLimit)
-        : baseContinuationLimit;
-    if (continuationLimit <= 0) return null;
-    const lineage = continuationLineage(run);
-    if (lineage.depth >= continuationLimit) {
-      postSystemComment(taskId, `Automatic continuation skipped: recovery continuation limit reached (${lineage.depth}/${continuationLimit}).`);
-      patchRunDiagnostics(runId, {
-        continuation_skipped: true,
-        continuation_skip_reason: "limit_reached",
-        continuation_reason: recovery.reason,
-        continuation_depth: lineage.depth,
-        continuation_limit: continuationLimit,
-        continuation_root_run_id: lineage.rootRunId,
-      });
-      if (failureKind === "provider_unavailable") {
-        const attempts = lineage.depth + 1;
-        overrideRunFailureKind(db, runId, {
-          failureKind: "provider_unavailable_exhausted",
-          errorText: `Auto-recovery exhausted after ${attempts} attempts.`,
-          details: `Auto-recovery exhausted after ${attempts} attempts.`,
-        });
-        const currentTask = getTaskById(db, taskId);
-        const currentStage = taskStage(currentTask);
-        applySideEffects(
-          taskId,
-          [{ type: "set_stage_reason", reason: "Provider repeatedly terminated; manual retry required." }],
-          currentStage,
-          currentStage,
-        );
-      }
-      return null;
-    }
-
-    const agentName = run.agent_name || agentForTaskStage(task, stage);
-    if (!agentName) return null;
-    const mode = run.mode || modeForStage(stage);
-    const reviewSubjectRunId = mode === "review" ? reviewSubjectRunIdFor(run, taskId) : null;
-    if (mode === "review" && !reviewSubjectRunId) {
-      postSystemComment(taskId, "Automatic continuation skipped: no execute run is available for review.");
-      patchRunDiagnostics(runId, {
-        continuation_skipped: true,
-        continuation_skip_reason: "missing_review_subject",
-        continuation_reason: recovery.reason,
-        continuation_depth: lineage.depth,
-        continuation_limit: continuationLimit,
-        continuation_root_run_id: lineage.rootRunId,
-      });
-      return null;
-    }
-    const continuationTeamId = effectiveTeamForTask(db, task);
-    const budget = checkBudget({ db, agentName, teamId: continuationTeamId });
-    if (!budget.ok) {
-      postSystemComment(taskId, `Automatic continuation skipped: ${budget.message}`);
-      return null;
-    }
-
-    const continuationStage = ["plan", "execute", "review"].includes(nextStageValue) ? nextStageValue : stage;
-    const attempt = lineage.depth + 1;
-    const delayMs = recovery.reason === "usage_limit"
-      || recovery.reason === "schema_correction"
-      || recovery.reason === "finalisation"
-      ? 0
-      : providerRecoveryDelay(settings, attempt);
-    const resumeSnapshot = recovery.reason === "provider_retryable" || recovery.reason === "finalisation"
-      ? loadResumeSnapshot(runId)
-      : null;
-    const summary = compactRecoveryRunSummary({
-      runId,
-      res,
-      reason: recovery.reason === "usage_limit"
-        || recovery.reason === "schema_correction"
-        || recovery.reason === "finalisation"
-        ? recovery.reason
-        : "provider_retryable",
-      providerInfo: recovery.providerInfo,
-    });
-    const diagnostics = {
-      ...safeParseJson(run?.diagnostics_json, {}),
-      ...(res?.diagnostics || {}),
-    };
-    const delegationRetryGuidance = failureKind === "invalid_delegation"
-      ? [
-          `The previous delegation request exceeded policy: ${diagnostics.delegation_validation_error || res?.error || "invalid delegation"}.`,
-          diagnostics.delegation_max_children
-            ? `The max children is ${diagnostics.delegation_max_children}. Return at most that many subtasks; merge adjacent subtasks owned by the same agent or touching the same files.`
-            : "Return at most the configured max children; merge adjacent subtasks owned by the same agent or touching the same files.",
-          "Preserve the original work by combining instructions, acceptance criteria, expected artifacts, and depends_on references inside the fewer subtasks.",
-        ]
-      : [];
-    const heading = recovery.reason === "usage_limit"
-      ? "Automatic continuation after context-window overflow."
-      : recovery.reason === "schema_correction"
-        ? "Automatic schema-correction continuation after malformed Worklab result."
-      : recovery.reason === "finalisation"
-        ? "Automatic finalisation continuation: prior run completed work but dropped before emitting the worklab.v2 envelope."
-      : mode === "review"
-        ? `Automatic review continuation after retryable provider error${recovery.providerInfo?.subkind ? ` (${recovery.providerInfo.subkind})` : ""}.`
-        : `Automatic continuation after retryable provider error${recovery.providerInfo?.subkind ? ` (${recovery.providerInfo.subkind})` : ""}.`;
-    const retryGuidance = recovery.reason === "schema_correction"
-      ? [
-          ...delegationRetryGuidance,
-          "Return exactly one valid `worklab.v2` JSON object that preserves your prior decision.",
-          "Escape double quotes inside strings, especially in `summary`, `details`, and `final_text`.",
-          "Do not use XML, tool-call syntax, or `<parameter name=...>` tags; every field must be a top-level JSON property.",
-          "Do not include markdown fences or prose before or after the JSON.",
-          "Do not redo completed work; inspect the prior run log, workspace, journal, or KB entries only as needed to re-emit the envelope.",
-        ]
-      : recovery.reason === "finalisation"
-      ? [
-          "The previous run already completed the work — committed the changes, called `journal_summary`, and the workdir is clean — but the provider connection dropped before it could emit the worklab.v2 envelope.",
-          "Do NOT redo the work. Inspect the workdir (`git status`, `git log -1`, the journal tail), confirm the work matches the task instructions, and emit a single `worklab.v2` JSON envelope reporting the existing commit hash.",
-          "If the workdir is dirty or the work is incomplete, emit a `worklab.v2` envelope with `decision: \"pause\"` and pending_actions describing what's missing — do not start a fresh implementation.",
-        ]
-      : [
-          "Continue from the current workspace state. Do not repeat completed work. Do not repeat broad repository scans such as `Glob **/*`; inspect targeted files only and avoid generated/vendor directories.",
-        ];
-    postSystemComment(taskId, [
-      heading,
-      delayMs > 0 ? `Retrying in ${Math.round(delayMs / 1000)} seconds.` : "",
-      mode === "review" && reviewSubjectRunId ? `Retrying the review against execute run \`${reviewSubjectRunId}\`.` : "",
-      "",
-      summary,
-      "",
-      ...retryGuidance,
-    ].filter(Boolean).join("\n").trim());
-    applySideEffects(taskId, [
-      { type: "clear_error_text" },
-      { type: "set_stage_reason", reason: `continuing after ${recovery.reason}` },
-      { type: "increment_lifetime_recovery_continuation_count" },
-    ], nextStageValue, continuationStage, { running: true });
-
-    patchRunDiagnostics(runId, {
-      continuation_scheduled: true,
-      continuation_delay_ms: delayMs,
-      continuation_depth: lineage.depth,
-      continuation_limit: continuationLimit,
-      continuation_reason: recovery.reason,
-      continuation_root_run_id: lineage.rootRunId,
-      retryable_provider_error: recovery.providerInfo?.retryable || undefined,
-      provider_error_subkind: recovery.providerInfo?.subkind || undefined,
-      provider_request_id: recovery.providerInfo?.requestId || undefined,
-    });
-
-    const startContinuation = () => {
-      if (active.has(taskId)) {
-        patchRunDiagnostics(runId, {
-          continuation_skipped: true,
-          continuation_skip_reason: "task_already_running",
-        });
-        return null;
-      }
-      const continuation = spawnRun({
-        task: { ...task, stage: continuationStage },
-        stage: continuationStage,
-        mode,
-        agentName,
-        parentRunId: mode === "review" ? reviewSubjectRunId : runId,
-        diagnosticsSeed: {
-          continuation_of_run_id: runId,
-          continuation_root_run_id: lineage.rootRunId,
-          continuation_reason: recovery.reason,
-          continuation_depth: attempt,
-          continuation_limit: continuationLimit,
-          recovery_attempt: attempt,
-          recovery_delay_ms: delayMs,
-          retryable_provider_error: recovery.providerInfo?.retryable || undefined,
-          provider_error_subkind: recovery.providerInfo?.subkind || undefined,
-          provider_request_id: recovery.providerInfo?.requestId || undefined,
-          resume_snapshot: resumeSnapshot || undefined,
-        },
-      });
-      patchRunDiagnostics(runId, {
-        continuation_run_id: continuation.runId,
-        continuation_depth: lineage.depth,
-        continuation_limit: continuationLimit,
-        continuation_reason: recovery.reason,
-        continuation_root_run_id: lineage.rootRunId,
-      });
-      return continuation;
-    };
-
-    if (delayMs > 0) {
-      pendingStarts.add(taskId);
-      const timer = setTimeout(() => {
-        recoveryTimers.delete(timer);
-        pendingStarts.delete(taskId);
-        try {
-          startContinuation();
-        } catch (err) {
-          postSystemComment(taskId, `Automatic continuation failed to start: ${err.message || String(err)}`);
-        }
-      }, delayMs);
-      timer.unref?.();
-      recoveryTimers.add(timer);
-      return { scheduled: true, delayMs };
-    }
-
-    try {
-      return startContinuation();
-    } catch (err) {
-      postSystemComment(taskId, `Automatic continuation failed to start: ${err.message || String(err)}`);
-      return null;
-    }
   }
 
   function validateDelegationRequest(parentTask, subtasks) {
@@ -1627,232 +688,6 @@ export function createTaskWatcher({
     });
   }
 
-  function applyLeadCycleAssignments({ taskId, teamId, projectId, finalLead }) {
-    const assignments = Array.isArray(finalLead?.task_assignments) ? finalLead.task_assignments : [];
-    if (!assignments.length || !teamId || !projectId) return 0;
-
-    const roster = new Set(getTeamRosterAgentNames(db, teamId));
-    const now = Date.now();
-    const skipped = [];
-    let assigned = 0;
-
-    for (const assignment of assignments) {
-      const targetId = String(assignment?.target_task_id || "").trim();
-      const ownerAgent = String(assignment?.owner_agent || "").trim();
-      const rationale = String(assignment?.rationale || "").trim();
-      if (!targetId || !ownerAgent) continue;
-      const target = getTaskById(db, targetId);
-      if (!target) {
-        skipped.push(`${targetId}: task not found`);
-        continue;
-      }
-      if (target.is_team_root) {
-        skipped.push(`${targetId}: team root cannot be assigned`);
-        continue;
-      }
-      if ((target.project_id || null) !== projectId) {
-        skipped.push(`${targetId}: outside lead-cycle project`);
-        continue;
-      }
-      if (effectiveTeamForTask(db, target) !== teamId) {
-        skipped.push(`${targetId}: outside team scope`);
-        continue;
-      }
-      if (String(target.owner_agent || "").trim()) {
-        skipped.push(`${targetId}: already has an owner`);
-        continue;
-      }
-      const targetStage = taskStage(target);
-      if (targetStage === "done" || targetStage === "blocked") {
-        skipped.push(`${targetId}: terminal task`);
-        continue;
-      }
-      if (!roster.has(ownerAgent)) {
-        skipped.push(`${targetId}: ${ownerAgent} is not in the team roster`);
-        continue;
-      }
-      if (!enabledAgentExists(db, ownerAgent)) {
-        skipped.push(`${targetId}: ${ownerAgent} is not enabled`);
-        continue;
-      }
-
-      const result = db.prepare(`
-        UPDATE tasks
-        SET owner_agent = ?, updated_at = ?
-        WHERE id = ?
-          AND COALESCE(owner_agent, '') = ''
-          AND COALESCE(stage, 'plan') NOT IN ('done', 'blocked')
-      `).run(ownerAgent, now, targetId);
-      if (!result.changes) {
-        skipped.push(`${targetId}: no longer assignable`);
-        continue;
-      }
-      postSystemComment(
-        targetId,
-        `Team lead assigned owner ${ownerAgent}.${rationale ? ` Rationale: ${rationale}` : ""}`,
-      );
-      broker?.broadcast?.("global", { type: "task_updated", id: targetId, taskKey: target.task_key || null });
-      maybeAutoStartTask(targetId);
-      assigned += 1;
-    }
-
-    if (skipped.length) {
-      postSystemComment(taskId, `Lead cycle task_assignments skipped:\n- ${skipped.join("\n- ")}`);
-    }
-    return assigned;
-  }
-
-  function leadCycleExistingTitleIndex({ taskId, teamId, projectId }) {
-    if (!projectId) return new Set();
-    const rows = db.prepare(`
-      SELECT title
-      FROM tasks
-      WHERE project_id = ?
-        AND COALESCE(is_team_root, 0) = 0
-        AND (? IS NULL OR team_id = ? OR team_id IS NULL)
-        AND id <> ?
-    `).all(projectId, teamId || null, teamId || null, taskId);
-    return new Set(rows.map((row) => normalizeLeadTaskTitle(row.title)).filter(Boolean));
-  }
-
-  function filterDuplicateLeadCreations({ taskId, teamId, projectId, creations }) {
-    const existingTitles = leadCycleExistingTitleIndex({ taskId, teamId, projectId });
-    const accepted = [];
-    const skipped = [];
-    for (const item of creations || []) {
-      const title = String(item?.title || "").trim();
-      if (!title) continue;
-      const normalized = normalizeLeadTaskTitle(title);
-      if (normalized && existingTitles.has(normalized)) {
-        skipped.push({ title, reason: "duplicates existing task in this team/project" });
-        continue;
-      }
-      if (normalized) existingTitles.add(normalized);
-      accepted.push(item);
-    }
-    return { accepted, skipped };
-  }
-
-  function taskHasActiveRun(taskId) {
-    if (active.has(taskId) || pendingStarts.has(taskId)) return true;
-    const rows = db.prepare(`
-      SELECT process_status, status, ended_at
-      FROM task_runs
-      WHERE task_id = ?
-    `).all(taskId);
-    return rows.some((row) => {
-      const processStatus = String(row.process_status || row.status || "running");
-      const status = String(row.status || row.process_status || "running");
-      return processStatus === "queued"
-        || processStatus === "running"
-        || (row.ended_at == null && (status === "queued" || status === "running"));
-    });
-  }
-
-  function applyLeadCycleDeletions({ taskId, teamId, projectId, finalLead }) {
-    const deletions = Array.isArray(finalLead?.task_deletions) ? finalLead.task_deletions : [];
-    if (!deletions.length) return { count: 0, tombstones: [] };
-
-    const skipped = [];
-    const tombstones = [];
-    const seen = new Set();
-
-    for (const deletion of deletions) {
-      const targetId = String(deletion?.target_task_id || "").trim();
-      const rationale = String(deletion?.rationale || "").trim();
-      if (!targetId || seen.has(targetId)) continue;
-      seen.add(targetId);
-
-      const target = getTaskById(db, targetId);
-      if (!target) {
-        skipped.push(`${targetId}: task not found`);
-        continue;
-      }
-      if (target.id === taskId || target.is_team_root) {
-        skipped.push(`${target.task_key || target.id}: team root cannot be deleted`);
-        continue;
-      }
-      if ((target.project_id || null) !== projectId) {
-        skipped.push(`${target.task_key || target.id}: outside lead-cycle project`);
-        continue;
-      }
-      if (teamId && effectiveTeamForTask(db, target) !== teamId) {
-        skipped.push(`${target.task_key || target.id}: outside team scope`);
-        continue;
-      }
-      const edge = db.prepare(`
-        SELECT e.created_by_run_id, r.kind AS creator_kind, r.task_id AS creator_task_id,
-               r.team_id AS creator_team_id, r.project_id AS creator_project_id
-        FROM task_edges e
-        LEFT JOIN task_runs r ON r.id = e.created_by_run_id
-        WHERE e.parent_task_id = ?
-          AND e.child_task_id = ?
-          AND e.edge_type = 'subtask'
-        LIMIT 1
-      `).get(taskId, targetId);
-      if (!edge || edge.creator_kind !== "lead_cycle" || edge.creator_task_id !== taskId
-        || (teamId && edge.creator_team_id !== teamId)
-        || (projectId && edge.creator_project_id !== projectId)) {
-        skipped.push(`${target.task_key || target.id}: not lead-cycle-created for this goal`);
-        continue;
-      }
-      if (taskStage(target) === "done") {
-        skipped.push(`${target.task_key || target.id}: already done`);
-        continue;
-      }
-      if (taskHasActiveRun(targetId)) {
-        skipped.push(`${target.task_key || target.id}: has active run`);
-        continue;
-      }
-      const childCount = Number(db.prepare(`
-        SELECT COUNT(*) AS count
-        FROM task_edges
-        WHERE parent_task_id = ?
-          AND edge_type = 'subtask'
-      `).get(targetId)?.count || 0);
-      if (childCount > 0) {
-        skipped.push(`${target.task_key || target.id}: has child subtasks`);
-        continue;
-      }
-
-      tombstones.push({
-        target_task_id: target.id,
-        task_key: target.task_key || null,
-        title: target.title || "",
-        owner_agent: target.owner_agent || null,
-        stage: taskStage(target),
-        rationale,
-      });
-    }
-
-    if (tombstones.length) {
-      const tx = db.transaction(() => {
-        for (const tombstone of tombstones) {
-          db.prepare("DELETE FROM tasks WHERE id = ?").run(tombstone.target_task_id);
-        }
-      });
-      tx();
-      const lines = tombstones.map((item) => {
-        const ref = item.task_key || item.target_task_id;
-        return `- ${ref}: ${item.title}${item.rationale ? ` - ${item.rationale}` : ""}`;
-      });
-      postSystemComment(taskId, `Lead cycle deleted ${tombstones.length} lead-created task${tombstones.length === 1 ? "" : "s"}:\n${lines.join("\n")}`);
-      for (const tombstone of tombstones) {
-        broker?.broadcast?.("global", {
-          type: "task_deleted",
-          id: tombstone.target_task_id,
-          taskKey: tombstone.task_key || null,
-        });
-      }
-      broker?.broadcast?.("global", { type: "task_updated", id: taskId });
-    }
-
-    if (skipped.length) {
-      postSystemComment(taskId, `Lead cycle task_deletions skipped:\n- ${skipped.join("\n- ")}`);
-    }
-    return { count: tombstones.length, tombstones };
-  }
-
   async function handleSuccessfulExit(taskId, runId, res, task, run) {
     const stage = run.stage || taskStage(task);
     const mode = run.mode || modeForStage(stage);
@@ -1895,20 +730,20 @@ export function createTaskWatcher({
       // warnings + system comments without blocking the delegation round.
       if (Array.isArray(validation.warnings)) {
         for (const warning of validation.warnings) {
-          appendRunWarning(runId, warning);
+          appendRunWarning(db, runId, warning);
           postSystemComment(taskId, warning.message);
         }
       }
     }
 
-    updateRunResult(runId, result);
-    const worktreeReconcile = reconcileSuccessfulWorktreeRun({ taskId, runId, run, stage, result });
+    updateRunResult(db, runId, result);
+    const worktreeReconcile = worktreeReconciler.reconcileSuccessfulWorktreeRun({ taskId, runId, run, stage, result });
     if (worktreeReconcile && worktreeReconcile.ok === false) return;
-    postAgentFinalComment(taskId, agentName, result, res.finalText, {
-      task,
-      run,
-      runId,
-      stage,
+    postAgentFinalComment(db, {
+      taskId,
+      agentName,
+      result,
+      finalText: res.finalText,
       events: res.events,
     });
     if (worktreeReconcile?.audit?.message) {
@@ -2039,7 +874,7 @@ export function createTaskWatcher({
     }
 
     if (next.stage === "done" || next.stage === "blocked") maybeResumeWaitingParents(taskId);
-    if (next.stage === "done" || next.stage === "blocked") maybeScheduleLeadCycle(taskId, next.stage);
+    if (next.stage === "done" || next.stage === "blocked") leadCycle.maybeScheduleLeadCycle(taskId, next.stage);
     if (next.stage === "done") maybeAutoStartDependents(taskId);
     if (["plan", "execute", "review"].includes(next.stage)) maybeAutoStartTask(taskId);
   }
@@ -2072,7 +907,7 @@ export function createTaskWatcher({
     if (res?.diagnostics && typeof res.diagnostics === "object" && !Array.isArray(res.diagnostics)) {
       patchRunDiagnostics(runId, res.diagnostics);
     }
-    maybeStartRecoveryContinuation({
+    recovery.maybeStartRecoveryContinuation({
       taskId,
       runId,
       res,
@@ -2090,232 +925,6 @@ export function createTaskWatcher({
     maybeResumeWaitingParents(taskId);
   }
 
-  // v33: lead-cycle result handling. The lead emits worklab.lead_cycle.v1; we
-  // validate semantics, apply task_assignments to ownerless in-scope tasks,
-  // fan out task_creations into createDelegatedSubtasks (anchored on the
-  // synthetic root), post advisory_notes as system comments, and update the
-  // synthetic root's goal_status. The lead cannot change task stage or
-  // reassign already-owned tasks.
-  function handleLeadCycleExit(taskId, runId, res, task, run) {
-    const processStatus = runProcessStatus(res);
-    const teamId = run.team_id || (task ? effectiveTeamForTask(db, task) : null);
-    const projectId = run.project_id || task?.project_id || null;
-    const finalLead = res?.leadCycleResult || (() => {
-      try { return safeParseJson(run.result_json, null); } catch { return null; }
-    })();
-
-    db.prepare(
-      `UPDATE task_runs SET decision = COALESCE(decision, 'lead_cycle'), summary = COALESCE(summary, ?), details = COALESCE(details, ?) WHERE id = ?`,
-    ).run(finalLead?.summary || res.summary || null, finalLead?.goal_status_reason || null, runId);
-
-    if (res?.diagnostics && typeof res.diagnostics === "object" && !Array.isArray(res.diagnostics)) {
-      patchRunDiagnostics(runId, res.diagnostics);
-    }
-
-    if (processStatus !== "succeeded" || !finalLead || finalLead.schema !== "worklab.lead_cycle.v1") {
-      const failureKind = res.failureKind || res.failure_kind || (processStatus === "cancelled" ? "cancelled" : "lead_cycle_invalid_result");
-      db.prepare(
-        `UPDATE task_runs SET failure_kind = COALESCE(failure_kind, ?), retry_stage = COALESCE(retry_stage, 'execute') WHERE id = ?`,
-      ).run(failureKind, runId);
-      try {
-        recordLeadCycleFailed(db, {
-          runId,
-          processStatus,
-          status: res?.status || run?.status || "error",
-          failureKind,
-          errorText: res?.error || run?.error_text || null,
-          costUsd: res?.costUsd ?? res?.cost_usd ?? run?.cost_usd ?? null,
-          endedAt: Date.now(),
-        });
-      } catch (err) {
-        logger?.warn?.({ err: err.message, runId }, "lead cycle timeline failure write failed");
-      }
-      postSystemComment(taskId, `Lead cycle did not produce a valid worklab.lead_cycle.v1 result (${failureKind}).`);
-      broker?.broadcast?.("global", {
-        type: "lead_cycle_failed",
-        team_id: teamId,
-        project_id: projectId,
-        run_id: runId,
-        failure_kind: failureKind,
-      });
-      drainQueuedLeadCycleRequest({ teamId, projectId });
-      return;
-    }
-
-    const now = Date.now();
-    const goalRefinementApplied = applyTeamGoalRefinement(db, {
-      teamId,
-      projectId,
-      rootTaskId: taskId,
-      runId,
-      refinement: finalLead.goal_refinement || null,
-      now,
-    });
-    if (goalRefinementApplied?.applied) {
-      const fields = goalRefinementApplied.applied_fields?.length
-        ? goalRefinementApplied.applied_fields.join(", ")
-        : "goal contract";
-      postSystemComment(taskId, [
-        `Lead cycle refined goal: ${fields}.`,
-        goalRefinementApplied.rationale ? `Rationale: ${goalRefinementApplied.rationale}` : "",
-        Object.keys(goalRefinementApplied.patch_applied || {}).length
-          ? `Applied patch: ${JSON.stringify(goalRefinementApplied.patch_applied)}`
-          : "",
-      ].filter(Boolean).join("\n"));
-      broker?.broadcast?.("global", {
-        type: "team_goal_updated",
-        team_id: teamId,
-        project_id: projectId,
-        run_id: runId,
-      });
-    } else if (
-      finalLead.goal_refinement?.mode === "apply"
-      && Array.isArray(goalRefinementApplied?.skipped)
-      && goalRefinementApplied.skipped.length
-    ) {
-      const lines = goalRefinementApplied.skipped.map((item) => {
-        const field = String(item?.field || "goal_refinement").trim();
-        const reason = String(item?.reason || "not applied").trim();
-        return `${field}: ${reason}`;
-      });
-      postSystemComment(taskId, `Lead cycle goal refinement skipped:\n- ${lines.join("\n- ")}`);
-    }
-
-    const deletionResult = applyLeadCycleDeletions({ taskId, teamId, projectId, finalLead });
-    const tasksAssigned = applyLeadCycleAssignments({ taskId, teamId, projectId, finalLead });
-    let tasksCreated = 0;
-    let notesPosted = 0;
-
-    // Apply task_creations as subtasks of the synthetic root. Reuse the
-    // standard delegation pipeline so cycle detection, agent enablement,
-    // and parent-context wiring all behave identically to a normal delegate.
-    const rawCreations = Array.isArray(finalLead.task_creations) ? finalLead.task_creations : [];
-    const { accepted: creations, skipped: skippedCreations } = filterDuplicateLeadCreations({
-      taskId,
-      teamId,
-      projectId,
-      creations: rawCreations,
-    });
-    if (skippedCreations.length) {
-      const lines = skippedCreations.map((item) => `${item.title}: ${item.reason}`);
-      postSystemComment(taskId, `Lead cycle task_creations skipped:\n- ${lines.join("\n- ")}`);
-    }
-    if (creations.length) {
-      const subtasks = creations.map((item) => ({
-        title: String(item?.title || "").trim(),
-        instructions: String(item?.instructions || ""),
-        suggested_agent: String(item?.suggested_agent || "").trim() || null,
-        depends_on: Array.isArray(item?.depends_on) ? item.depends_on : [],
-        acceptance_criteria: Array.isArray(item?.acceptance_criteria) ? item.acceptance_criteria : [],
-        expected_artifact: item?.expected_artifact || null,
-        required: true,
-      })).filter((item) => item.title);
-      try {
-        const validated = validateDelegationRequest(task, subtasks);
-        if (!validated.ok) {
-          postSystemComment(taskId, `Lead cycle task_creations rejected: ${validated.error}`);
-        } else {
-          const children = createDelegatedSubtasks(task, runId, validated.subtasks, {
-            parentResult: { summary: finalLead.summary, details: finalLead.goal_status_reason || "" },
-            replaceExistingEdges: false,
-            childTeamId: teamId,
-            childRunPolicy: AUTO_RUN_POLICY,
-            childTags: ["delegated", "lead-cycle"],
-          });
-          tasksCreated = children.length;
-          maybeRunDelegatedChildren(taskId, children, { force: true });
-        }
-      } catch (err) {
-        logger?.warn?.({ err: err.message, runId }, "lead-cycle delegation failed");
-        postSystemComment(taskId, `Lead cycle delegation failed: ${err.message}`);
-      }
-    }
-
-    // Apply advisory_notes as system comments on the named target tasks.
-    const notes = Array.isArray(finalLead.advisory_notes) ? finalLead.advisory_notes : [];
-    for (const note of notes) {
-      const target = String(note?.target_task_id || "").trim();
-      if (!target) continue;
-      const targetRow = getTaskById(db, target);
-      if (!targetRow) continue;
-      // Constrain to the team's scope: target must share team_id (or its
-      // project must belong to this team). Out-of-scope notes are silently
-      // dropped — semantic validator should have caught them already.
-      const targetTeam = effectiveTeamForTask(db, targetRow);
-      if (teamId && targetTeam !== teamId) continue;
-      const prefix = note.kind === "blocker_observation" ? "Lead cycle blocker observation"
-        : note.kind === "warning" ? "Lead cycle warning"
-        : "Lead cycle suggestion";
-      postSystemComment(target, `${prefix}: ${String(note.content || "").trim()}`);
-      notesPosted += 1;
-    }
-
-    // Update synthetic-root metadata. is_team_root rows aren't part of the
-    // standard state-machine flow; goal_status / last_lead_at are leaf
-    // annotations the UI reads directly.
-    const goalStatus = finalLead.goal_status;
-    const goalReason = String(finalLead.goal_status_reason || "").trim() || null;
-    db.prepare(
-      `UPDATE tasks SET goal_status = ?, goal_status_reason = ?, last_lead_at = ?, updated_at = ? WHERE id = ?`,
-    ).run(goalStatus, goalReason, now, now, taskId);
-    appendTeamGoalCheckpoint(db, {
-      rootTaskId: taskId,
-      runId,
-      goalStatus,
-      checkpointNote: finalLead.checkpoint_note || finalLead.summary || "",
-      validationSummary: finalLead.validation_summary || "",
-      now,
-    });
-    try {
-      recordLeadCycleCompleted(db, {
-        runId,
-        result: { ...finalLead, task_deletions: deletionResult.tombstones },
-        processStatus,
-        status: res?.status || run?.status || "complete",
-        costUsd: res?.costUsd ?? res?.cost_usd ?? run?.cost_usd ?? null,
-        tasksCreated,
-        tasksAssigned,
-        tasksDeleted: deletionResult.count,
-        taskCreationSkips: skippedCreations,
-        tasksSkipped: skippedCreations.length,
-        goalRefinementApplied,
-        notesPosted,
-        endedAt: now,
-      });
-    } catch (err) {
-      logger?.warn?.({ err: err.message, runId }, "lead cycle timeline completion write failed");
-    }
-    if (teamId) {
-      try {
-        db.prepare("UPDATE teams SET last_lead_cycle_at = ? WHERE id = ?").run(now, teamId);
-      } catch (err) {
-        logger?.warn?.({ err: err.message, teamId }, "team last_lead_cycle_at write failed");
-      }
-    }
-
-    if (goalStatus === "complete") {
-      postSystemComment(taskId, `Team lead marked goal complete: ${goalReason || finalLead.summary}`);
-      broker?.broadcast?.("global", {
-        type: "team_goal_completed",
-        team_id: teamId,
-        project_id: projectId,
-        run_id: runId,
-      });
-    }
-
-    broker?.broadcast?.("global", {
-      type: "lead_cycle_completed",
-      team_id: teamId,
-      project_id: projectId,
-      run_id: runId,
-      goal_status: goalStatus,
-      tasks_created: tasksCreated,
-      tasks_assigned: tasksAssigned,
-      tasks_deleted: deletionResult.count,
-    });
-    drainQueuedLeadCycleRequest({ teamId, projectId });
-  }
-
   async function onWorkerExit(taskId, runId, res) {
     const entry = active.get(taskId);
     if (entry?.runId === runId) active.delete(taskId);
@@ -2328,7 +937,7 @@ export function createTaskWatcher({
     const processStatus = runProcessStatus(res);
 
     if (run.kind === "lead_cycle") {
-      handleLeadCycleExit(taskId, runId, res, task, run);
+      leadCycle.handleLeadCycleExit(taskId, runId, res, task, run);
       recordPerRunBudgetOverage({
         db,
         runId,
@@ -2412,10 +1021,7 @@ export function createTaskWatcher({
   }
 
   async function shutdown({ drainTimeoutMs: overrideDrainMs } = {}) {
-    if (leadCycleFollowupTimer) {
-      clearInterval(leadCycleFollowupTimer);
-      leadCycleFollowupTimer = null;
-    }
+    leadCycle.shutdown();
     for (const timer of recoveryTimers) clearTimeout(timer);
     recoveryTimers.clear();
     pendingStarts.clear();
@@ -2506,7 +1112,7 @@ export function createTaskWatcher({
     }
     const run = getRunById(db, runId);
     if (!run) return null;
-    const lineage = continuationLineage(run);
+    const lineage = recovery.continuationLineage(run);
     const reviewSubjectRunId = continuationMode === "review" ? reviewSubjectRunIdFor(run, taskId) : null;
     if (continuationMode === "review" && !reviewSubjectRunId) {
       patchRunDiagnostics(runId, {
@@ -2575,13 +1181,13 @@ export function createTaskWatcher({
     sendRunMessage,
     maybeAutoStart: maybeAutoStartTask,
     maybeAutoStartDependents,
-    maybeScheduleUnassignedTeamTask,
-    tickLeadCycleFollowups,
+    maybeScheduleUnassignedTeamTask: leadCycle.maybeScheduleUnassignedTeamTask,
+    tickLeadCycleFollowups: leadCycle.tickLeadCycleFollowups,
     scheduleCoordinatorResumeContinuations,
     get coordinatorResumeBootstrap() { return coordinatorResumeBootstrapPromise; },
     // v33: lead-cycle entry points used by /api/teams/:id/run-lead, the
     // worklab_team_run_lead MCP tool, and team-lead-cron.js.
-    spawnLeadCycle: (opts) => spawnLeadCycleRunInternal(opts),
-    maybeScheduleLeadCycle,
+    spawnLeadCycle: (opts) => leadCycle.spawnLeadCycleRunInternal(opts),
+    maybeScheduleLeadCycle: leadCycle.maybeScheduleLeadCycle,
   };
 }
