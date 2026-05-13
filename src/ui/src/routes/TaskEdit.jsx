@@ -108,6 +108,8 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
   const projectPrefillInput = mode === "create"
     ? String(query?.project || query?.project_id || "").trim()
     : "";
+  const isTeamRoot = mode === "edit" && Boolean(loadedTask?.is_team_root);
+  const teamRootGoalHash = loadedTask ? `#/goals/${encodeURIComponent(loadedTask.id)}` : "#/goals";
 
   useEffect(() => {
     const controller = new AbortController();
@@ -279,6 +281,10 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
   }
 
   async function save({ navigateOnSuccess = true } = {}) {
+    if (isTeamRoot) {
+      pushToast("Lead cycle anchors are edited from Goals.", { variant: "info" });
+      throw new Error("Lead cycle anchors are edited from Goals.");
+    }
     const payload = {
       title: draft.title.trim(),
       instructions: draft.instructions,
@@ -446,7 +452,12 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
       <span>{isDirty ? "Unsaved changes" : "Saved"}</span>
     </>
   );
-  const mobileActionDock = (
+  const mobileActionDock = isTeamRoot ? (
+    <>
+      <Button variant="secondary" onClick={cancel}>Back</Button>
+      <Button variant="primary" onClick={() => navigateHash(teamRootGoalHash)}>Open goal</Button>
+    </>
+  ) : (
     <>
       <Button variant="secondary" onClick={cancel}>Cancel</Button>
       <Button
@@ -545,7 +556,7 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
       mobileTopbar={<MobileTopbar title={mode === "create" ? "New task" : idDisplay || "Edit task"} backLabel="Tasks" onBack={cancel} />}
       drawerTitle="Settings"
       drawerKicker={mode === "create" ? "New task" : idDisplay || "Task"}
-      drawerContent={!loading && !notFound ? renderTaskEditRail() : null}
+      drawerContent={!loading && !notFound && !isTeamRoot ? renderTaskEditRail() : null}
       sections={activeSections}
     >
       <div class="task-edit">
@@ -568,7 +579,12 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
           glyph="T"
           subBar={<MobilePillRow railLabel="Settings" railCount={railCardCount} sections={activeSections} />}
           actionsClass="task-edit-toolbar"
-          actions={(
+          actions={isTeamRoot ? (
+            <>
+              <Button variant="ghost" onClick={cancel}>Back</Button>
+              <Button variant="primary" onClick={() => navigateHash(teamRootGoalHash)}>Open goal</Button>
+            </>
+          ) : (
             <>
               <Button variant="ghost" onClick={cancel}>Cancel</Button>
               <Button
@@ -591,7 +607,16 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
             <Banner variant="error" title="Task not found" detail="It may have been deleted." />
           )}
           {loading && <LoadingState caption="Loading task…" />}
-          {!loading && !notFound && (
+          {!loading && !notFound && isTeamRoot && (
+            <Banner
+              variant="info"
+              title="Lead cycle anchor"
+              detail="This internal task is managed by the project goal. Review outcome fields and run lead cycles from the Goal page."
+              actions={<Button size="sm" variant="primary" onClick={() => navigateHash(teamRootGoalHash)}>Open goal</Button>}
+              dismissible={false}
+            />
+          )}
+          {!loading && !notFound && !isTeamRoot && (
             <div class="task-edit-grid editor-body">
               {/* Left column — identity & instructions & deps */}
               <div class="task-edit-main editor-main">

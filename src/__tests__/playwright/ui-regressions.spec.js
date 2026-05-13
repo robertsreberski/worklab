@@ -3409,7 +3409,7 @@ test("mobile goals keep detail and editor actions reachable", async ({ page }) =
 
   await page.goto(`${baseUrl}/#/goals/${goalId}`);
   await expect(page.locator(".pane-detail-head h2", { hasText: "Mobile Layout Project" })).toBeVisible();
-  await expect(page.locator(".app-mobile-action-dock .button", { hasText: "Run lead cycle" })).toBeVisible();
+  await expect(page.locator(".app-mobile-action-dock .button", { hasText: "Review goal" })).toBeVisible();
   await expect(page.locator(".app-mobile-action-dock .button", { hasText: "Edit" })).toBeVisible();
   await expectNoHorizontalOverflow(page, "mobile goal detail actions");
 

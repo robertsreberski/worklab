@@ -242,6 +242,8 @@ export function TaskDetail({ id, runParam = null }) {
   const currentTaskRouteId = task ? taskRouteId(task) : encodeURIComponent(id);
   const taskKeyLabel = taskDisplayKey(task || id);
   const isTeamRoot = Boolean(task?.is_team_root);
+  const canEditTask = task && !isTeamRoot;
+  const canChangeTaskStatus = task && !isTeamRoot;
   const runs = data?.runs || [];
   const comments = data?.comments || [];
   const mentions = data?.mentions || null;
@@ -663,7 +665,7 @@ export function TaskDetail({ id, runParam = null }) {
     },
   }[stage];
   const canRun = !runStarting && selectedAgent && runnableStages.includes(stage) && unresolvedBlockedBy.length === 0;
-  const canPreviewRunInput = task && !task?.is_team_root && runnableStages.includes(stage) && !runningRun;
+  const canPreviewRunInput = canEditTask && runnableStages.includes(stage) && !runningRun;
   const runDisabledReason = runStarting
     ? "Run is starting"
     : !selectedAgent
@@ -684,6 +686,19 @@ export function TaskDetail({ id, runParam = null }) {
       return (
         <Button variant="primary" iconLeft={<Icon name="refresh-cw" size={13} />} onClick={retryStuck} disabled={runStarting}>
           {runStarting ? "Starting..." : "Retry"}
+        </Button>
+      );
+    }
+    if (isTeamRoot) {
+      return (
+        <Button
+          variant="primary"
+          iconLeft={<Icon name="play" size={13} />}
+          onClick={runNow}
+          disabled={!canRun}
+          title={runDisabledReason || runCopy?.title}
+        >
+          {runStarting ? "Starting..." : runCopy.label}
         </Button>
       );
     }
@@ -769,9 +784,11 @@ export function TaskDetail({ id, runParam = null }) {
 
   const taskActions = task && (
     <>
-      <Button variant="ghost" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); }}>
-        Edit
-      </Button>
+      {canEditTask && (
+        <Button variant="ghost" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); }}>
+          Edit
+        </Button>
+      )}
       {canPreviewRunInput && (
         <Button variant="secondary" iconLeft={<Icon name="eye" size={13} />} onClick={openRunPreview}>
           Run input
@@ -782,9 +799,11 @@ export function TaskDetail({ id, runParam = null }) {
   );
   const mobileActionDock = task && (
     <div class={`task-mobile-action-dock${stage === "review" && !runningRun ? " review-idle" : ""}`}>
-      <Button variant="secondary" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); }}>
-        Edit
-      </Button>
+      {canEditTask && (
+        <Button variant="secondary" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); }}>
+          Edit
+        </Button>
+      )}
       {canPreviewRunInput && (
         <Button variant="secondary" iconLeft={<Icon name="eye" size={13} />} onClick={openRunPreview}>
           Run input
@@ -795,7 +814,11 @@ export function TaskDetail({ id, runParam = null }) {
   );
   const detailMeta = task && (
     <span class="task-hero-status-row">
-      <StatusMenu status={statusMenuState} displayStage={stage} pulse={Boolean(runningRun)} onChoose={onStatusChoose} />
+      {canChangeTaskStatus ? (
+        <StatusMenu status={statusMenuState} displayStage={stage} pulse={Boolean(runningRun)} onChoose={onStatusChoose} />
+      ) : (
+        <StatusPill status={statusMenuState} size="sm" />
+      )}
       {task.project && (
         <EntityBadge kind="project" label={task.project.name || "Unknown"} href={`#/projects/${projectRouteId(task.project)}`} class="task-project-chip" title={`Project: ${task.project.name || "Unknown"}`} />
       )}
@@ -842,6 +865,7 @@ export function TaskDetail({ id, runParam = null }) {
       runningRunStream={runningRunStream}
       onAssigneeChange={updateAssignee}
       onDelete={() => setDeleteOpen(true)}
+      readOnly={isTeamRoot}
     />
   ) : null;
   const detailSubBar = task && (
@@ -868,8 +892,8 @@ export function TaskDetail({ id, runParam = null }) {
       }
       else if (stage === "done") applyStatusTransition({ from: "done", to: "execute" });
     },
-    "e": () => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); },
-    "E": () => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); },
+    "e": () => { if (canEditTask) navigateHash(`#/tasks/${currentTaskRouteId}/edit`); },
+    "E": () => { if (canEditTask) navigateHash(`#/tasks/${currentTaskRouteId}/edit`); },
   });
 
   if (!data) {
@@ -969,13 +993,14 @@ export function TaskDetail({ id, runParam = null }) {
               <TaskPlanCard
                 task={task}
                 draft={planDraft}
-                editing={planEditing}
+                editing={!isTeamRoot && planEditing}
                 saving={planSaving}
                 mentions={resolvedMentions}
                 onDraft={setPlanDraft}
                 onEdit={() => setPlanEditing(true)}
                 onCancel={cancelPlanEdit}
                 onSave={savePlan}
+                readOnly={isTeamRoot}
               />
             </FormSection>
 

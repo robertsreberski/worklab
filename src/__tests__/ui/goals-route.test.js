@@ -120,9 +120,23 @@ describe("Goals route helpers", () => {
       ["internal", "Project", "#/projects/journey"],
       ["internal", "Team", "#/library/teams/journey-pwa-build"],
       ["internal", "Latest lead cycle", "#/tasks/root-1?run=run-1"],
-      ["internal", "Lead-cycle anchor", "#/tasks/root-1"],
       ["reference", "PRD", "https://example.com/prd"],
       ["reference", "Local route", "#/settings"],
+    ]);
+  });
+
+  it("does not expose root task anchors when a goal has no latest cycle", () => {
+    const links = goalReferenceLinks({
+      project: { slug: "journey", name: "Journey" },
+      team_slug: "journey-pwa-build",
+      root_task_id: "root-1",
+      latest_cycle: null,
+      contract: { links: [] },
+    });
+
+    expect(links.map((link) => [link.kind, link.label, link.href])).toEqual([
+      ["internal", "Project", "#/projects/journey"],
+      ["internal", "Team", "#/library/teams/journey-pwa-build"],
     ]);
   });
 
@@ -176,7 +190,7 @@ describe("Goals route helpers", () => {
     });
   });
 
-  it("builds a lead-cycle cockpit summary with ledger and lead-created roster", () => {
+  it("builds a project goal cockpit summary with ledger and open goal work", () => {
     const summary = goalCockpitSummary({
       goal_status: "in_progress",
       last_lead_at: 61_000,
@@ -199,7 +213,7 @@ describe("Goals route helpers", () => {
 
     expect(summary.latest.summary).toBe("Pruned and focused the next pass.");
     expect(summary.latestDecision).toBe("Pruned and focused the next pass.");
-    expect(summary.stateStrip.map((item) => item.label)).toEqual(["State", "Definition", "Last cycle", "Next review"]);
+    expect(summary.stateStrip.map((item) => item.label)).toEqual(["State", "Definition", "Last review", "Next review"]);
     expect(summary.ledger.map((item) => [item.key, item.value])).toEqual([
       ["created", 2],
       ["assigned", 1],
