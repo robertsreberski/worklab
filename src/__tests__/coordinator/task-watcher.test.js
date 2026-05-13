@@ -1466,6 +1466,79 @@ describe("task-watcher", () => {
     expect(comment.body).toContain("Do not repeat broad repository scans");
   });
 
+  it("treats missing final output after completion signals as finalisation recovery", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    const broker = stubBroker();
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: resolvers.length, done, cancel: vi.fn() };
+    });
+    const watcher = createTaskWatcher({ db, broker, spawn, workerBinary: "/fake" });
+    const { runId } = await watcher.handleRunRequested(taskId);
+    const diagnostics = {
+      last_tool_name: "journal_summary",
+      run_todo: {
+        used: true,
+        total: 4,
+        completed: 4,
+        open: 0,
+      },
+      structured_output_finalization_retry_attempts: 1,
+      structured_output_finalization_retry_failed: true,
+    };
+    const warnings = [{ kind: "worklab_result_validation", message: "missing final output" }];
+    db.prepare(`
+      UPDATE task_runs
+      SET status = 'error', process_status = 'failed', failure_kind = 'invalid_result',
+          error_text = ?, diagnostics_json = ?, warnings_json = ?
+      WHERE id = ?
+    `).run("missing final output", JSON.stringify(diagnostics), JSON.stringify(warnings), runId);
+
+    resolvers[0]({
+      exitCode: 1,
+      status: "error",
+      processStatus: "failed",
+      failureKind: "invalid_result",
+      error: "missing final output",
+      resultError: "missing final output",
+      diagnostics,
+      warnings,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn.mock.calls[1][0].diagnosticsSeed).toMatchObject({
+      continuation_of_run_id: runId,
+      continuation_reason: "finalisation",
+    });
+    const continuationRun = db.prepare("SELECT id, parent_run_id, diagnostics_json FROM task_runs WHERE parent_run_id = ?").get(runId);
+    expect(continuationRun.parent_run_id).toBe(runId);
+    expect(JSON.parse(continuationRun.diagnostics_json)).toMatchObject({
+      continuation_of_run_id: runId,
+      continuation_reason: "finalisation",
+    });
+    const originalDiagnostics = JSON.parse(db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId).diagnostics_json);
+    expect(originalDiagnostics).toMatchObject({
+      continuation_reason: "finalisation",
+      continuation_run_id: continuationRun.id,
+    });
+
+    const task = db.prepare("SELECT stage, stage_reason, error_text, last_failure_kind FROM tasks WHERE id = ?").get(taskId);
+    expect(task).toMatchObject({
+      stage: "execute",
+      stage_reason: "continuing after finalisation",
+      error_text: null,
+      last_failure_kind: "invalid_result",
+    });
+    const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Automatic finalisation%'").get(taskId);
+    expect(comment.body).toContain("Do NOT redo the work");
+  });
+
   it("continues usage-limit failures up to the configured continuation limit", async () => {
     const db = makeTestDb();
     writeSettings(db, { agent_recovery_continuation_limit: 2, max_failure_streak: 10 });

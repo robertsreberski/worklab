@@ -13,6 +13,7 @@ import { compactRecoveryRunSummary } from "./failure-classifier.js";
 import { modeForStage, safeParseJson } from "./run-handler.js";
 
 const PI_CODEX_WEBSOCKET_TRANSPORTS = new Set(["auto", "websocket", "websocket-cached"]);
+const FINALISATION_COMPLETION_TOOL_NAMES = new Set(["journal_summary", "worktree_sync", "todo_write"]);
 
 function websocketTransportFallback(diagnostics = {}, settings = {}) {
   const errorDetails = diagnostics.error_details || {};
@@ -113,14 +114,71 @@ export function createRecoveryContinuation({
     return new Set(warnings.map((warning) => warning?.kind || warning?.warning_kind || warning?.warningKind).filter(Boolean));
   }
 
+  function mergedDiagnostics(res, run) {
+    return {
+      ...safeParseJson(run?.diagnostics_json, {}),
+      ...(res?.diagnostics || {}),
+    };
+  }
+
+  function mergedWarnings(res, run) {
+    return [
+      ...safeParseJson(run?.warnings_json, []),
+      ...(Array.isArray(res?.warnings) ? res.warnings : []),
+    ];
+  }
+
+  function isMissingFinalOutput(...values) {
+    return values.some((value) => /missing final output/i.test(String(value || "")));
+  }
+
+  function completedRunTodo(value) {
+    if (!value || typeof value !== "object") return false;
+    const total = Number(value.total) || 0;
+    const completed = Number(value.completed) || 0;
+    const open = Number(value.open) || 0;
+    return value.used === true && total > 0 && completed >= total && open === 0;
+  }
+
+  function warningToolNames(warnings) {
+    const names = [];
+    for (const warning of warnings) {
+      const explicit = warning?.last_tool_name || warning?.lastToolName || warning?.tool_name || warning?.tool;
+      if (explicit) names.push(String(explicit));
+      const message = typeof warning?.message === "string" ? warning.message : "";
+      const match = /\blast tool:\s*([A-Za-z0-9_-]+)/i.exec(message);
+      if (match?.[1]) names.push(match[1]);
+    }
+    return names;
+  }
+
+  function hasCompletionSignal(diagnostics, warnings) {
+    const errorDetails = diagnostics.error_details || {};
+    const toolNames = [
+      diagnostics.last_tool_name,
+      diagnostics.lastToolName,
+      diagnostics.last_tool,
+      errorDetails.last_tool_name,
+      errorDetails.lastToolName,
+      ...warningToolNames(warnings),
+    ].filter(Boolean).map((name) => String(name));
+    if (toolNames.some((name) => FINALISATION_COMPLETION_TOOL_NAMES.has(name))) return true;
+    return completedRunTodo(diagnostics.run_todo);
+  }
+
+  function finalisationMissingFinalOutputFailure({ failureKind, res, run }) {
+    if (failureKind !== "invalid_result") return false;
+    if (!isMissingFinalOutput(res?.resultError, res?.error, run?.error_text)) return false;
+    const diagnostics = mergedDiagnostics(res, run);
+    const warnings = mergedWarnings(res, run);
+    return hasCompletionSignal(diagnostics, warnings);
+  }
+
   function schemaCorrectionFailure({ failureKind, res, run }) {
     if (failureKind === "invalid_delegation") return true;
     if (failureKind !== "invalid_result") return false;
     if (res?.resultError) return true;
-    const diagnostics = {
-      ...safeParseJson(run?.diagnostics_json, {}),
-      ...(res?.diagnostics || {}),
-    };
+    const diagnostics = mergedDiagnostics(res, run);
     const errorDetails = diagnostics.error_details || {};
     if (
       errorDetails.structured_output_retry_exhausted
@@ -129,10 +187,7 @@ export function createRecoveryContinuation({
     ) {
       return true;
     }
-    const kinds = warningKindSet([
-      ...safeParseJson(run?.warnings_json, []),
-      ...(Array.isArray(res?.warnings) ? res.warnings : []),
-    ]);
+    const kinds = warningKindSet(mergedWarnings(res, run));
     return kinds.has("worklab_result_validation")
       || kinds.has("review_result_parse")
       || kinds.has("unstructured_result_fallback");
@@ -142,15 +197,15 @@ export function createRecoveryContinuation({
     if (failureKind === "usage_limit") {
       return { reason: "usage_limit", providerInfo: null };
     }
+    if (finalisationMissingFinalOutputFailure({ failureKind, res, run })) {
+      return { reason: "finalisation", providerInfo: null };
+    }
     if (schemaCorrectionFailure({ failureKind, res, run })) {
       return { reason: "schema_correction", providerInfo: null };
     }
     if (failureKind !== "provider_unavailable") return null;
     if (settings.agent_provider_recovery_enabled === false) return null;
-    const diagnostics = {
-      ...safeParseJson(run?.diagnostics_json, {}),
-      ...(res?.diagnostics || {}),
-    };
+    const diagnostics = mergedDiagnostics(res, run);
     const providerInfo = diagnostics.retryable_provider_error
       ? {
           retryable: true,
@@ -302,8 +357,8 @@ export function createRecoveryContinuation({
         ]
       : recovery.reason === "finalisation"
       ? [
-          "The previous run already completed the work — committed the changes, called `journal_summary`, and the workdir is clean — but the provider connection dropped before it could emit the worklab.v2 envelope.",
-          "Do NOT redo the work. Inspect the workdir (`git status`, `git log -1`, the journal tail), confirm the work matches the task instructions, and emit a single `worklab.v2` JSON envelope reporting the existing commit hash.",
+          "The previous run appears to have completed the work but dropped before it could emit the worklab.v2 envelope.",
+          "Do NOT redo the work. Inspect the workdir (`git status`, `git log -1`, the journal tail), confirm the work matches the task instructions, and emit a single `worklab.v2` JSON envelope reporting any existing commit hash.",
           "If the workdir is dirty or the work is incomplete, emit a `worklab.v2` envelope with `decision: \"pause\"` and pending_actions describing what's missing — do not start a fresh implementation.",
         ]
       : [
