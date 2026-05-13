@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 
-let activeGuard = null;
+const activeGuards = [];
+let activeOverlayNavigationHandler = null;
 const allowedHashes = new Set();
 const LEGACY_ROUTE_ALIASES = {
   activity: ["runs"],
@@ -69,14 +70,22 @@ export function parseHashRoute(hash = "") {
 }
 
 export function registerNavigationGuard(guard) {
-  activeGuard = guard;
+  activeGuards.push(guard);
   return () => {
-    if (activeGuard === guard) activeGuard = null;
+    const index = activeGuards.indexOf(guard);
+    if (index !== -1) activeGuards.splice(index, 1);
   };
 }
 
 export function getNavigationGuard() {
-  return activeGuard;
+  return activeGuards[activeGuards.length - 1] || null;
+}
+
+export function registerOverlayNavigationHandler(handler) {
+  activeOverlayNavigationHandler = handler;
+  return () => {
+    if (activeOverlayNavigationHandler === handler) activeOverlayNavigationHandler = null;
+  };
 }
 
 export function allowHashNavigationOnce(hash) {
@@ -90,40 +99,66 @@ export function consumeAllowedHash(hash) {
   return true;
 }
 
-export function proceedToHash(hash) {
+export function proceedToHash(hash, options = {}) {
   const target = normalizeHash(hash);
+  if (!options.bypassOverlay && routeWithinOverlay(target)) return true;
   allowHashNavigationOnce(target);
   if (window.location.hash !== target) {
     window.location.hash = target;
   }
+  return true;
 }
 
-export function navigateHash(hash) {
+function routeWithinOverlay(target) {
+  return !!activeOverlayNavigationHandler?.(target);
+}
+
+function proceedToHashOrOverlay(hash) {
+  const target = normalizeHash(hash);
+  if (routeWithinOverlay(target)) return true;
+  return proceedToHash(target);
+}
+
+export function requestGuardedAction(action) {
+  const guard = getNavigationGuard();
+  if (guard?.isDirty?.()) {
+    guard.requestPrompt?.(null, action);
+    return false;
+  }
+  action?.();
+  return true;
+}
+
+export function navigateHash(hash, options = {}) {
   const target = normalizeHash(hash);
   const guard = getNavigationGuard();
   if (guard?.isDirty?.()) {
     guard.requestPrompt?.(target);
     return false;
   }
-  proceedToHash(target);
-  return true;
+  if (!options.bypassOverlay && routeWithinOverlay(target)) return true;
+  return proceedToHash(target, { bypassOverlay: options.bypassOverlay });
 }
 
 export function useUnsavedChangesGuard({ isDirty, onSave }) {
-  const [pendingHash, setPendingHash] = useState(null);
+  const [pendingRequest, setPendingRequest] = useState(null);
   const isDirtyRef = useRef(!!isDirty);
   isDirtyRef.current = !!isDirty;
+  const pendingHash = pendingRequest?.hash || null;
 
   useEffect(() => {
     if (!isDirty) {
-      setPendingHash(null);
+      setPendingRequest(null);
     }
   }, [isDirty]);
 
   useEffect(() => {
     const unregister = registerNavigationGuard({
       isDirty: () => !!isDirtyRef.current,
-      requestPrompt: (hash) => setPendingHash((current) => current || normalizeHash(hash)),
+      requestPrompt: (hash, action = null) => setPendingRequest((current) => current || {
+        hash: hash ? normalizeHash(hash) : null,
+        action,
+      }),
     });
     return unregister;
   }, []);
@@ -142,29 +177,31 @@ export function useUnsavedChangesGuard({ isDirty, onSave }) {
   const requestNavigation = useCallback((hash) => {
     const target = normalizeHash(hash);
     if (isDirtyRef.current) {
-      setPendingHash((current) => current || target);
+      setPendingRequest((current) => current || { hash: target, action: null });
       return false;
     }
-    proceedToHash(target);
+    proceedToHashOrOverlay(target);
     return true;
   }, []);
-  const keepEditing = useCallback(() => setPendingHash(null), []);
+  const keepEditing = useCallback(() => setPendingRequest(null), []);
   const discardAndLeave = useCallback(() => {
-    const target = pendingHash;
-    setPendingHash(null);
-    if (target) proceedToHash(target);
-  }, [pendingHash]);
+    const request = pendingRequest;
+    setPendingRequest(null);
+    if (request?.action) request.action();
+    else if (request?.hash) proceedToHashOrOverlay(request.hash);
+  }, [pendingRequest]);
   const saveAndLeave = useCallback(async () => {
-    const target = pendingHash;
-    if (!target) return;
+    const request = pendingRequest;
+    if (!request) return;
     await onSave?.();
-    setPendingHash(null);
-    proceedToHash(target);
-  }, [onSave, pendingHash]);
+    setPendingRequest(null);
+    if (request.action) request.action();
+    else if (request.hash) proceedToHashOrOverlay(request.hash);
+  }, [onSave, pendingRequest]);
 
   return {
     pendingHash,
-    promptOpen: !!pendingHash,
+    promptOpen: !!pendingRequest,
     requestNavigation,
     keepEditing,
     discardAndLeave,

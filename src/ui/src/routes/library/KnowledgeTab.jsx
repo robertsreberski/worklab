@@ -239,7 +239,7 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
         key={`${selectedSlug}:${mode || "create"}`}
         slug={selectedSlug}
         onSaved={() => { reload(); }}
-        onDeleted={() => { reload(); window.location.hash = "#/library/knowledge"; }}
+        onDeleted={() => { reload(); navigateHash("#/library/knowledge"); }}
         prefill={isEditing && selectedSlug === "new" ? routeQuery : null}
         tagSuggestions={tagSuggestions}
       />

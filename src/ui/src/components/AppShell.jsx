@@ -51,6 +51,7 @@ export const ROUTE_GROUPS = [
 export const ROUTES = ROUTE_GROUPS.flatMap((group) => group.routes);
 
 const AppChromeContext = createContext(null);
+export const AppShellEmbedContext = createContext(false);
 
 const TABBAR_ROUTES = [
   { id: "tasks", label: "Tasks", icon: "layout-list", href: "#/tasks" },
@@ -304,6 +305,7 @@ export function AppShell({
   sections,
   children,
 }) {
+  const embedded = useContext(AppShellEmbedContext);
   const [helpOpen, setHelpOpen] = useState(false);
   const [registeredChrome, setRegisteredChrome] = useState({});
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -338,14 +340,16 @@ export function AppShell({
   }, [route]);
 
   useEffect(() => {
+    if (embedded) return;
     window.localStorage?.setItem?.(ASSISTANT_PREF_KEY, assistantOpen ? "open" : "closed");
-  }, [assistantOpen]);
+  }, [assistantOpen, embedded]);
 
   useEffect(() => {
+    if (embedded) return;
     try {
       window.localStorage?.setItem?.(ASSISTANT_WIDTH_STORAGE_KEY, String(assistantWidth));
     } catch {}
-  }, [assistantWidth]);
+  }, [assistantWidth, embedded]);
 
   useEffect(() => {
     const updateViewportWidth = () => setViewportWidth(window.innerWidth);
@@ -379,19 +383,22 @@ export function AppShell({
   }
 
   useGlobalShortcuts({
-    "?": () => setHelpOpen(true),
-    "N": () => { navigateHash("#/tasks/new"); },
+    "?": () => { if (!embedded) setHelpOpen(true); },
+    "N": () => { if (!embedded) navigateHash("#/tasks/new"); },
     // Critique §08: ⌘\ summons the ambient assistant. Esc collapses.
-    "cmdbackslash": (event) => { event?.preventDefault?.(); setAssistantOpen((open) => !open); },
+    "cmdbackslash": (event) => { if (!embedded) { event?.preventDefault?.(); setAssistantOpen((open) => !open); } },
     "Escape": () => {
+      if (embedded) return;
       if (helpOpen) { setHelpOpen(false); return; }
       if (assistantOpen) setAssistantOpen(false);
     },
   });
   useEffect(() => {
+    if (embedded) return;
     ensureNotificationServiceWorker().catch(() => {});
-  }, []);
+  }, [embedded]);
   useSSE("global", (event) => {
+    if (embedded) return;
     maybeShowRunNotification(event, {
       onClick: (runEvent) => {
         const route = runNotificationRoute(runEvent);
@@ -400,6 +407,35 @@ export function AppShell({
       },
     });
   });
+
+  if (embedded) {
+    return (
+      <AppChromeContext.Provider value={chromeContext}>
+        <div class="app-embedded-shell" data-route={route || ""}>
+          {activeTopbar}
+          <div class="app-embedded-main">{children}</div>
+          {activeDock && (
+            <div class="app-mobile-action-dock mobile-action-dock entity-edit-mobile-dock" aria-label="Page actions">
+              {activeDock}
+            </div>
+          )}
+          <RightDrawer
+            open={drawerOpen}
+            onClose={() => setDrawerOpen(false)}
+            kicker={activeDrawerKicker}
+            title={activeDrawerTitle}
+          >
+            {activeDrawerContent}
+          </RightDrawer>
+          <SectionSheet
+            open={sectionSheetOpen}
+            onClose={() => setSectionSheetOpen(false)}
+            sections={activeSections}
+          />
+        </div>
+      </AppChromeContext.Provider>
+    );
+  }
 
   return (
     <AppChromeContext.Provider value={chromeContext}>

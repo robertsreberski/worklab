@@ -204,8 +204,8 @@ export function SkillsTab({ selectedName = null }) {
     <SkillEdit
       key={selectedName}
       name={selectedName}
-      onSaved={(name) => { reload(); if (selectedName === "new") window.location.hash = `#/library/skills/${encodeURIComponent(name)}`; }}
-      onDeleted={() => { reload(); window.location.hash = "#/library/skills"; }}
+      onSaved={(name) => { reload(); if (selectedName === "new") navigateHash(`#/library/skills/${encodeURIComponent(name)}`); }}
+      onDeleted={() => { reload(); navigateHash("#/library/skills"); }}
     />
   ) : (
       <div class="pane-empty">

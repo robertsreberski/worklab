@@ -14,6 +14,7 @@ export function Modal({
   class: className = "",
   closeOnBackdrop = true,
   ariaLabelledBy,
+  style,
 }) {
   const ref = useRef(null);
   const titleId = useId();
@@ -32,6 +33,7 @@ export function Modal({
       <div
         ref={ref}
         class={`modal ${size} ${className}`.trim()}
+        style={style}
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
