@@ -439,6 +439,10 @@ describe("resource list helpers", () => {
     const pathValueRule = cssRule(styles, ".resource-row-path-value");
     const projectWorkdirRowRule = cssRule(styles, ".project-workdir-row");
     const projectWorkdirValueRule = cssRule(styles, ".project-workdir-value");
+    const projectContextSectionRule = cssRule(styles, ".project-context-section");
+    const projectContextMetaGridRule = cssRule(styles, ".project-context-meta-grid");
+    const projectContextMetaRowRule = cssRule(styles, ".project-context-meta-grid .project-workdir-row");
+    const projectContextBodyRule = cssRule(styles, ".project-context-body");
     const metaRule = cssRule(styles, ".pane-row-meta");
     const summaryRule = cssRule(styles, ".pane-row-summary");
 
@@ -459,6 +463,11 @@ describe("resource list helpers", () => {
     expect(projectWorkdirRowRule).toContain("grid-template-columns: max-content minmax(0, 1fr) max-content");
     expect(projectWorkdirValueRule).toContain("overflow-wrap: anywhere");
     expect(projectWorkdirValueRule).toContain("word-break: normal");
+    expect(projectContextSectionRule).toContain("gap: var(--sp-4)");
+    expect(projectContextMetaGridRule).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
+    expect(projectContextMetaGridRule).toContain("gap: var(--sp-3)");
+    expect(projectContextMetaRowRule).toContain("margin: 0");
+    expect(projectContextBodyRule).toContain("padding-top: var(--sp-2)");
     expect(styles).toContain("container-name: entity-detail");
     expect(styles).toContain("@container entity-detail");
     expect(styles).toContain("container-name: project-detail");

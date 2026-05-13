@@ -758,38 +758,44 @@ function ProjectDetail({ selectedId, onChanged }) {
       <div class="pane-detail-body entity-detail-body project-detail-body">
         <div class="knowledge-read-layout project-read-layout">
           <main class="knowledge-read-main project-read-main">
-            <FormSection class="knowledge-read-section" aria-labelledby="project-details">
+            <FormSection class="project-context-section knowledge-read-section" aria-labelledby="project-details">
               <SectionMarker id="project-details" num="01" kicker="Context" meta="Run input" />
-              {project.description && <p class="soft-meta project-description">{project.description}</p>}
-              <div class="project-workdir-row">
-                <span class="project-workdir-label">Workdir</span>
-                <span class="project-workdir-value mono" title={project.workdir || undefined}>
-                  {project.workdir ? middleTruncatePath(project.workdir, 72) : "Default workspace"}
-                </span>
-                {project.workdir && (
-                  <Button
-                    variant="ghost"
-                    class="project-workdir-copy"
-                    iconLeft={<Icon name="copy" size={11} />}
-                    aria-label="Copy workdir"
-                    title="Copy workdir"
-                    onClick={() => {
-                      navigator.clipboard?.writeText(project.workdir).then(
-                        () => pushToast("Workdir copied", { variant: "success" }),
-                        () => pushToast("Copy failed", { variant: "error" }),
-                      );
-                    }}
-                  >
-                    Copy
-                  </Button>
-                )}
-              </div>
-              <div class="project-workdir-row">
-                <span class="project-workdir-label">Worktrees</span>
-                <span class="project-workdir-value">{worktreeModeLabel(project.worktree_mode)}</span>
+              {project.description && (
+                <div class="project-context-overview">
+                  <p class="soft-meta project-description">{project.description}</p>
+                </div>
+              )}
+              <div class="project-context-meta-grid">
+                <div class="project-workdir-row">
+                  <span class="project-workdir-label">Workdir</span>
+                  <span class="project-workdir-value mono" title={project.workdir || undefined}>
+                    {project.workdir ? middleTruncatePath(project.workdir, 72) : "Default workspace"}
+                  </span>
+                  {project.workdir && (
+                    <Button
+                      variant="ghost"
+                      class="project-workdir-copy"
+                      iconLeft={<Icon name="copy" size={11} />}
+                      aria-label="Copy workdir"
+                      title="Copy workdir"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(project.workdir).then(
+                          () => pushToast("Workdir copied", { variant: "success" }),
+                          () => pushToast("Copy failed", { variant: "error" }),
+                        );
+                      }}
+                    >
+                      Copy
+                    </Button>
+                  )}
+                </div>
+                <div class="project-workdir-row">
+                  <span class="project-workdir-label">Worktrees</span>
+                  <span class="project-workdir-value">{worktreeModeLabel(project.worktree_mode)}</span>
+                </div>
               </div>
               {project.repository_instructions?.recognized && (
-                <div class="project-repository-status" title={project.repository_instructions.path || undefined}>
+                <div class="project-context-repository project-repository-status" title={project.repository_instructions.path || undefined}>
                   <Chip variant="trigger" leading={<Icon name="file-text" size={10} />}>
                     {project.repository_instructions.filename} recognized
                   </Chip>
@@ -799,13 +805,15 @@ function ProjectDetail({ selectedId, onChanged }) {
                 </div>
               )}
               <ProjectGoalSummary goal={project.team_goal} onRun={runProjectGoal} running={runningGoal} />
-              {project.context?.trim() ? (
-                <article class="knowledge-read-article">
-                  <MarkdownContent content={project.context} className="markdown doc-content knowledge-read-markdown" expandable={false} mentions={mentions} />
-                </article>
-              ) : (
-                <div class="task-plan-empty">No project context yet.</div>
-              )}
+              <div class="project-context-body">
+                {project.context?.trim() ? (
+                  <article class="knowledge-read-article project-context-article">
+                    <MarkdownContent content={project.context} className="markdown doc-content knowledge-read-markdown" expandable={false} mentions={mentions} />
+                  </article>
+                ) : (
+                  <div class="task-plan-empty project-context-empty">No project context yet.</div>
+                )}
+              </div>
             </FormSection>
 
             <FormSection class="knowledge-read-section" aria-labelledby="project-tasks">

@@ -3250,14 +3250,31 @@ test("project detail keeps workdir metadata readable in the detail pane", async 
     await expect(page.locator(".pane-detail-head h2", { hasText: "Mobile Layout Project" })).toBeVisible();
     const metrics = await page.evaluate(() => {
       const layout = document.querySelector(".project-read-layout");
+      const contextSection = document.querySelector(".project-context-section");
+      const overview = document.querySelector(".project-context-overview");
+      const metaGrid = document.querySelector(".project-context-meta-grid");
+      const body = document.querySelector(".project-context-body");
       const row = document.querySelector(".project-workdir-row");
       const value = document.querySelector(".project-workdir-value");
       const layoutStyle = layout ? getComputedStyle(layout) : null;
+      const contextStyle = contextSection ? getComputedStyle(contextSection) : null;
+      const metaGridStyle = metaGrid ? getComputedStyle(metaGrid) : null;
+      const overviewRect = overview?.getBoundingClientRect();
+      const metaGridRect = metaGrid?.getBoundingClientRect();
+      const bodyRect = body?.getBoundingClientRect();
       const rowRect = row?.getBoundingClientRect();
       const valueRect = value?.getBoundingClientRect();
       return {
+        hasContextSection: !!contextSection,
+        hasOverview: !!overview,
+        hasMetaGrid: !!metaGrid,
+        hasBody: !!body,
         overflow: document.documentElement.scrollWidth - window.innerWidth,
         layoutColumns: layoutStyle?.gridTemplateColumns || "",
+        contextGap: contextStyle?.gap || "",
+        metaGridColumns: metaGridStyle?.gridTemplateColumns || "",
+        overviewToMetaGap: overviewRect && metaGridRect ? Math.round(metaGridRect.top - overviewRect.bottom) : -1,
+        metaToBodyGap: metaGridRect && bodyRect ? Math.round(bodyRect.top - metaGridRect.bottom) : -1,
         rowHeight: rowRect ? Math.round(rowRect.height) : 0,
         valueText: value?.textContent?.trim() || "",
         valueTitle: value?.getAttribute("title") || "",
@@ -3266,8 +3283,16 @@ test("project detail keeps workdir metadata readable in the detail pane", async 
       };
     });
 
+    expect(metrics.hasContextSection, `${viewport.label} context section wrapper`).toBe(true);
+    expect(metrics.hasOverview, `${viewport.label} context overview`).toBe(true);
+    expect(metrics.hasMetaGrid, `${viewport.label} context metadata grid`).toBe(true);
+    expect(metrics.hasBody, `${viewport.label} context body wrapper`).toBe(true);
     expect(metrics.overflow, `${viewport.label} project detail overflow`).toBeLessThanOrEqual(0);
     expect(metrics.layoutColumns.split(" ").length, `${viewport.label} project detail columns`).toBe(1);
+    expect(Number.parseFloat(metrics.contextGap), `${viewport.label} context section gap`).toBeGreaterThanOrEqual(12);
+    expect(metrics.metaGridColumns.split(" ").length, `${viewport.label} context metadata columns`).toBe(viewport.width >= 720 ? 2 : 1);
+    expect(metrics.overviewToMetaGap, `${viewport.label} overview to metadata spacing`).toBeGreaterThanOrEqual(8);
+    expect(metrics.metaToBodyGap, `${viewport.label} metadata to body spacing`).toBeGreaterThanOrEqual(12);
     expect(metrics.valueText, `${viewport.label} project detail path`).toContain("..");
     expect(metrics.valueTitle, `${viewport.label} project detail full path title`).toContain("repositories");
     expect(metrics.valueWidth, `${viewport.label} workdir value width`).toBeGreaterThan(140);
