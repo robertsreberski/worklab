@@ -881,7 +881,7 @@ function emptyDetail() {
   );
 }
 
-export function Goals({ selectedId = null, mode = null }) {
+export function Goals({ selectedId = null, mode = null, detailOnly = false }) {
   const [goals, setGoals] = useState([]);
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -1071,6 +1071,7 @@ export function Goals({ selectedId = null, mode = null }) {
         )}
         detail={body}
         listFirst
+        fullDetail={detailOnly && !!selectedId}
         class="resource-list-layout goals-layout"
       />
     </AppShell>

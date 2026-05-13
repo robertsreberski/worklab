@@ -15,11 +15,12 @@ export function Modal({
   closeOnBackdrop = true,
   ariaLabelledBy,
   style,
+  initialFocusRef,
 }) {
   const ref = useRef(null);
   const titleId = useId();
   const labelledBy = title ? (ariaLabelledBy || titleId) : undefined;
-  useFocusTrap(ref, { active: !!open, onEscape: onClose });
+  useFocusTrap(ref, { active: !!open, onEscape: onClose, initialFocusRef });
 
   if (!open) return null;
 

@@ -5,7 +5,7 @@ const FOCUSABLE = 'a[href], area[href], button:not([disabled]), input:not([disab
 // Traps Tab/Shift+Tab inside the ref'd element, and calls onEscape when
 // Escape is pressed. Focuses the first focusable on mount. Pass a ref
 // whose .current points at the root element of the trapped region.
-export function useFocusTrap(ref, { active = true, onEscape } = {}) {
+export function useFocusTrap(ref, { active = true, onEscape, initialFocusRef } = {}) {
   useEffect(() => {
     if (!active) return;
     const root = ref.current;
@@ -19,8 +19,13 @@ export function useFocusTrap(ref, { active = true, onEscape } = {}) {
 
     // Focus first focusable on mount (if nothing inside already has focus).
     if (!root.contains(document.activeElement)) {
-      const first = focusables()[0];
-      if (first) first.focus();
+      const initial = initialFocusRef?.current;
+      if (initial && root.contains(initial)) {
+        initial.focus();
+      } else {
+        const first = focusables()[0];
+        if (first) first.focus();
+      }
     }
 
     function onKeyDown(e) {
@@ -48,5 +53,5 @@ export function useFocusTrap(ref, { active = true, onEscape } = {}) {
       root.removeEventListener("keydown", onKeyDown);
       if (previouslyFocused && previouslyFocused.focus) previouslyFocused.focus();
     };
-  }, [active, onEscape, ref]);
+  }, [active, initialFocusRef, onEscape, ref]);
 }

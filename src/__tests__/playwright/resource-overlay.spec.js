@@ -79,6 +79,16 @@ test.beforeAll(async () => {
   ).run("overlay-agent", "Overlay Agent", now, now);
   db.close();
 
+  await requestJson("/api/projects", {
+    method: "POST",
+    body: {
+      name: "Overlay Project",
+      slug: "overlay-project",
+      context: Array.from({ length: 80 }, (_, index) => `Overlay project context line ${index + 1}.`).join("\n"),
+    },
+    ok: [201],
+  });
+
   const created = await requestJson("/api/tasks", {
     method: "POST",
     body: { title: "Overlay badge task", instructions: "Exercise resource overlay badge clicks." },
@@ -87,7 +97,7 @@ test.beforeAll(async () => {
   taskId = created.task.id;
   await requestJson(`/api/tasks/${taskId}/comments`, {
     method: "POST",
-    body: { body: "Ask @agent/overlay-agent to review this." },
+    body: { body: "Ask @agent/overlay-agent to review @project/overlay-project." },
     ok: [201],
   });
 });
@@ -114,11 +124,41 @@ test("entity badge clicks open a resource overlay without changing the URL", asy
 
   await expect(page.locator(".resource-overlay-modal")).toBeVisible();
   await expect(page.locator(".resource-overlay-modal")).toContainText("Overlay Agent");
+  await expect(page.locator(".resource-overlay-modal .library-route-tabs")).toHaveCount(0);
   expect(page.url()).toBe(startingUrl);
 
   await page.locator(".resource-overlay-modal .modal-head").getByRole("button", { name: "Close" }).click();
   await expect(page.locator(".resource-overlay-modal")).toHaveCount(0);
   expect(page.url()).toBe(startingUrl);
+});
+
+test("resource overlay shows only the resource detail view for project badges", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/tasks/${taskId}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".activity-item-body .entity-badge--project")).toBeVisible();
+
+  await page.locator(".activity-item-body .entity-badge--project").click();
+
+  await expect(page.locator(".resource-overlay-modal")).toBeVisible();
+  await expect(page.locator(".resource-overlay-modal")).toContainText("Overlay Project");
+  await expect(page.locator(".resource-overlay-modal .pane-list")).toHaveCount(0);
+  await expect(page.locator(".resource-overlay-modal .project-pane-row")).toHaveCount(0);
+  await expect(page.locator(".resource-overlay-modal .project-detail-body")).toBeVisible();
+});
+
+test("resource overlay scroll container receives focus and scrolls detail content", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/tasks/${taskId}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".activity-item-body .entity-badge--project")).toBeVisible();
+
+  await page.locator(".activity-item-body .entity-badge--project").click();
+
+  const scroll = page.locator(".resource-overlay-scroll");
+  await expect(scroll).toBeFocused();
+  await expect(scroll).toBeVisible();
+  await expect(page.locator(".resource-overlay-modal .project-detail-body")).toBeVisible();
+
+  await expect.poll(async () => scroll.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+  await scroll.press("PageDown");
+  await expect.poll(async () => scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
 });
 
 test("resource overlay open-page action navigates to the full route", async ({ page }) => {

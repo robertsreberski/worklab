@@ -891,7 +891,7 @@ function ProjectDetail({ selectedId, onChanged }) {
   );
 }
 
-export function Projects({ selectedId = null, mode = null }) {
+export function Projects({ selectedId = null, mode = null, detailOnly = false }) {
   const [projects, setProjects] = useState([]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("active");
@@ -1069,6 +1069,7 @@ export function Projects({ selectedId = null, mode = null }) {
         hasSelection={!!selectedId}
         detailOwnsMobileBack={!!selectedId}
         listFirst
+        fullDetail={detailOnly && !!selectedId}
         class="resource-list-layout"
         onBack={() => navigateHash("#/projects")}
         backLabel="All projects"

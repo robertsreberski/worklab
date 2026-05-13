@@ -2372,6 +2372,52 @@ a.badge-token:focus-visible {
   justify-content: flex-end;
   gap: var(--sp-2);
 }
+.resource-overlay-modal {
+  width: min(1120px, calc(100vw - 32px));
+  height: min(860px, calc(100vh - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+}
+.resource-overlay-modal .modal-body {
+  flex: 1;
+  min-height: 0;
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+}
+.resource-overlay-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scroll-padding: var(--sp-5);
+  background: var(--bg);
+}
+.resource-overlay-scroll:focus-visible {
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+.resource-overlay-scroll .app-embedded-shell,
+.resource-overlay-scroll .app-embedded-main,
+.resource-overlay-scroll .library-page,
+.resource-overlay-scroll .library-tab-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.resource-overlay-scroll .app-embedded-main,
+.resource-overlay-scroll .library-tab-body {
+  flex: 1;
+}
+.resource-overlay-scroll .two-pane {
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
+}
+.resource-overlay-scroll .pane-detail {
+  min-height: auto;
+  overflow: visible;
+}
 
 /* §4.11 Drawer */
 .drawer-backdrop {
@@ -11872,6 +11918,11 @@ button.settings-overview-card:focus-visible,
     width: 100%;
     max-height: min(86vh, 640px);
     border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+  .resource-overlay-modal {
+    width: 100%;
+    height: min(86vh, 640px);
+    max-height: min(86vh, 640px);
   }
   .modal::before {
     content: "";

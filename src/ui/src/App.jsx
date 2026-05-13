@@ -62,13 +62,13 @@ function RouteFallback() {
 
 function ResourceOverlayBody({ target }) {
   if (target.route === "library") {
-    return <Library tab={target.tab || "agents"} rest={target.rest} query={target.query} />;
+    return <Library tab={target.tab || "agents"} rest={target.rest} query={target.query} detailOnly />;
   }
   if (target.route === "projects") {
-    return <Projects selectedId={target.rest[0] || null} mode={target.rest[1] || null} />;
+    return <Projects selectedId={target.rest[0] || null} mode={target.rest[1] || null} detailOnly />;
   }
   if (target.route === "goals") {
-    return <Goals selectedId={target.rest[0] || null} mode={target.rest[1] || null} />;
+    return <Goals selectedId={target.rest[0] || null} mode={target.rest[1] || null} detailOnly />;
   }
   if (target.route === "tasks") {
     if (target.rest[1] === "edit") {
@@ -83,6 +83,8 @@ function ResourceOverlayBody({ target }) {
 }
 
 function ResourceOverlay({ target, onClose, onOpenPage }) {
+  const scrollRef = useRef(null);
+
   return (
     <Modal
       open={!!target}
@@ -90,7 +92,7 @@ function ResourceOverlay({ target, onClose, onOpenPage }) {
       title={`${target.title} details`}
       size="lg"
       class="resource-overlay-modal"
-      style={{ width: "min(1120px, calc(100vw - 32px))" }}
+      initialFocusRef={scrollRef}
       footer={(
         <>
           <Button variant="secondary" onClick={onOpenPage}>Open page</Button>
@@ -98,11 +100,18 @@ function ResourceOverlay({ target, onClose, onOpenPage }) {
         </>
       )}
     >
-      <AppShellEmbedContext.Provider value>
-        <Suspense fallback={<RouteFallback />}>
-          <ResourceOverlayBody target={target} />
-        </Suspense>
-      </AppShellEmbedContext.Provider>
+      <div
+        ref={scrollRef}
+        class="resource-overlay-scroll wl-scrollbar"
+        tabIndex={0}
+        aria-label={`${target.title} resource detail`}
+      >
+        <AppShellEmbedContext.Provider value>
+          <Suspense fallback={<RouteFallback />}>
+            <ResourceOverlayBody target={target} />
+          </Suspense>
+        </AppShellEmbedContext.Provider>
+      </div>
     </Modal>
   );
 }
