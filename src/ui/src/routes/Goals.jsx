@@ -225,6 +225,24 @@ function leadCycleDetailTexts(cycle = {}, decision = "") {
     .filter((item, index, items) => item !== decision && items.indexOf(item) === index);
 }
 
+function leadCycleImpactStats(cycle = {}) {
+  return [
+    { key: "created", label: "Created", value: Number(cycle?.tasks_created ?? 0) || 0 },
+    { key: "assigned", label: "Assigned", value: Number(cycle?.tasks_assigned ?? 0) || 0 },
+    { key: "deleted", label: "Deleted", value: Number(cycle?.tasks_deleted ?? 0) || 0 },
+    { key: "skipped", label: "Skipped", value: Number(cycle?.tasks_skipped ?? 0) || 0 },
+    { key: "comments", label: "Comments", value: Number(cycle?.notes_posted ?? 0) || 0 },
+  ];
+}
+
+export function goalLeadTaskDisplay(task = {}) {
+  const title = text(task.title) || "Untitled task";
+  return {
+    badgeLabel: text(task.task_key) || "Task",
+    title,
+  };
+}
+
 function objectValue(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
@@ -312,6 +330,7 @@ export function goalCockpitSummary(goal = {}, { now = Date.now() } = {}) {
   const leadTasks = Array.isArray(goal?.lead_tasks) ? goal.lead_tasks : [];
   const decisionCycle = rows.find((row) => leadCycleDecisionText(row)) || null;
   const latestDecision = decisionCycle ? leadCycleDecisionText(decisionCycle) : "";
+  const impactCycle = decisionCycle || latest || null;
   return {
     latest,
     decisionCycle,
@@ -324,13 +343,9 @@ export function goalCockpitSummary(goal = {}, { now = Date.now() } = {}) {
       { label: "Last review", value: goal.last_lead_at ? relativeTime(goal.last_lead_at) : "None" },
       { label: "Next review", value: nextReview },
     ],
-    ledger: [
-      { key: "created", label: "Created", value: Number(latest?.tasks_created ?? goal?.latest_cycle?.tasks_created ?? 0) || 0 },
-      { key: "assigned", label: "Assigned", value: Number(latest?.tasks_assigned ?? goal?.latest_cycle?.tasks_assigned ?? 0) || 0 },
-      { key: "deleted", label: "Deleted", value: Number(latest?.tasks_deleted ?? goal?.latest_cycle?.tasks_deleted ?? 0) || 0 },
-      { key: "skipped", label: "Skipped", value: Number(latest?.tasks_skipped ?? goal?.latest_cycle?.tasks_skipped ?? 0) || 0 },
-      { key: "comments", label: "Comments", value: Number(latest?.notes_posted ?? goal?.latest_cycle?.notes_posted ?? 0) || 0 },
-    ],
+    impactCycle,
+    impactLabel: decisionCycle ? "Last decision impact" : "Latest lead-cycle impact",
+    impact: leadCycleImpactStats(impactCycle),
   };
 }
 
@@ -613,13 +628,19 @@ function LeadCycleCockpit({ goal }) {
             <p key={detail} class={index > 0 ? "muted" : undefined} title={detail}>{detail}</p>
           ))}
         </div>
-        <div class="goal-cockpit-ledger" aria-label="Lead cycle task changes">
-          {cockpit.ledger.map((item) => (
-            <div class={`goal-cockpit-ledger-item is-${item.key}${item.value > 0 ? " has-value" : ""}`} key={item.key}>
-              <span>{item.label}</span>
-              <strong>{item.value}</strong>
-            </div>
-          ))}
+        <div class="goal-cockpit-impact" aria-label={cockpit.impactLabel}>
+          <div class="goal-cockpit-impact-head">
+            <span>{cockpit.impactLabel}</span>
+            {cockpit.impactCycle?.started_label ? <span>{cockpit.impactCycle.started_label}</span> : null}
+          </div>
+          <div class="goal-cockpit-impact-grid">
+            {cockpit.impact.map((item) => (
+              <div class={`goal-cockpit-impact-item is-${item.key}${item.value > 0 ? " has-value" : ""}`} key={item.key}>
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+              </div>
+            ))}
+          </div>
         </div>
         <div class="goal-lead-roster">
           <div class="goal-roster-head">
@@ -628,14 +649,17 @@ function LeadCycleCockpit({ goal }) {
           </div>
           {cockpit.leadTasks.length ? (
             <ul>
-              {cockpit.leadTasks.map((task) => (
-                <li key={task.id}>
-                  <EntityBadge kind="task" label={task.title || "Unknown"} href={`#/tasks/${encodeURIComponent(task.id)}`} />
-                  <span>{task.title}</span>
-                  <Chip variant="muted">{String(task.stage || "task").replace("_", " ")}</Chip>
-                  {task.owner_agent ? <span class="muted">{task.owner_agent}</span> : null}
-                </li>
-              ))}
+              {cockpit.leadTasks.map((task) => {
+                const display = goalLeadTaskDisplay(task);
+                return (
+                  <li key={task.id}>
+                    <EntityBadge kind="task" label={display.badgeLabel} href={`#/tasks/${encodeURIComponent(task.id)}`} />
+                    <span>{display.title}</span>
+                    <Chip variant="muted">{String(task.stage || "task").replace("_", " ")}</Chip>
+                    {task.owner_agent ? <span class="muted">{task.owner_agent}</span> : null}
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <p class="muted">No open goal work.</p>
