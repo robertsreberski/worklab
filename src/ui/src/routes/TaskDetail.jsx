@@ -28,12 +28,11 @@ import { EntityBadge } from "../components/EntityBadge.jsx";
 import { FormSection } from "../components/FormSection.jsx";
 import { LiveRunPanel } from "../components/LiveRunPanel.jsx";
 import { StatusMenu } from "../components/StatusMenu.jsx";
-import { Modal } from "../components/Modal.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
 import { AttachmentChips } from "../components/AttachmentChips.jsx";
 import { Checkbox } from "../components/primitives/Checkbox.jsx";
-import { ActionDock, DetailHead, InlineHead, SectionGroup, SectionMarker, SectionStack, Toolbar } from "../components/layout/index.js";
+import { DetailHead, InlineHead, SectionMarker, Toolbar } from "../components/layout/index.js";
 import { StructuredContent } from "../components/StructuredContent.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
 import { navigateHash } from "../lib/navigation.js";
@@ -42,25 +41,24 @@ import { attachmentPayload, imageFilesFromTransfer, transferHasFiles, uploadedAt
 import { ActivityRailDot, buildActivity, commentAuthorLabel } from "./task-detail/activity.jsx";
 import { readTaskDetailCache, writeTaskDetailCache } from "./task-detail/summaryCache.js";
 import {
-  DEFAULT_RUN_POLICY,
   TASK_DETAIL_SECTIONS,
   formatActivityTime,
   formatDate,
   projectRouteId,
 } from "./task-detail/format.js";
-import { RunCard, RunArtifactsSection } from "./task-detail/RunCards.jsx";
+import { RunCard } from "./task-detail/RunCards.jsx";
 import { RunInputPreviewModal } from "./task-detail/RunInputPreviewModal.jsx";
 import { formatRunPreviewForCopy } from "./task-detail/runPreview.js";
+import { TaskDetailModals } from "./task-detail/TaskDetailModals.jsx";
 import {
-  AgentRailRow,
   TaskAutomationsCard,
-  TaskContextList,
   TaskParentReference,
   TaskPendingQuestionsCard,
   TaskPlanCard,
   TaskSubtasksCard,
   TaskWorkflowMeta,
 } from "./task-detail/WorkflowCards.jsx";
+import { TaskRail } from "./task-detail/TaskRail.jsx";
 
 export {
   clearTaskDetailCache,
@@ -71,40 +69,6 @@ export {
 } from "./task-detail/summaryCache.js";
 
 const TASK_DETAIL_INITIAL_RUN_LIMIT = 20;
-
-function dependencyContextLabel(dependency) {
-  const latest = dependency?.latest_execute_run;
-  const artifacts = dependency?.artifact_summary || {};
-  const parts = [];
-  if (latest?.summary) {
-    parts.push(latest.summary);
-  } else if (latest?.id) {
-    parts.push(`Latest execute ${latest.status || latest.process_status || "recorded"}`);
-  } else if ((dependency?.stage || "plan") === "done") {
-    parts.push("No execute run recorded");
-  }
-  const files = Number(artifacts.files || 0);
-  if (files > 0) {
-    const added = Number(artifacts.added_lines || 0);
-    const removed = Number(artifacts.removed_lines || 0);
-    const delta = added || removed ? `, +${added} -${removed}` : "";
-    parts.push(`${files} file${files === 1 ? "" : "s"}${delta}`);
-  }
-  return parts.join(" - ");
-}
-
-function DependencyLink({ dependency }) {
-  const context = dependencyContextLabel(dependency);
-  return (
-    <a key={dependency.id} class="blocked-link dependency-link" href={`#/tasks/${taskRouteId(dependency)}`}>
-      <span class="dependency-link-copy">
-        <EntityBadge kind="task" label={dependency.title} />
-        {context && <span class="dependency-link-meta">{context}</span>}
-      </span>
-      <StatusPill status={dependency.stage || "plan"} size="sm" />
-    </a>
-  );
-}
 
 export function TaskDetail({ id, runParam = null }) {
   const [data, setData] = useState(() => readTaskDetailCache(id));
@@ -869,129 +833,20 @@ export function TaskDetail({ id, runParam = null }) {
   );
   const hasRailDependencies = ((task?.blocked_by || []).length > 0 || (task?.blocks || []).length > 0);
   const railCardCount = 3;
+  const taskRail = task ? (
+    <TaskRail
+      task={task}
+      agents={agents}
+      hasRailDependencies={hasRailDependencies}
+      runningRun={runningRun}
+      runningRunStream={runningRunStream}
+      onAssigneeChange={updateAssignee}
+      onDelete={() => setDeleteOpen(true)}
+    />
+  ) : null;
   const detailSubBar = task && (
     <MobilePillRow railLabel="Details" railCount={railCardCount} sections={TASK_DETAIL_SECTIONS} />
   );
-
-  function renderTaskRail() {
-    if (!task) return null;
-    return (
-      <div class="task-detail-rail-content">
-        <Card variant="spacious" kicker="Assignment" title="Roles" class="rail-agents-card">
-          <SectionStack class="rail-agents-stack">
-            <AgentRailRow
-              role="owner"
-              value={task.owner_agent || ""}
-              onChange={(value) => updateAssignee("owner_agent", value)}
-              agents={agents}
-              caption={task.owner_agent ? "Runs work" : undefined}
-            />
-            <AgentRailRow
-              role="planner"
-              value={task.planner_agent || ""}
-              onChange={(value) => updateAssignee("planner_agent", value)}
-              agents={agents}
-            />
-            <AgentRailRow
-              role="reviewer"
-              value={task.reviewer_agent || ""}
-              onChange={(value) => updateAssignee("reviewer_agent", value)}
-              agents={agents}
-            />
-          </SectionStack>
-        </Card>
-
-        <Card variant="spacious" kicker="Context" title="Metadata" class="task-metadata-card task-context-card">
-          <TaskContextList task={task} />
-          {hasRailDependencies && (
-            <SectionGroup as="div" class="task-dependencies-section" label={<span class="all-caps">Dependencies</span>}>
-              {(task.blocked_by || []).length > 0 && (
-                <SectionGroup
-                  as="div"
-                  class="dependency-group"
-                  label={<span class="all-caps">Blocked by</span>}
-                  count={(task.blocked_by || []).length}
-                >
-                  {(task.blocked_by || []).map((dependency) => (
-                    <DependencyLink key={dependency.id} dependency={dependency} />
-                  ))}
-                </SectionGroup>
-              )}
-              {(task.blocks || []).length > 0 && (
-                <SectionGroup
-                  as="div"
-                  class="dependency-group"
-                  label={<span class="all-caps">Blocks</span>}
-                  count={(task.blocks || []).length}
-                >
-                  {(task.blocks || []).map((dependency) => (
-                    <DependencyLink key={dependency.id} dependency={dependency} />
-                  ))}
-                </SectionGroup>
-              )}
-            </SectionGroup>
-          )}
-          <RunArtifactsSection task={task} runningRun={runningRun} streamState={runningRunStream} />
-        </Card>
-
-        <Card variant="spacious" kicker="Actions" title="Maintenance" class="task-maintenance-card">
-          <ActionDock
-            class="task-actions-stack"
-            secondary={(
-              <Button
-                variant="secondary"
-                iconLeft={<Icon name="database" size={13} />}
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(taskDisplayKey(task));
-                    pushToast("Task key copied", { variant: "success" });
-                  } catch {
-                    pushToast("Copy failed", { variant: "error" });
-                  }
-                }}
-              >
-                Copy task key
-              </Button>
-            )}
-            overflow={(
-              <Button
-                variant="secondary"
-                iconLeft={<Icon name="copy" size={13} />}
-                onClick={async () => {
-                  try {
-                    const copy = {
-                      title: `Copy of ${task.title}`,
-                      instructions: task.instructions,
-                      owner_agent: task.owner_agent,
-                      planner_agent: task.planner_agent,
-                      reviewer_agent: task.reviewer_agent,
-                      run_policy: task.run_policy || DEFAULT_RUN_POLICY,
-                      project_id: task.project_id || null,
-                      tags: task.tags,
-                    };
-                    const r = await api.createTask(copy);
-                    pushToast("Task duplicated", { variant: "success" });
-                    navigateHash(`#/tasks/${taskRouteId(r.task)}`);
-                  } catch (err) { pushToast(`Duplicate failed: ${err.message}`, { variant: "error" }); }
-                }}
-              >
-                Duplicate
-              </Button>
-            )}
-            primary={(
-              <Button
-                variant="destructive"
-                iconLeft={<Icon name="trash" size={13} />}
-                onClick={() => setDeleteOpen(true)}
-              >
-                Delete task
-              </Button>
-            )}
-          />
-        </Card>
-      </div>
-    );
-  }
 
   // §5.9 keyboard: ⌘Enter triggers primary, E opens edit
   useGlobalShortcuts({
@@ -1045,7 +900,7 @@ export function TaskDetail({ id, runParam = null }) {
       mobileTopbar={<MobileTopbar title={taskKeyLabel} backLabel="Tasks" onBack={() => navigateHash("#/tasks")} />}
       drawerTitle="Details"
       drawerKicker={taskKeyLabel}
-      drawerContent={renderTaskRail()}
+      drawerContent={taskRail}
       sections={TASK_DETAIL_SECTIONS}
     >
       <div class="task-detail-shell editor-shell">
@@ -1304,61 +1159,23 @@ export function TaskDetail({ id, runParam = null }) {
           </div>
 
           <aside class="task-detail-rail editor-rail">
-            {renderTaskRail()}
+            {taskRail}
           </aside>
         </div>
       </div>
 
-      {/* Stage-transition confirm modal */}
-      <Modal
-        open={!!statusModal}
-        onClose={() => setStatusModal(null)}
-        title="Confirm stage change"
-        size="sm"
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setStatusModal(null)}>Cancel</Button>
-            <Button variant="primary" onClick={() => {
-              const t = statusModal;
-              setStatusModal(null);
-              applyStatusTransition(t);
-            }}>Confirm</Button>
-          </>
-        }
-      >
-        <p>{statusModal?.confirm || ""}</p>
-      </Modal>
-
-      {/* Delete task modal */}
-      <Modal
-        open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
-        title="Delete task?"
-        size="sm"
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => { setDeleteOpen(false); destroy(); }}>Delete</Button>
-          </>
-        }
-      >
-        <p>This permanently removes the task and its runs. This action cannot be undone.</p>
-      </Modal>
-
-      <Modal
-        open={!!commentDeleteTarget}
-        onClose={() => !commentDeleting && setCommentDeleteTarget(null)}
-        title="Delete comment?"
-        size="sm"
-        footer={
-          <>
-            <Button variant="ghost" disabled={commentDeleting} onClick={() => setCommentDeleteTarget(null)}>Cancel</Button>
-            <Button variant="destructive" loading={commentDeleting} onClick={deleteComment}>Delete</Button>
-          </>
-        }
-      >
-        <p>This permanently removes this human comment from the task and future run prompts.</p>
-      </Modal>
+      <TaskDetailModals
+        statusModal={statusModal}
+        setStatusModal={setStatusModal}
+        applyStatusTransition={applyStatusTransition}
+        deleteOpen={deleteOpen}
+        setDeleteOpen={setDeleteOpen}
+        destroy={destroy}
+        commentDeleteTarget={commentDeleteTarget}
+        commentDeleting={commentDeleting}
+        setCommentDeleteTarget={setCommentDeleteTarget}
+        deleteComment={deleteComment}
+      />
 
       <RunInputPreviewModal
         open={runPreviewOpen}

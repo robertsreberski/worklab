@@ -4,12 +4,9 @@ import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { useAppResume } from "../lib/pageVisibility.js";
-import { AppShell } from "../components/AppShell.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { Select } from "../components/primitives/Select.jsx";
-import { Tabs } from "../components/primitives/Tabs.jsx";
 import { ProvidersTab } from "./settings/ProvidersTab.jsx";
-import { navigateHash } from "../lib/navigation.js";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Button } from "../components/primitives/Button.jsx";
@@ -21,7 +18,7 @@ import { Banner } from "../components/Banner.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { ControlGroup, ControlGroupStack, InlineHead, PageHeader, PanelGrid, SectionStack, Toolbar } from "../components/layout/index.js";
+import { ControlGroup, ControlGroupStack, InlineHead, PanelGrid, SectionStack, Toolbar } from "../components/layout/index.js";
 import {
   disableNotifications,
   notificationSettings,
@@ -44,7 +41,6 @@ import {
   jsonEqual,
   mcpAvailabilitySummary,
   mcpRowsFromServers,
-  mcpServerFromRow,
   mcpServersFromRows,
   minutesValue,
   modelSelectOptions,
@@ -63,8 +59,19 @@ import {
   slackUserMatchesBot,
   textFromList,
 } from "./settings/helpers.js";
-
-const MCP_HEALTH_ALL_KEY = "__all";
+import {
+  AboutTab,
+  SETTINGS_TAB_ORDER,
+  SettingsRouteShell,
+} from "./settings/SettingsShell.jsx";
+import {
+  MCP_HEALTH_ALL_KEY,
+  buildMcpHealthDraft,
+  mcpHealthBuiltinKey,
+  mcpHealthDetail,
+  mcpHealthMeta,
+  mcpHealthRowKey,
+} from "./settings/mcpHealth.js";
 
 const SETTINGS_SECTION_LINKS = [
   { id: "settings-runtime", label: "Service", icon: "settings" },
@@ -75,176 +82,6 @@ const SETTINGS_SECTION_LINKS = [
   { id: "settings-search", label: "Search", icon: "database" },
   { id: "settings-tools", label: "MCP tools", icon: "terminal" },
 ];
-
-function mcpHealthRowKey(id) {
-  return `row:${id}`;
-}
-
-function mcpHealthBuiltinKey(name) {
-  return `builtin:${name}`;
-}
-
-function localMcpHealthError(row, message) {
-  return {
-    name: row.name || "Draft",
-    source: "draft",
-    transport: row.transport || "stdio",
-    health: "error",
-    static_available: false,
-    message,
-    duration_ms: 0,
-    tool_count: 0,
-    tools_preview: [],
-  };
-}
-
-function mcpHealthMeta(result) {
-  if (!result) return null;
-  if (result.health === "ok") return { status: "enabled", label: "Healthy" };
-  return { status: "error", label: "Check failed" };
-}
-
-function mcpHealthDetail(result) {
-  if (!result) return "";
-  const parts = [result.message || (result.health === "ok" ? "Connected" : "Health check failed")];
-  if (Number.isFinite(Number(result.duration_ms))) parts.push(`${Math.round(Number(result.duration_ms))}ms`);
-  if (result.health === "ok" && result.tools_preview?.length) {
-    parts.push(`Tools: ${result.tools_preview.join(", ")}`);
-  }
-  return parts.filter(Boolean).join(" / ");
-}
-
-function buildMcpHealthDraft(rows = []) {
-  const servers = {};
-  const rowByName = new Map();
-  const rowsByName = new Map();
-  const errors = {};
-  for (const row of rows) {
-    try {
-      const { name, config } = mcpServerFromRow(row);
-      const duplicate = rowsByName.get(name);
-      if (duplicate) {
-        const message = `Duplicate MCP server name: ${name}`;
-        errors[mcpHealthRowKey(duplicate.id)] = localMcpHealthError(duplicate, message);
-        errors[mcpHealthRowKey(row.id)] = localMcpHealthError(row, message);
-        delete servers[name];
-        rowByName.delete(name);
-        continue;
-      }
-      rowsByName.set(name, row);
-      rowByName.set(name, row.id);
-      servers[name] = config;
-    } catch (err) {
-      errors[mcpHealthRowKey(row.id)] = localMcpHealthError(row, err.message || String(err));
-    }
-  }
-  return { servers, rowByName, errors };
-}
-
-const SETTINGS_TAB_ORDER = ["general", "providers", "about"];
-const SETTINGS_TAB_LABELS = { general: "General", providers: "Providers", about: "About" };
-
-function SettingsTabs({ activeTab }) {
-  return (
-    <Tabs
-      value={activeTab}
-      onChange={(next) => navigateHash(next === "general" ? "#/settings" : `#/settings/${next}`)}
-      tabs={SETTINGS_TAB_ORDER.map((id) => ({ value: id, label: SETTINGS_TAB_LABELS[id] }))}
-      ariaLabel="Settings tabs"
-      class="settings-tabs tabs-pills"
-    />
-  );
-}
-
-function SettingsRouteShell({
-  activeTab,
-  title,
-  description,
-  actions = null,
-  mobileActionDock = null,
-  compact = false,
-  class: className = "",
-  children,
-}) {
-  const routeClass = [
-    "settings-page",
-    "settings-route-shell",
-    compact ? "settings-route-compact" : "",
-    className,
-  ].filter(Boolean).join(" ");
-
-  return (
-    <AppShell route="settings" mobileActionDock={mobileActionDock}>
-      <div class={routeClass}>
-        <PageHeader
-          kicker="Settings"
-          title={title}
-          description={description}
-          actions={actions}
-          tabs={<SettingsTabs activeTab={activeTab} />}
-        />
-        <div class="settings-route-content">
-          {children}
-        </div>
-      </div>
-    </AppShell>
-  );
-}
-
-function AboutTab() {
-  return (
-    <div class="settings-about">
-      <section class="settings-about-hero" aria-labelledby="settings-about-title">
-        <div class="settings-about-hero-copy">
-          <span class="form-section-kicker">Local command center</span>
-          <h2 id="settings-about-title">Worklab</h2>
-          <p>
-            A private workbench for planning, running, and reviewing agent work
-            against local projects and tools.
-          </p>
-          <div class="settings-about-stat-grid">
-            <div class="settings-about-stat">
-              <Icon name="lock" size={15} />
-              <span>Local runtime</span>
-            </div>
-            <div class="settings-about-stat">
-              <Icon name="terminal" size={15} />
-              <span>Full tool visibility</span>
-            </div>
-            <div class="settings-about-stat">
-              <Icon name="book" size={15} />
-              <span>Project memory</span>
-            </div>
-          </div>
-        </div>
-        <figure class="settings-about-visual">
-          <img src="/about/worklab-about-hero.png" alt="" loading="lazy" />
-        </figure>
-      </section>
-      <PanelGrid class="settings-about-grid">
-        <SettingPanel icon="sparkles" title="Operating model" meta="Single-user orchestration">
-          <p>
-            Runs, providers, agents, projects, memory, and MCP tools stay visible
-            from one local control surface.
-          </p>
-        </SettingPanel>
-        <SettingPanel icon="clock" title="Runtime posture" meta="Observable by default">
-          <p>
-            Worklab favors explicit state, live logs, saved artifacts, and
-            recoverable long-running work over hidden background automation.
-          </p>
-        </SettingPanel>
-        <SettingPanel icon="keyboard" title="Shortcuts" meta="Fast local controls">
-          <div class="settings-shortcut-list">
-            <span><kbd>⌘\</kbd> opens the assistant dock.</span>
-            <span><kbd>?</kbd> opens keyboard shortcuts.</span>
-            <span><kbd>N</kbd> creates a new task.</span>
-          </div>
-        </SettingPanel>
-      </PanelGrid>
-    </div>
-  );
-}
 
 export function Settings({ tab = "general", rest = [] }) {
   const activeTab = SETTINGS_TAB_ORDER.includes(tab) ? tab : "general";
