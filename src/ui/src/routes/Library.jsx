@@ -17,7 +17,7 @@ const TAB_LABELS = {
   knowledge: "Knowledge",
 };
 
-export function Library({ tab = "agents", rest = [], query = {} }) {
+export function Library({ tab = "agents", rest = [], query = {}, detailOnly = false }) {
   const activeTab = TAB_ORDER.includes(tab) ? tab : "agents";
   const [item, mode] = rest;
   const tabs = TAB_ORDER.map((id) => ({ value: id, label: TAB_LABELS[id] }));
@@ -33,19 +33,19 @@ export function Library({ tab = "agents", rest = [], query = {} }) {
 
   let body;
   if (activeTab === "agents") {
-    body = <AgentsTab selectedName={item || null} />;
+    body = <AgentsTab selectedName={item || null} detailOnly={detailOnly} />;
   } else if (activeTab === "teams") {
-    body = <TeamsTab selectedId={item || null} mode={mode || null} />;
+    body = <TeamsTab selectedId={item || null} mode={mode || null} detailOnly={detailOnly} />;
   } else if (activeTab === "skills") {
-    body = <SkillsTab selectedName={item || null} />;
+    body = <SkillsTab selectedName={item || null} detailOnly={detailOnly} />;
   } else {
-    body = <KnowledgeTab selectedSlug={item || null} mode={mode || null} query={query} />;
+    body = <KnowledgeTab selectedSlug={item || null} mode={mode || null} query={query} detailOnly={detailOnly} />;
   }
 
   return (
     <AppShell route="library">
-      <div class="library-page resource-tab-page">
-        <div class="library-route-tabs">{routeTabs}</div>
+      <div class={`library-page resource-tab-page ${detailOnly ? "is-detail-only" : ""}`.trim()}>
+        {!detailOnly && <div class="library-route-tabs">{routeTabs}</div>}
         <div class="library-tab-body">{body}</div>
       </div>
     </AppShell>
