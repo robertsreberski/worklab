@@ -441,6 +441,7 @@ export async function runLeadCycle(ctx) {
         error: result.error,
         failureKind: result.failureKind,
         errorDetails: result.errorDetails || null,
+        diagnostics: result.diagnostics || null,
         providerSessionId: result.providerSessionId || null,
         runtimeWarnings: result.runtimeWarnings,
       };

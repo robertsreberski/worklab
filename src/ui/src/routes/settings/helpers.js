@@ -14,6 +14,12 @@ export const VERIFICATION_ADJUDICATOR_MODE_OPTIONS = [
   { value: "off", label: "Off" },
   { value: "on", label: "On" },
 ];
+export const PI_CODEX_TRANSPORT_OPTIONS = [
+  { value: "websocket-cached", label: "WebSocket cached" },
+  { value: "websocket", label: "WebSocket" },
+  { value: "sse", label: "SSE" },
+  { value: "auto", label: "Auto" },
+];
 export const MCP_TRANSPORT_OPTIONS = [
   { value: "stdio", label: "stdio" },
   { value: "http", label: "HTTP" },
@@ -187,6 +193,7 @@ export function settingsPayload(settings = {}) {
     agent_recovery_continuation_limit: Number(settings.agent_recovery_continuation_limit ?? 3),
     agent_provider_recovery_enabled: settings.agent_provider_recovery_enabled !== false,
     agent_provider_recovery_base_delay_ms: Number(settings.agent_provider_recovery_base_delay_ms ?? 30000),
+    agent_pi_codex_transport: settings.agent_pi_codex_transport || "websocket-cached",
     agent_verification_adjudicator_mode: settings.agent_verification_adjudicator_mode || "off",
     agent_verification_adjudicator_model: settings.agent_verification_adjudicator_model || "",
     agent_verification_adjudicator_timeout_ms: Number(settings.agent_verification_adjudicator_timeout_ms ?? 30000),

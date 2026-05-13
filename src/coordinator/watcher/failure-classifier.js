@@ -16,8 +16,22 @@ function toolBlocksFromRunEvents(events = []) {
   return blocks;
 }
 
+function mergedProviderDiagnostics(diagnostics = {}) {
+  const details = diagnostics?.error_details && typeof diagnostics.error_details === "object"
+    ? diagnostics.error_details
+    : {};
+  return { ...details, ...diagnostics };
+}
+
+function diagnosticText(value) {
+  if (value === undefined || value === null || value === "") return "";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  return String(value);
+}
+
 export function compactRecoveryRunSummary({ runId, res, reason, providerInfo }) {
   const diagnostics = res?.diagnostics || {};
+  const providerDiagnostics = mergedProviderDiagnostics(diagnostics);
   const blocks = toolBlocksFromRunEvents(res?.events);
   const changedFiles = [];
   const actions = [];
@@ -42,8 +56,21 @@ export function compactRecoveryRunSummary({ runId, res, reason, providerInfo }) 
   const broadScan = Array.isArray(diagnostics.broad_scan_events) ? diagnostics.broad_scan_events[0] : null;
   const uniqueFiles = [...new Set(changedFiles)].slice(0, 12);
   const errorText = String(res?.error || "").trim();
-  const turnCount = Number(diagnostics.turn_count || diagnostics.turnCount || 0);
-  const piErrorCode = diagnostics.pi_error_code || null;
+  const turnCount = Number(providerDiagnostics.turn_count || providerDiagnostics.turnCount || 0);
+  const piErrorCode = providerDiagnostics.pi_error_code || null;
+  const providerDiagnosticParts = [
+    ["transport", providerDiagnostics.pi_transport],
+    ["code", providerDiagnostics.pi_error_code],
+    ["request_id", providerDiagnostics.pi_request_id || providerDiagnostics.provider_request_id],
+    ["last_tool", providerDiagnostics.last_tool_name],
+    ["turns", turnCount || ""],
+    ["tool_results", providerDiagnostics.tool_results_seen],
+    ["partial_progress", providerDiagnostics.partial_progress],
+    ["context", providerDiagnostics.context_risk],
+  ]
+    .map(([label, value]) => [label, diagnosticText(value)])
+    .filter(([, value]) => value)
+    .map(([label, value]) => `${label}=${value}`);
   const intro = reason === "usage_limit"
     ? `Previous run \`${runId}\` hit the model context limit.`
     : reason === "schema_correction"
@@ -58,6 +85,7 @@ export function compactRecoveryRunSummary({ runId, res, reason, providerInfo }) 
   const lines = [
     intro,
     providerInfo?.requestId ? `Provider request ID: ${providerInfo.requestId}` : "",
+    providerDiagnosticParts.length ? `Provider diagnostics: ${providerDiagnosticParts.join(", ")}.` : "",
     errorText ? `Error: ${errorText.slice(0, 500)}` : "",
     largest ? `Largest tool payload: ${largest.tool || "unknown tool"} ${largest.role || "event"} (${largest.chars || 0} chars).` : "",
     broadScan ? `Broad scan detected: ${broadScan.tool || "tool"} ${broadScan.pattern || ""} ${broadScan.path || ""}`.trim() : "",

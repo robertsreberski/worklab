@@ -111,6 +111,29 @@ describe("task runner result parsing", () => {
     expect(result.providerSessionId).toBe("provider-session-1");
   });
 
+  it("preserves provider diagnostics on generated task errors", async () => {
+    mocks.generateResponse.mockResolvedValue({
+      error: "fetch failed",
+      failureKind: "provider_unavailable",
+      errorDetails: { pi_transport: "sse" },
+      diagnostics: { pi_transport: "sse", turn_count: 19, tool_results_seen: 45 },
+      providerSessionId: "provider-session-1",
+      runtimeWarnings: [{ warning_kind: "runtime", message: "warn" }],
+    });
+
+    const result = await runTask(taskContext());
+
+    expect(result).toMatchObject({
+      kind: "task",
+      error: "fetch failed",
+      failureKind: "provider_unavailable",
+      errorDetails: { pi_transport: "sse" },
+      diagnostics: { pi_transport: "sse", turn_count: 19, tool_results_seen: 45 },
+      providerSessionId: "provider-session-1",
+      runtimeWarnings: [{ warning_kind: "runtime", message: "warn" }],
+    });
+  });
+
   it("uses provider structuredResult when present, marking the run structured", async () => {
     const structured = {
       schema: "worklab.v2",

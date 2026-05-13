@@ -13,6 +13,7 @@ afterEach(() => {
   delete process.env.WORKLAB_CODEX_THREAD_START_TIMEOUT_MS;
   delete process.env.WORKLAB_CODEX_THREAD_START_ATTEMPTS;
   delete process.env.WORKLAB_CODEX_THREAD_START_BACKOFF_MS;
+  delete process.env.WORKLAB_PI_CODEX_TRANSPORT;
 });
 
 describe("generateResponse Codex runtime options", () => {
@@ -54,6 +55,45 @@ describe("generateResponse Codex runtime options", () => {
       codexThreadStartTimeoutMs: 120000,
       codexThreadStartAttempts: 2,
       codexThreadStartBackoffMs: 500,
+    }));
+  });
+
+  it("passes the saved Pi Codex transport setting to the runtime", async () => {
+    mockRun.mockResolvedValue({ text: "ok" });
+
+    await generateResponse("sys", {
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
+      settings: { agent_pi_codex_transport: "websocket-cached" },
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    expect(mockRun).toHaveBeenCalledWith("sys", expect.objectContaining({
+      piCodexTransport: "websocket-cached",
+    }));
+  });
+
+  it("lets explicit and environment Pi Codex transport overrides win over settings", async () => {
+    process.env.WORKLAB_PI_CODEX_TRANSPORT = "websocket";
+    mockRun.mockResolvedValue({ text: "ok" });
+
+    await generateResponse("sys", {
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
+      settings: { agent_pi_codex_transport: "websocket-cached" },
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    await generateResponse("sys", {
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
+      settings: { agent_pi_codex_transport: "websocket-cached" },
+      piCodexTransport: "sse",
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    expect(mockRun).toHaveBeenNthCalledWith(1, "sys", expect.objectContaining({
+      piCodexTransport: "websocket",
+    }));
+    expect(mockRun).toHaveBeenNthCalledWith(2, "sys", expect.objectContaining({
+      piCodexTransport: "sse",
     }));
   });
 });

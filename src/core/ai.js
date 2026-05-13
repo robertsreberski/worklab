@@ -560,6 +560,10 @@ export async function generateResponse(systemPrompt, options) {
     options.codexThreadStartBackoffMs,
     process.env.WORKLAB_CODEX_THREAD_START_BACKOFF_MS,
   );
+  const piCodexTransport = optionOrEnv(
+    options.piCodexTransport,
+    process.env.WORKLAB_PI_CODEX_TRANSPORT,
+  ) ?? optionalOption(settings.agent_pi_codex_transport) ?? null;
   const baseOptions = {
     ...options,
     model: resolved,
@@ -574,7 +578,7 @@ export async function generateResponse(systemPrompt, options) {
       || createToolOutputSink(options.runArtifactDir || process.env.WORKLAB_QA_OUTPUT_DIR || null),
     resolvePiApiKey: options.resolvePiApiKey
       || ((provider) => resolvePiApiKey(provider, { dataDir: options.dataDir })),
-    piCodexTransport: options.piCodexTransport || process.env.WORKLAB_PI_CODEX_TRANSPORT || null,
+    piCodexTransport,
     ...(options.codexAppServerCommand
       ? {
         codexAppServerCommand: options.codexAppServerCommand,

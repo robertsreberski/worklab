@@ -86,7 +86,8 @@ describe("settings UI duration conversions", () => {
 
     expect(source).toContain('class="settings-note-grid settings-note-grid-paths"');
     expect(source).toContain('class="settings-planning-grid"');
-    expect(source).toContain('<AdvancedSettings summary="Budgets and recovery" count={5}>');
+    expect(source).toContain('<AdvancedSettings summary="Budgets and recovery" count={6}>');
+    expect(source).toContain('label="Codex transport"');
     for (const group of [
       "Delegation",
       "Run turn budget",
@@ -219,6 +220,7 @@ describe("settings UI duration conversions", () => {
       agent_recovery_continuation_limit: 4,
       agent_provider_recovery_enabled: true,
       agent_provider_recovery_base_delay_ms: secondsToMs("45"),
+      agent_pi_codex_transport: "websocket",
       agent_verification_adjudicator_mode: "on",
       agent_verification_adjudicator_model: "vercel:ollama-local:gpt-oss-safeguard:20b",
       agent_verification_adjudicator_timeout_ms: secondsToMs("45"),
@@ -251,6 +253,7 @@ describe("settings UI duration conversions", () => {
     expect(payload.agent_recovery_continuation_limit).toBe(4);
     expect(payload.agent_provider_recovery_enabled).toBe(true);
     expect(payload.agent_provider_recovery_base_delay_ms).toBe(45000);
+    expect(payload.agent_pi_codex_transport).toBe("websocket");
     expect(payload.agent_verification_adjudicator_mode).toBe("on");
     expect(payload.agent_verification_adjudicator_model).toBe("vercel:ollama-local:gpt-oss-safeguard:20b");
     expect(payload).not.toHaveProperty("agent_verification_adjudicator_base_url");

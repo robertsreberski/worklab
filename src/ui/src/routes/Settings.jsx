@@ -34,6 +34,7 @@ import {
 import {
   LOG_LEVEL_OPTIONS,
   MCP_TRANSPORT_OPTIONS,
+  PI_CODEX_TRANSPORT_OPTIONS,
   PLANNING_HARNESS_SELECT_OPTIONS,
   PLANNING_TOOL_POLICY_SELECT_OPTIONS,
   SLACK_EFFORT_OPTIONS,
@@ -827,7 +828,7 @@ function SettingsGeneral() {
                     description="Start delegated child tasks automatically while respecting the parallel cap."
                   />
                 </SectionStack>
-                <AdvancedSettings summary="Budgets and recovery" count={5}>
+                <AdvancedSettings summary="Budgets and recovery" count={6}>
                   <ControlGroupStack>
                     <ControlGroup title="Delegation" description="Limits for child-task fanout.">
                       <FormField label="Depth">
@@ -901,6 +902,9 @@ function SettingsGeneral() {
                       </FormField>
                       <FormField label="Retry delay">
                         <DurationInput unit="seconds" value={settings.agent_provider_recovery_base_delay_ms ?? 30000} min={0} step={5} onChange={(value) => setSettings({ ...settings, agent_provider_recovery_base_delay_ms: value })} ariaLabel="Provider recovery base delay" />
+                      </FormField>
+                      <FormField label="Codex transport">
+                        <Select variant="native" value={settings.agent_pi_codex_transport || "websocket-cached"} options={PI_CODEX_TRANSPORT_OPTIONS} onChange={(value) => setSettings({ ...settings, agent_pi_codex_transport: value })} />
                       </FormField>
                       <FormField label="Adjudicator">
                         <Select variant="native" value={settings.agent_verification_adjudicator_mode || "off"} options={VERIFICATION_ADJUDICATOR_MODE_OPTIONS} onChange={(value) => setSettings({ ...settings, agent_verification_adjudicator_mode: value })} />
