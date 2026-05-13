@@ -16,6 +16,7 @@
  * @property {Array<Object>} messages
  * @property {RuntimeModelRef} model
  * @property {string} [effort]
+ * @property {boolean} [fastMode]
  * @property {string} [cwd]
  * @property {Object<string, Object>} [mcpServers]
  * @property {Array<string>} [allowedTools]

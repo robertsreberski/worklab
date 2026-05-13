@@ -4,6 +4,7 @@ import { normalizeCodexItemEvent } from "../streaming/codex-events.js";
 import { createFileChangePayload } from "../file-change-stats.js";
 import { formatLiveInputGuidance } from "../live-input-prompt.js";
 import { estimateCost } from "../cost.js";
+import { codexModelSupportsFastMode, normalizeFastMode } from "../runtime/fast-mode.js";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_THREAD_START_ATTEMPTS = 2;
@@ -30,6 +31,7 @@ const CODEX_APP_CAPABILITIES = {
   supports_builtin_tools: true,
   supports_live_input: true,
   supports_native_subagents: true,
+  supports_fast_mode: true,
 };
 
 function promptFromMessages(messages) {
@@ -676,9 +678,10 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
       }
     }
     const mcpServers = codexMcpConfig(options.mcpServers);
+    const fastMode = codexModelSupportsFastMode(resolved.model) && normalizeFastMode(options.fastMode, true);
     const config = {
-      service_tier: "fast",
-      features: { fast_mode: true },
+      ...(fastMode ? { service_tier: "fast" } : {}),
+      features: { fast_mode: fastMode },
       ...(Object.keys(mcpServers).length ? { mcp_servers: mcpServers } : {}),
     };
     if (normalizedEffort) {
@@ -694,7 +697,7 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
     const thread = await requestThreadStart({
       model: resolved.model,
       modelProvider: "openai",
-      serviceTier: "fast",
+      ...(fastMode ? { serviceTier: "fast" } : {}),
       cwd: options.cwd || process.cwd(),
       approvalPolicy: approvalPolicyForPermissionMode(options.permissionMode),
       sandbox: sandboxForPermissionMode(options.permissionMode),
@@ -724,7 +727,7 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
       approvalPolicy: approvalPolicyForPermissionMode(options.permissionMode),
       sandboxPolicy: options.permissionMode === "bypassPermissions" ? { type: "dangerFullAccess" } : null,
       model: resolved.model,
-      serviceTier: "fast",
+      ...(fastMode ? { serviceTier: "fast" } : {}),
       effort: normalizedEffort,
       summary: normalizedEffort && normalizedEffort !== "none" ? "auto" : "none",
       outputSchema: options.outputSchema,
