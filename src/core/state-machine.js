@@ -376,8 +376,9 @@ export function nextStage(currentStage, event) {
       const failureCount = (event.failureCount ?? 0) + 1;
       const maxFailures = event.maxFailures ?? DEFAULT_MAX_FAILURES;
       const failureKind = event.failureKind || "run_failed";
+      const shouldPostErrorComment = !String(failureKind).startsWith("provider_unavailable");
       const baseEffects = [
-        { type: "post_error_comment", message },
+        ...(shouldPostErrorComment ? [{ type: "post_error_comment", message }] : []),
         { type: "set_error_text", message },
         { type: "set_stage_reason", reason: failureKind },
         { type: "set_failure_count", count: failureCount },

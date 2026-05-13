@@ -60,6 +60,7 @@ export const DEFAULT_SETTINGS = {
   agent_recovery_continuation_limit: 3,
   agent_provider_recovery_enabled: true,
   agent_provider_recovery_base_delay_ms: 30000,
+  agent_pi_codex_transport: "websocket-cached",
   // intelligence-ramp Phase 4: gate the review→done transition on
   // verification_evidence. "warn" (default) emits a runtime warning but still
   // approves; "block" refuses the transition; "off" disables the gate
@@ -82,6 +83,7 @@ export const DEFAULT_SETTINGS = {
 };
 
 const AGENT_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
+const PI_CODEX_TRANSPORTS = new Set(["auto", "sse", "websocket", "websocket-cached"]);
 
 function coerceStored(value) {
   try { return JSON.parse(value); } catch { return value; }
@@ -256,6 +258,13 @@ export function validateSetting(key, value) {
       return integerInRange(key, value, { min: 0, max: 20 });
     case "agent_provider_recovery_base_delay_ms":
       return integerInRange(key, value, { min: 0, max: 300000 });
+    case "agent_pi_codex_transport": {
+      const text = stringValue(key, value, { required: true });
+      if (!PI_CODEX_TRANSPORTS.has(text)) {
+        throw new Error(`${key} must be one of: ${[...PI_CODEX_TRANSPORTS].join(", ")}`);
+      }
+      return text;
+    }
     case "agent_verification_gate_mode": {
       if (typeof value !== "string") throw new Error(`${key} must be a string`);
       const trimmed = value.trim();

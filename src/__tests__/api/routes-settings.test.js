@@ -52,6 +52,7 @@ describe("settings", () => {
     expect(res.body.settings.agent_search_result_limit).toBe(100);
     expect(res.body.settings.agent_provider_recovery_enabled).toBe(true);
     expect(res.body.settings.agent_provider_recovery_base_delay_ms).toBe(30000);
+    expect(res.body.settings.agent_pi_codex_transport).toBe("websocket-cached");
     expect(res.body.settings.agent_verification_adjudicator_mode).toBe("off");
     expect(res.body.settings.agent_verification_adjudicator_model).toBe("");
     expect(res.body.settings).not.toHaveProperty("agent_verification_adjudicator_base_url");
@@ -98,6 +99,7 @@ describe("settings", () => {
       agent_budget_hard_turns: 800,
       agent_provider_recovery_enabled: false,
       agent_provider_recovery_base_delay_ms: 1000,
+      agent_pi_codex_transport: "websocket",
       agent_verification_adjudicator_mode: "on",
       agent_verification_adjudicator_model: "vercel:ollama-local:gpt-oss-safeguard:20b",
       agent_verification_adjudicator_timeout_ms: 45000,
@@ -124,6 +126,7 @@ describe("settings", () => {
     expect(res.body.settings.agent_budget_hard_turns).toBe(800);
     expect(res.body.settings.agent_provider_recovery_enabled).toBe(false);
     expect(res.body.settings.agent_provider_recovery_base_delay_ms).toBe(1000);
+    expect(res.body.settings.agent_pi_codex_transport).toBe("websocket");
     expect(res.body.settings.agent_verification_adjudicator_mode).toBe("on");
     expect(res.body.settings.agent_verification_adjudicator_model).toBe("vercel:ollama-local:gpt-oss-safeguard:20b");
     expect(res.body.settings).not.toHaveProperty("agent_verification_adjudicator_base_url");
@@ -177,6 +180,12 @@ describe("settings", () => {
     await agent.patch("/api/settings").send({ agent_verification_adjudicator_base_url: "localhost:11434" }).expect(400);
     await agent.patch("/api/settings").send({ agent_verification_adjudicator_mode: "on", agent_verification_adjudicator_model: "" }).expect(400);
     await agent.patch("/api/settings").send({ agent_verification_adjudicator_timeout_ms: 200 }).expect(400);
+  });
+
+  it("PATCH rejects invalid Pi Codex transport settings", async () => {
+    const { agent } = makeTestServer();
+    await agent.patch("/api/settings").send({ agent_pi_codex_transport: "stdio" }).expect(400);
+    await agent.patch("/api/settings").send({ agent_pi_codex_transport: "" }).expect(400);
   });
 
   it("GET canonicalizes legacy Ollama adjudicator mode to on", async () => {

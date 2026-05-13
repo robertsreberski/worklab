@@ -45,6 +45,14 @@ describe("workflow stage reducer", () => {
     expect(r.sideEffects).toContainEqual({ type: "set_stage_reason", reason: "timeout" });
   });
 
+  it("provider-unavailable failures keep failure state without posting a duplicate bare error comment", () => {
+    const r = nextStage("execute", { type: "run_failed", message: "fetch failed", failureKind: "provider_unavailable" });
+    expect(r.stage).toBe("execute");
+    expect(r.sideEffects).not.toContainEqual({ type: "post_error_comment", message: "fetch failed" });
+    expect(r.sideEffects).toContainEqual({ type: "set_error_text", message: "fetch failed" });
+    expect(r.sideEffects).toContainEqual({ type: "set_stage_reason", reason: "provider_unavailable" });
+  });
+
   it("review approve reaches done", () => {
     const r = nextStage("review", {
       type: "run_succeeded",

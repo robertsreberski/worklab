@@ -14,6 +14,7 @@
 //     cancelled?: boolean,
 //     error?: string,
 //     failureKind?: string,
+//     diagnostics?: object,                                  // provider/runtime diagnostic details
 //     text, usage, durationMs, numTurns, model, effort,    // generateResponse fields
 //     runtimeWarnings?: array,                              // forwarded warnings
 //     worklabResult?: object,                               // task/review only
@@ -56,6 +57,7 @@ export function emitFinalResult(ctx, result) {
       message: result.error,
       failureKind: result.failureKind,
       ...(result.errorDetails ? { details: result.errorDetails } : {}),
+      ...(result.diagnostics && typeof result.diagnostics === "object" ? { diagnostics: result.diagnostics } : {}),
     });
     return 1;
   }

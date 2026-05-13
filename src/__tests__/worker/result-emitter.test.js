@@ -60,4 +60,25 @@ describe("emitFinalResult", () => {
       failureKind: "invalid_result",
     });
   });
+
+  it("emits provider diagnostics with terminal error events", () => {
+    const emit = vi.fn();
+
+    const exitCode = emitFinalResult({ emit }, {
+      kind: "task",
+      error: "fetch failed",
+      failureKind: "provider_unavailable",
+      errorDetails: { pi_transport: "sse" },
+      diagnostics: { pi_transport: "sse", turn_count: 19 },
+    });
+
+    expect(exitCode).toBe(1);
+    expect(emit).toHaveBeenCalledWith({
+      type: "error",
+      message: "fetch failed",
+      failureKind: "provider_unavailable",
+      details: { pi_transport: "sse" },
+      diagnostics: { pi_transport: "sse", turn_count: 19 },
+    });
+  });
 });

@@ -1655,6 +1655,8 @@ describe("task-watcher", () => {
     const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Automatic continuation%'").get(taskId);
     expect(comment.body).toContain("retryable provider error");
     expect(comment.body).toContain("overloaded");
+    const bareErrorComment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'ERROR:%'").get(taskId);
+    expect(bareErrorComment).toBeUndefined();
   });
 
   it("starts a recovery continuation after a provider-side terminated abort", async () => {
