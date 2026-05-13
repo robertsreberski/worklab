@@ -36,7 +36,7 @@ import { DetailHead, InlineHead, SectionMarker, Toolbar } from "../components/la
 import { StructuredContent } from "../components/StructuredContent.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
 import { navigateHash } from "../lib/navigation.js";
-import { linkAgentReferencesInMarkdown, mergeAgentReferenceMentions } from "../lib/agentLinks.js";
+import { mergeAgentReferenceMentions } from "../lib/agentLinks.js";
 import { attachmentPayload, imageFilesFromTransfer, transferHasFiles, uploadedAttachmentDraft } from "../lib/attachments.js";
 import { ActivityRailDot, buildActivity, commentAuthorLabel } from "./task-detail/activity.jsx";
 import { readTaskDetailCache, writeTaskDetailCache } from "./task-detail/summaryCache.js";
@@ -1136,7 +1136,7 @@ export function TaskDetail({ id, runParam = null }) {
                           )}
                         </InlineHead>
                         {item.body && (
-                          <div class="activity-item-body"><StructuredContent content={linkAgentReferencesInMarkdown(item.body, agents)} maxHeight={200} mentions={resolvedMentions} /></div>
+                          <div class="activity-item-body"><StructuredContent content={item.body} maxHeight={200} mentions={resolvedMentions} /></div>
                         )}
                         {item.attachments?.length > 0 && (
                           <AttachmentChips attachments={item.attachments} disabled class="activity-item-attachments" />

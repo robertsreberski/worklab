@@ -2,7 +2,7 @@
 import { CommentAuthor } from "./CommentAuthor.jsx";
 import { StructuredContent } from "./StructuredContent.jsx";
 import { SectionStack } from "./layout/index.js";
-import { linkAgentReferencesInMarkdown, mergeAgentReferenceMentions } from "../lib/agentLinks.js";
+import { mergeAgentReferenceMentions } from "../lib/agentLinks.js";
 import { normalizeCommentText, parseVerdictComment, shouldHideComment } from "../lib/commentFormatting.js";
 
 export function CommentList({ comments, agents = [], mentions = null }) {
@@ -25,7 +25,7 @@ export function CommentList({ comments, agents = [], mentions = null }) {
                 {new Date(c.created_at).toLocaleString()}
               </span>
             </div>
-            {displayBody && <StructuredContent content={linkAgentReferencesInMarkdown(displayBody, agents)} className="comment-body doc-content" mentions={resolvedMentions} />}
+            {displayBody && <StructuredContent content={displayBody} className="comment-body doc-content" mentions={resolvedMentions} />}
           </div>
         );
       })}
