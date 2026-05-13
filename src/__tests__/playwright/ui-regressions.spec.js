@@ -1494,6 +1494,10 @@ test("task detail live panel hydrates existing run events", async ({ page }) => 
   await expect(page.locator(".task-live-header .live-pulse")).toHaveCount(0);
   await expect(page.locator(".task-live-header .status-pill")).toHaveCount(1);
   await expect(page.locator(".task-live-header .status-pill")).toContainText("Running");
+  const elapsedMetric = page.locator(".task-live-panel .run-metric-elapsed");
+  await expect(elapsedMetric).toBeVisible();
+  await expect(elapsedMetric.locator(".run-metric-label")).toHaveText("Elapsed");
+  await expect(elapsedMetric.locator(".run-metric-value")).toHaveText(/^\d+(ms|\.\d+s|m \d+s)$/);
   await expect(page.locator(".task-live-panel .tool-call", { hasText: "shell" })).toBeVisible();
   const toolCallProgress = page.locator(".task-live-panel .tool-call-progress").first();
   await expect(toolCallProgress).toBeVisible();

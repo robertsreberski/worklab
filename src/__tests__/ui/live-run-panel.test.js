@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { liveRunComposerState, liveRunTodoPanelState } from "../../ui/src/components/LiveRunPanel.jsx";
+import {
+  liveRunComposerState,
+  liveRunElapsedMetricState,
+  liveRunTodoPanelState,
+} from "../../ui/src/components/LiveRunPanel.jsx";
 
 describe("live run composer visibility", () => {
   it("shows for streaming Codex runs even before live input metadata is hydrated", () => {
@@ -85,6 +89,59 @@ describe("live run todo panel state", () => {
       completedCount: 0,
       total: 0,
       updatedAt: null,
+    });
+  });
+});
+
+describe("live run elapsed metric state", () => {
+  it("shows elapsed time for a running run with a start time", () => {
+    expect(liveRunElapsedMetricState({
+      id: "run-1",
+      process_status: "running",
+      started_at: 1_000,
+    }, false, 6_500)).toEqual({
+      visible: true,
+      label: "Elapsed",
+      value: "5.5s",
+      elapsedMs: 5_500,
+    });
+  });
+
+  it("shows elapsed time for a streaming run before status hydration completes", () => {
+    expect(liveRunElapsedMetricState({
+      id: "run-1",
+      started_at: 1_000,
+    }, true, 1_750)).toEqual({
+      visible: true,
+      label: "Elapsed",
+      value: "750ms",
+      elapsedMs: 750,
+    });
+  });
+
+  it("hides when the running run has no start time", () => {
+    expect(liveRunElapsedMetricState({
+      id: "run-1",
+      process_status: "running",
+    }, true, 6_500)).toEqual({
+      visible: false,
+      label: "Elapsed",
+      value: null,
+      elapsedMs: null,
+    });
+  });
+
+  it("hides after the run has ended so completed duration remains authoritative", () => {
+    expect(liveRunElapsedMetricState({
+      id: "run-1",
+      process_status: "completed",
+      started_at: 1_000,
+      ended_at: 6_500,
+    }, false, 7_000)).toEqual({
+      visible: false,
+      label: "Elapsed",
+      value: null,
+      elapsedMs: null,
     });
   });
 });

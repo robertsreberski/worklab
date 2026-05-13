@@ -3,7 +3,7 @@
 // ShimmerBar at the top while the run is streaming and tracks incoming events so
 // that the newest row animates in via wl-tick-in.
 
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { ShimmerBar } from "./primitives/ShimmerBar.jsx";
 import { StatusPill } from "./primitives/StatusPill.jsx";
 import { Button } from "./primitives/Button.jsx";
@@ -14,7 +14,7 @@ import { EventTimeline } from "./EventTimeline.jsx";
 import { RunHistoryNotice } from "./RunHistoryNotice.jsx";
 import { SectionGroup } from "./layout/index.js";
 import { useRunStream } from "../lib/useRunStream.js";
-import { formatMode, runMetricItems } from "../lib/runFormatting.js";
+import { formatDuration, formatMode, runMetricItems } from "../lib/runFormatting.js";
 import { api } from "../lib/api.js";
 
 const LIVE_INPUT_PROVIDER_KINDS = new Set(["claude", "openai", "vercel", "codex", "pi"]);
@@ -62,6 +62,34 @@ export function liveRunTodoPanelState(run) {
     completedCount,
     total: todos.length,
     updatedAt: run?.todo_state?.updated_at || null,
+  };
+}
+
+function numericTimestamp(value) {
+  if (value == null) return null;
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null;
+}
+
+export function liveRunElapsedMetricState(run, isStreaming = false, now = Date.now()) {
+  const startedAt = numericTimestamp(run?.started_at);
+  const endedAt = numericTimestamp(run?.ended_at);
+  const processStatus = String(run?.process_status || run?.status || "");
+  const running = isStreaming || processStatus === "running";
+  if (!running || !startedAt || endedAt) {
+    return {
+      visible: false,
+      label: "Elapsed",
+      value: null,
+      elapsedMs: null,
+    };
+  }
+  const elapsedMs = Math.max(0, Number(now) - startedAt);
+  return {
+    visible: true,
+    label: "Elapsed",
+    value: formatDuration(elapsedMs),
+    elapsedMs,
   };
 }
 
@@ -117,6 +145,26 @@ export function RunTodoPanel({ run }) {
   );
 }
 
+function LiveRunElapsedMetric({ run, isStreaming }) {
+  const [now, setNow] = useState(Date.now());
+  const metric = liveRunElapsedMetricState(run, isStreaming, now);
+
+  useEffect(() => {
+    setNow(Date.now());
+    if (!liveRunElapsedMetricState(run, isStreaming).visible) return undefined;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [run?.id, run?.started_at, run?.ended_at, run?.process_status, run?.status, isStreaming]);
+
+  if (!metric.visible) return null;
+  return (
+    <span class="run-metric run-metric-elapsed">
+      <span class="run-metric-label">{metric.label}</span>
+      <span class="run-metric-value">{metric.value}</span>
+    </span>
+  );
+}
+
 export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel, streamState = null }) {
   const fallbackStream = useRunStream(streamState ? null : run?.id, { subscribe: isStreaming });
   const effectiveStream = streamState || fallbackStream;
@@ -132,6 +180,7 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
 
   const runStatus = effectiveRun?.process_status || effectiveRun?.status || (isStreaming ? "running" : "complete");
   const metrics = runMetricItems(effectiveRun);
+  const hasElapsedMetric = liveRunElapsedMetricState(effectiveRun, isStreaming).visible;
   const composer = liveRunComposerState(effectiveRun, isStreaming);
   const canEdit = composer.canEdit;
   const canSend = composer.canSend;
@@ -172,8 +221,9 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
         </div>
         <StatusPill status={runStatus} size="sm" />
       </header>
-      {metrics.length > 0 && (
+      {(hasElapsedMetric || metrics.length > 0) && (
         <div class="task-live-metrics" aria-label="Live run metrics">
+          <LiveRunElapsedMetric run={effectiveRun} isStreaming={isStreaming} />
           {metrics.map(([label, value]) => (
             <span class="run-metric" key={label}>
               <span class="run-metric-label">{label}</span>
