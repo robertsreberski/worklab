@@ -4,6 +4,8 @@ import { loadConfig, worklabBaseUrl } from "../core/index.js";
 import { ensureServiceInstalled, startUserService } from "./install-service.js";
 import { applyConfigArgs, hasFlag } from "./args.js";
 import { assertServiceRuntimeReady, serviceErrorLogTail } from "./service-runtime.js";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 export function buildUi(config = loadConfig()) {
   execFileSync("npm", ["run", "build:ui"], {
@@ -16,6 +18,34 @@ export function buildUi(config = loadConfig()) {
       WORKLAB_PORT: String(config.port),
     },
   });
+}
+
+function hasUiBuildInputs(config) {
+  return existsSync(join(config.repoRoot, "src", "ui", "src"))
+    && existsSync(join(config.repoRoot, "src", "ui", "vite.config.js"));
+}
+
+function hasBundledUi(config) {
+  return existsSync(join(config.repoRoot, "src", "ui", "dist", "index.html"));
+}
+
+export function ensureUiReady(
+  config = loadConfig(),
+  { skipBuild = false, build = buildUi, log = console.log } = {},
+) {
+  if (skipBuild) {
+    log("build: skipped");
+    return { action: "skip", reason: "flag" };
+  }
+  if (hasUiBuildInputs(config)) {
+    build(config);
+    return { action: "build", reason: "source-ui" };
+  }
+  if (hasBundledUi(config)) {
+    log("build: skipped (using bundled UI)");
+    return { action: "skip", reason: "bundled-ui" };
+  }
+  throw new Error("Worklab UI assets are missing. In a source checkout, run `npm run build:ui`. In an npm install, reinstall @worklab/worklab because the package is missing src/ui/dist.");
 }
 
 export async function waitForHealth(config = loadConfig(), { timeoutMs = 15000 } = {}) {
@@ -53,11 +83,7 @@ export async function serve(args = []) {
 export async function start(args = []) {
   applyConfigArgs(args);
   const config = loadConfig();
-  if (hasFlag(args, "--no-build")) {
-    console.log("build: skipped");
-  } else {
-    buildUi(config);
-  }
+  ensureUiReady(config, { skipBuild: hasFlag(args, "--no-build") });
   const installed = await ensureServiceInstalled({ config });
   assertServiceRuntimeReady(config);
   await startUserService({ config });

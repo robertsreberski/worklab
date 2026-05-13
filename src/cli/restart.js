@@ -1,17 +1,13 @@
 import { loadConfig, worklabBaseUrl } from "../core/index.js";
 import { ensureServiceInstalled, restartUserService } from "./install-service.js";
-import { buildUi, restartHealthTimeoutMs, waitForHealth } from "./start.js";
+import { ensureUiReady, restartHealthTimeoutMs, waitForHealth } from "./start.js";
 import { applyConfigArgs, hasFlag } from "./args.js";
 import { assertServiceRuntimeReady } from "./service-runtime.js";
 
 export async function restart(args = []) {
   applyConfigArgs(args);
   const config = loadConfig();
-  if (hasFlag(args, "--no-build")) {
-    console.log("build: skipped");
-  } else {
-    buildUi(config);
-  }
+  ensureUiReady(config, { skipBuild: hasFlag(args, "--no-build") });
   const installed = await ensureServiceInstalled({ config });
   assertServiceRuntimeReady(config);
   await restartUserService({ config });
