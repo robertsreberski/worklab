@@ -267,9 +267,9 @@ describe("crossCheckVerificationEvidence", () => {
         type: "assistant",
         content: [{
           type: "tool_use",
-          name: "mcp__external_mcp__external_mcp_execute_tool",
+          name: "mcp__external_mcp__execute_tool",
           input: {
-            provider: "linear",
+            provider: "tracker",
             tool: "get_issue",
             params: { id: "T-252" },
           },
@@ -282,7 +282,7 @@ describe("crossCheckVerificationEvidence", () => {
       evidence: [
         {
           kind: "manual_check",
-          command_or_url: "mcp__external_mcp__external_mcp_execute_tool provider=linear tool=get_issue id=T-252",
+          command_or_url: "mcp__external_mcp__execute_tool provider=tracker tool=get_issue id=T-252",
         },
       ],
     });
