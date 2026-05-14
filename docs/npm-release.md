@@ -11,6 +11,7 @@ The release workflow publishes every non-private package that has
 `publishConfig`, currently:
 
 - `@worklab-ai/agent-runtime`
+- `@worklab-ai/webhooks`
 - `@worklab-ai/worklab`
 
 ## One-Version Rule
@@ -34,9 +35,12 @@ access to every `@worklab-ai/*` package in this repo.
 Prepare the next version locally:
 
 ```bash
-npm pkg set version=0.1.3
-npm pkg set version=0.1.3 --workspace packages/agent-runtime
-npm pkg set "dependencies.@worklab-ai/agent-runtime=0.1.3"
+VERSION=0.1.6
+npm pkg set version="$VERSION"
+npm pkg set version="$VERSION" --workspace packages/agent-runtime
+npm pkg set version="$VERSION" --workspace packages/webhooks
+npm pkg set "dependencies.@worklab-ai/agent-runtime=$VERSION"
+npm pkg set "dependencies.@worklab-ai/webhooks=$VERSION"
 npm install --package-lock-only
 ```
 
@@ -48,6 +52,7 @@ npm test
 npm run build:ui
 npm run pack:check
 npm pack --workspace packages/agent-runtime --dry-run --json
+npm pack --workspace packages/webhooks --dry-run --json
 git diff --check
 ```
 

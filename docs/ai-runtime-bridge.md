@@ -98,7 +98,7 @@ To add a new SDK or CLI:
 
 1. Choose a new canonical runtime id and model reference shape.
 2. Add parsing/validation support only for that exact shape.
-3. Register a bridge in `src/ai/runtime/registry.js`.
+3. Register a bridge in `packages/agent-runtime/src/ai/runtime/registry.js`.
 4. Add model catalog entries and credential/readiness reporting.
 5. Map Worklab request fields into the SDK/CLI transport.
 6. Normalize streaming events to Worklab event shapes.
