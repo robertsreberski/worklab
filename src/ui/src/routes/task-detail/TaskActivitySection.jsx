@@ -13,7 +13,7 @@ import { ActivityRailDot, commentAuthorLabel } from "./activity.jsx";
 import { formatActivityTime, formatDate } from "./format.js";
 import { RunCard } from "./RunCards.jsx";
 
-function CommentAuthor({ item, agents }) {
+function ActivityCommentAuthor({ item, agents }) {
   const agentName = item.authorType === "agent" ? item.authorId || item.author?.id : null;
   if (agentName) {
     return (
@@ -137,7 +137,7 @@ export function TaskActivitySection({
                 <div class="activity-feed-rail"><ActivityRailDot item={item} /></div>
                 <div class="activity-feed-content activity-item">
                   <InlineHead class="activity-item-head">
-                    <CommentAuthor item={item} agents={agents} />
+                    <ActivityCommentAuthor item={item} agents={agents} />
                     <span class="activity-item-time" title={formatDate(item.at) || undefined}>{formatActivityTime(item.at)}</span>
                     {canDeleteComment && (
                       <IconButton
