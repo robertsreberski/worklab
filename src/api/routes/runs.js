@@ -2,7 +2,6 @@ import {
   artifactPaths,
   artifactsForRunRow,
   createRunEventStore,
-  newCommentId,
   normalizeLiveInputBody,
   resolveRunArtifactDir,
   runArtifactSummary,
@@ -10,7 +9,8 @@ import {
   safeRunArtifactPath,
   supportsLiveInputProvider,
   collectGitDiffArtifactsForRun,
-} from "../../core/index.js";
+} from "../../core/runtime/index.js";
+import { newCommentId } from "../../core/platform/index.js";
 import { getRunById, getRunRawOutputPath } from "../../core/db/queries/runs.js";
 import { getAgentLogByRunId } from "../../core/db/queries/agent-logs.js";
 import { existsSync, statSync } from "node:fs";

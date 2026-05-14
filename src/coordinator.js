@@ -8,11 +8,13 @@ import { createServer } from "./api/server.js";
 import {
   closeDb,
   getDb,
+} from "./core/db/index.js";
+import {
   loadConfig,
   logger as defaultLogger,
   seedDataFromTemplate,
   seedDefaultAgents,
-} from "./core/index.js";
+} from "./core/platform/index.js";
 import { createTaskWatcher } from "./coordinator/task-watcher.js";
 import { spawnWorker } from "./coordinator/spawn-worker.js";
 import { createConsolidationManager } from "./coordinator/consolidation-cron.js";
