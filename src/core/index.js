@@ -160,6 +160,14 @@ export {
   writeUpdateState,
 } from "./update-check.js";
 
+export {
+  builtinWebhookMcpServer,
+  normalizeWorklabInboundWebhookPayload,
+  normalizeWorklabOptionalWebhookId,
+  normalizeWorklabWebhookId,
+  resolveBuiltinWebhookServerPath,
+} from "./webhooks.js";
+
 // ---------- Configuration + bootstrap ----------
 export { config, loadConfig, localClientHost, worklabBaseUrl } from "./config.js";
 export {

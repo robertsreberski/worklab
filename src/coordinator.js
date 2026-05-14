@@ -108,6 +108,16 @@ export async function startCoordinator({
     status: (...args) => slackHolder.current?.status?.(...args),
   };
   const events = new EventEmitter();
+  let optionalServicesStarted = false;
+  let optionalServicesHandle = null;
+  let backgroundServices = null;
+  const serviceStatus = () => ({
+    optional_services: {
+      scheduled: !!optionalServicesHandle,
+      started: optionalServicesStarted,
+    },
+    services: backgroundServices?.status?.() || {},
+  });
   const pushNotifications = deps.createWorklabPushNotificationService({
     db,
     dataDir: config.dataDir,
@@ -126,6 +136,7 @@ export async function startCoordinator({
     config,
     slack: slackProxy,
     notifications: pushNotifications,
+    serviceStatus,
   });
 
   watcherHolder.current = deps.createTaskWatcher({
@@ -155,9 +166,6 @@ export async function startCoordinator({
   });
   let searchIndexer = { shutdown: async () => {}, reindexAll: async () => ({ skipped: true, reason: "not_started" }) };
   let eventLoopMonitor = { shutdown() {} };
-  let optionalServicesStarted = false;
-  let optionalServicesHandle = null;
-  let backgroundServices = null;
   let shuttingDown = false;
 
   mountStaticUi(app, { repoRoot: config.repoRoot });

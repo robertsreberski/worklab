@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-Worklab is a local-first, single-user agent orchestration application. It exposes a `worklab` CLI, starts an Express HTTP/SSE server, serves a Preact/Vite UI, persists domain state in a local SQLite database, and spawns child worker processes that run AI agents against tasks, automations, team lead cycles, reviews, and assistant conversations. The runtime package normalizes Claude, Pi, and Codex execution, while Worklab owns task workflow state, persistence, MCP tool surfaces, UI, local service management, and optional Slack and Web Push integrations (`package.json:1-101`, `CLAUDE.md:5-27`, `src/coordinator.js:165-428`, `src/worker.js:81-168`).
+Worklab is a local-first, single-user agent orchestration application. It exposes a `worklab` CLI, starts an Express HTTP/SSE server, serves a Preact/Vite UI, persists domain state in a local SQLite database, and spawns child worker processes that run AI agents against tasks, automations, team lead cycles, reviews, and assistant conversations. The runtime package normalizes Claude, Pi, and Codex execution, while Worklab owns task workflow state, persistence, MCP tool surfaces, UI, local service management, and optional Slack and Web Push integrations (`package.json:1-101`, `CLAUDE.md:5-27`, `src/coordinator.js`, `src/coordinator/service-registry.js:73-119`, `src/worker.js:81-168`).
 
 The stack is Node.js 20+ ES modules, Express, better-sqlite3, Preact, Vite, Vitest, the MCP TypeScript SDK, Slack Bolt, `web-push`, `@worklab-ai/agent-runtime`, and `@worklab-ai/webhooks` (`package.json:69-100`). Runtime data defaults to `~/.worklab`, the default workspace is `~/worklab-workspace`, and `WORKLAB_*` environment variables or CLI flags can override host, port, data dir, workspace, and timeout settings (`src/core/config.js:26-45`, `src/core/env.js:47-61`, `AGENTS.md:67-91`).
 
@@ -21,6 +21,7 @@ flowchart TD
   DB[("SQLite worklab.db")]
   DataFiles[("dataDir files: KB, journals, logs, attachments")]
   Watcher["src/coordinator task watcher"]
+  ServiceRegistry["background service registry"]
   Managers["automation, team lead, search, consolidation managers"]
   Worker["src/worker.js child process"]
   Runtime["@worklab-ai/agent-runtime"]
@@ -35,7 +36,8 @@ flowchart TD
   Service -->|"calls startCoordinator"| Coordinator
   Coordinator -->|"creates"| API
   Coordinator -->|"creates"| Watcher
-  Coordinator -->|"starts optional services"| Managers
+  Coordinator -->|"registers optional services"| ServiceRegistry
+  ServiceRegistry -->|"starts / stops / statuses"| Managers
   Coordinator -->|"uses"| Core
   API -->|"routes call"| Core
   API -->|"mounts"| AdminMCP
@@ -62,18 +64,18 @@ flowchart TD
 | Node | Responsibility | Source paths | Must not depend on |
 |---|---|---|---|
 | CLI | Dispatches `worklab` subcommands, applies config flags, bootstraps `.env`, starts/serves/restarts/stops services, and exposes the stdio admin MCP bridge. | `package.json:48-67`, `src/cli/index.js:15-60`, `src/cli/start.js:10-93`, `src/cli/README.md:1-32` | `src/api`, `src/integrations`, and `src/mcp`, except the documented `cli/mcp.js` admin bridge carve-out (`eslint.config.js:207-214`, `CLAUDE.md:13-25`). |
-| Coordinator | Owns process startup, the singleton DB connection, Express server construction, task watcher, automation manager, team lead cron, search indexer, Slack, push notifications, event-loop monitor, and graceful shutdown. | `src/coordinator.js:165-428`, `src/coordinator/README.md:1-33` | API, MCP, integrations, CLI, worker, and direct `better-sqlite3` imports outside documented coordinator plumbing (`src/coordinator/README.md:13-17`, `eslint.config.js:216-228`). |
+| Coordinator | Owns process startup and composes the runtime from focused seams: DB/bootstrap, Express/static UI, task watcher, background service registry, event-loop monitor, optional services, and graceful shutdown. | `src/coordinator.js`, `src/coordinator/service-registry.js:73-119`, `src/coordinator/static-ui.js:1-12`, `src/coordinator/event-loop-monitor.js:1-33`, `src/coordinator/README.md:1-33` | API, MCP, integrations, CLI, worker, and direct `better-sqlite3` imports outside documented coordinator plumbing (`src/coordinator/README.md:13-17`, `eslint.config.js:216-228`). |
 | API | Registers Express routes, JSON parsing, raw webhook ingress, `/api/health`, global and run SSE, route modules, admin MCP, static UI fallback, and error handling. | `src/api/server.js:83-141`, `src/api/sse.js:1-47`, `src/api/README.md:1-40` | Direct DB access and edge back-imports; API routes must use core helpers or `src/core/db/queries/*` (`src/api/README.md:3-16`, `eslint.config.js:96-108`, `eslint.config.js:182-190`). |
 | UI | Browser-only Preact app mounted from `main.jsx`, hash-routed in `App.jsx`, lazy-loads secondary routes, uses one `/api` fetch wrapper, and runs through Vite HMR in dev. | `src/ui/src/main.jsx:1-8`, `src/ui/src/App.jsx:1-257`, `src/ui/src/lib/api.js:1-199`, `src/ui/vite.config.js:17-30`, `src/ui/README.md:1-40` | Node, DB, and core imports (`src/ui/README.md:1-8`). UI design tokens and shared primitives are governed by `docs/ui-design-system.md` and `scripts/guard-banned-tokens.sh` (`docs/ui-design-system.md:7-38`, `scripts/guard-banned-tokens.sh:1-42`). |
-| Core | Domain layer and persistence boundary: config, DB lifecycle, schema, migrations, tasks, runs, settings, providers, credentials, KB, journals, memory, automations, embeddings, skills, MCP config, notifications, and runtime dispatch. | `src/core/index.js:1-120`, `src/core/README.md:1-34`, `src/core/db/open.js:6-18`, `src/core/db/schema/current.js:1-645` | Coordinator, worker, API, MCP, integrations, CLI, and `better-sqlite3` outside `src/core/db/**` (`src/core/README.md:14-18`, `eslint.config.js:175-180`). |
-| Task Watcher | Converts task state into spawn decisions, prevents duplicate active runs, applies state-machine side effects, handles success/failure, schedules recoveries, resumes parents, auto-starts dependents, and emits lifecycle events. | `src/coordinator/task-watcher.js:79-120`, `src/coordinator/task-watcher.js:311-358`, `src/coordinator/task-watcher.js:691-983` | It is one of the documented coordinator carve-outs allowed to deep-import core internals (`eslint.config.js:88-90`, `eslint.config.js:110-136`). |
+| Core | Domain layer and persistence boundary. The compatibility barrel remains `src/core/index.js`, while modular public barrels split DB, workflow, runtime, content, and platform helpers. | `src/core/index.js`, `src/core/db/index.js:1-7`, `src/core/workflow/index.js:1-9`, `src/core/runtime/index.js:1-23`, `src/core/content/index.js:1-9`, `src/core/platform/index.js:1-23`, `src/core/README.md:1-34`, `src/core/db/schema/current.js:1-645` | Coordinator, worker, API, MCP, integrations, CLI, and `better-sqlite3` outside `src/core/db/**` (`src/core/README.md:14-18`, `eslint.config.js:175-180`). |
+| Task Watcher | Converts task state into spawn decisions, prevents duplicate active runs, applies state-machine side effects, handles success/failure, schedules recoveries, resumes parents, auto-starts dependents, and emits lifecycle events. Timer/pending auto-start mechanics are isolated from task eligibility. | `src/coordinator/task-watcher.js:79-120`, `src/coordinator/watcher/auto-start-scheduler.js:1-27`, `src/coordinator/task-watcher.js:311-358`, `src/coordinator/task-watcher.js:691-983` | It is one of the documented coordinator carve-outs allowed to deep-import core internals (`eslint.config.js:88-90`, `eslint.config.js:110-143`). |
 | Worker | Child process entrypoint. Reads env and CLI args, configures the runtime tool context, opens the DB, accepts drain/live-input control messages on stdin, dispatches task/review/automation/consolidation/lead-cycle runners, and emits final JSON to stdout. | `src/worker.js:1-168`, `src/worker/task-runner.js:74-162` | It should use core/agent/runtime seams, not API or service control paths (`CLAUDE.md:19-25`, `eslint.config.js:216-228`). |
 | Agent Runtime Package | Generic provider/kernel package. `createRuntime()` resolves a bridge from `options.model` and `executionMode`, configures tool runtime callbacks, and returns normalized text, structured result, events, usage, cost, errors, diagnostics, and provider session IDs. | `packages/agent-runtime/package.json:1-49`, `packages/agent-runtime/README.md:1-190`, `packages/agent-runtime/src/runtime.js:1-73`, `src/core/ai.js:1-10`, `src/core/ai.js:540-608` | Worklab DB/domain/edge layers; boundary lint treats provider and kernel layers as reusable (`eslint.config.js:9-19`, `eslint.config.js:157-167`). |
 | MCP | Admin MCP is a bearer-token HTTP surface and CLI bridge for trusted automation. Agent MCP is a per-run stdio tool surface for journals, memory, task graph, worktrees, agent management, and KB access. | `src/mcp/README.md:1-58`, `src/mcp/admin/server.js:1-88`, `src/mcp/admin/tools/index.js:1-52`, `src/mcp/agent/server.js:1-39`, `src/mcp/agent/tools/index.js:1-53` | Direct DB, API, integrations, CLI, coordinator, and worker imports (`src/mcp/README.md:16-24`, `eslint.config.js:192-199`). |
 | Integrations | Optional external adapters. Slack Bolt listens in socket mode and triages messages through the agent runtime; push notifications subscribe to run lifecycle events and deliver Web Push payloads. | `src/integrations/README.md:1-26`, `src/integrations/slack/service.js:254-675`, `src/integrations/push/service.js:1-88` | Direct DB package imports, API self-calls, CLI, coordinator, worker, and MCP (`src/integrations/README.md:7-15`, `eslint.config.js:201-205`). |
-| Webhooks Package | Reusable helpers and MCP stdio server used by automation webhook ingress and built-in MCP server discovery. | `packages/webhooks/package.json:1-46`, `packages/webhooks/README.md:1-15`, `src/api/routes/automations.js:1-5`, `src/core/mcp-config.js:79-90` | It is a workspace package with no Worklab DB dependency in its manifest (`packages/webhooks/package.json:40-45`). |
+| Webhooks Package | Reusable helpers and MCP stdio server used by automation webhook ingress and built-in MCP server discovery. Worklab consumes it through a local adapter. | `packages/webhooks/package.json:1-46`, `packages/webhooks/README.md:1-15`, `src/core/webhooks.js:1-36`, `src/api/routes/automations.js:1-13`, `src/core/mcp-config.js:75-86` | It is a workspace package with no Worklab DB dependency in its manifest (`packages/webhooks/package.json:40-45`). |
 
-Boundary enforcement is executable: `eslint.config.js` places all layer-import rules at error level, bans direct `db.prepare()` in `src/api/**`, requires edge layers to use `src/core/index.js` except query helpers, and guards deleted compatibility shims (`eslint.config.js:1-19`, `eslint.config.js:96-136`, `eslint.config.js:157-243`). `scripts/guard-imports.sh` runs ESLint over `src packages` and fails on errors (`scripts/guard-imports.sh:1-25`).
+Boundary enforcement is executable: `eslint.config.js` places all layer-import rules at error level, bans direct `db.prepare()` in `src/api/**`, allows edge layers to use the compatibility barrel, domain barrels, or query helpers, and guards deleted compatibility shims (`eslint.config.js:1-19`, `eslint.config.js:96-143`, `eslint.config.js:157-250`). `scripts/guard-imports.sh` runs ESLint over `src packages` and fails on errors (`scripts/guard-imports.sh:1-25`).
 
 ## 3. Data Model
 
@@ -182,7 +184,7 @@ erDiagram
   TASKS ||--o{ LEAD_CYCLES : "task_id"
 ```
 
-`projects.team_id`, `task_runs.agent_name`, `tasks.delegated_by_run_id`, `task_edges.created_by_run_id`, and `assistant_messages.run_id` are columns with indexes or semantic use but no SQLite `REFERENCES` clause in the current schema, so they are not drawn as FK edges (`src/core/db/schema/current.js:64-79`, `src/core/db/schema/current.js:81-154`, `src/core/db/schema/current.js:188-242`, `src/core/db/schema/current.js:574-585`).
+`projects.team_id`, `task_runs.agent_name`, `tasks.delegated_by_run_id`, `task_edges.created_by_run_id`, and `assistant_messages.run_id` are columns with indexes or semantic use but no SQLite `REFERENCES` clause in the current schema, so they are not drawn as FK edges. Their current soft-reference decisions are recorded in `docs/soft-references.md` (`src/core/db/schema/current.js:64-79`, `src/core/db/schema/current.js:81-154`, `src/core/db/schema/current.js:188-242`, `src/core/db/schema/current.js:574-585`, `docs/soft-references.md:1-21`).
 
 ### Runtime, Search, And Automation
 
@@ -550,7 +552,7 @@ Sources in call order: `src/api/server.js:83-90`, `src/api/routes/automations.js
 
 ### Live Run Input, Logs, And Cancellation-Recovery Data
 
-The run detail API prefers raw JSONL events when available, exposes run SSE, and can deliver live human messages to providers that support live input. The coordinator writes control messages to the worker stdin pipe; the worker validates and queues `live_user_message` control records. On coordinator shutdown it sends `worklab_drain`; a draining worker aborts cleanly, emits `drained`, and `spawn-worker` stores a transcript-tail snapshot for later resume.
+The run detail API prefers raw JSONL events when available, exposes run SSE, and can deliver live human messages to providers that support live input. Raw log path validation, raw JSONL parsing, and SQLite log shaping are centralized in `RunEventStore`. The coordinator writes control messages to the worker stdin pipe; the worker validates and queues `live_user_message` control records. On coordinator shutdown it sends `worklab_drain`; a draining worker aborts cleanly, emits `drained`, and `spawn-worker` stores a transcript-tail snapshot for later resume.
 
 ```mermaid
 sequenceDiagram
@@ -559,11 +561,13 @@ sequenceDiagram
   participant Watcher as "Task watcher"
   participant SpawnWorker as "spawn-worker handle"
   participant Worker as "src/worker.js"
+  participant EventStore as "RunEventStore"
   participant Logs as "raw JSONL + agent_logs"
   participant DB as "SQLite"
 
   UI->>API: "GET /api/runs/:id?events=full"
-  API->>Logs: "read raw_output_path if present"
+  API->>EventStore: "read raw_output_path if present"
+  EventStore->>Logs: "validate path, parse JSONL, shape log"
   API-->>UI: "{ run, log }"
   UI->>API: "POST /api/runs/:id/messages"
   API->>Watcher: "sendRunMessage(runId, body)"
@@ -575,7 +579,7 @@ sequenceDiagram
   SpawnWorker->>DB: "persist final diagnostics and transcript tail"
 ```
 
-Sources in call order: `src/api/routes/runs.js:1-120`, `src/api/routes/runs.js:162-275`, `src/coordinator/spawn-worker.js:542-618`, `src/worker.js:22-79`, `src/coordinator/spawn-worker.js:788-813`.
+Sources in call order: `src/api/routes/runs.js:1-120`, `src/core/run-event-store.js:1-143`, `src/api/routes/runs.js:162-275`, `src/coordinator/spawn-worker.js:542-618`, `src/worker.js:22-79`, `src/coordinator/spawn-worker.js:788-813`.
 
 ### Slack Triage And Notifications
 
@@ -660,11 +664,11 @@ Runtime data defaults to `~/.worklab`; config defaults include host `127.0.0.1`,
 
 Secrets are local files or env values. Provider API keys are encrypted with AES-256-GCM using `PROVIDER_ENCRYPTION_KEY` or a generated data-dir key file; the admin MCP bearer token is a generated 32-byte hex token in `<dataDir>/mcp-token` with `0600` mode and timing-safe comparison; Web Push VAPID keys are generated into `<dataDir>/push-vapid.json` (`src/core/crypto.js:1-87`, `src/core/service-token.js:1-33`, `src/mcp/admin/server.js:38-88`, `src/core/web-push.js:31-57`).
 
-Observability is implemented through `/api/health`, structured pino-compatible logging, slow API request logging, event-loop delay monitoring, run lifecycle SSE, per-run SSE, raw run logs, artifact files, Slack status endpoints, and push delivery failure handling (`src/api/server.js:30-72`, `src/api/server.js:92-106`, `src/coordinator.js:31-60`, `src/api/routes/runs.js:162-275`, `src/integrations/slack/service.js:340-367`, `src/integrations/push/service.js:55-83`). The npm release workflow validates with tests, UI build, package contents, whitespace, public npm metadata, and a published CLI `/api/health` smoke test (`.github/workflows/npm-release.yml:31-112`).
+Observability is implemented through core `/api/health`, optional `/api/services/status`, structured pino-compatible logging, slow API request logging, event-loop delay monitoring, run lifecycle SSE, per-run SSE, raw run logs, artifact files, Slack status endpoints, and push delivery failure handling (`src/api/server.js:30-72`, `src/api/server.js:84-128`, `src/coordinator/event-loop-monitor.js:1-33`, `src/core/run-event-store.js:1-143`, `src/integrations/slack/service.js:340-367`, `src/integrations/push/service.js:55-83`). The npm release workflow validates with tests, UI build, package contents, whitespace, public npm metadata, and a published CLI `/api/health` smoke test (`.github/workflows/npm-release.yml:31-112`).
 
 ## 7. Conventions & Constraints
 
-Module boundaries are explicit in per-layer READMEs and executable lint rules. Core owns DB and domain behavior; edge layers consume core through `src/core/index.js` or query helpers; API routes cannot call `db.prepare()` directly; the runtime package must not depend on Worklab domain/edge layers; deleted compatibility shims are banned (`src/core/README.md:1-19`, `src/api/README.md:1-17`, `src/coordinator/README.md:1-17`, `src/mcp/README.md:1-24`, `src/cli/README.md:1-32`, `src/integrations/README.md:1-26`, `eslint.config.js:1-243`).
+Module boundaries are explicit in per-layer READMEs and executable lint rules. Core owns DB and domain behavior; edge layers consume core through `src/core/index.js`, the domain barrels under `src/core/{workflow,runtime,content,platform}`, or query helpers; API routes cannot call `db.prepare()` directly; the runtime package must not depend on Worklab domain/edge layers; deleted compatibility shims are banned (`src/core/README.md:1-19`, `src/api/README.md:1-17`, `src/coordinator/README.md:1-17`, `src/mcp/README.md:1-24`, `src/cli/README.md:1-32`, `src/integrations/README.md:1-26`, `eslint.config.js:1-250`).
 
 Tests mirror source boundaries and must avoid the developer's real `~/.worklab`; tests that touch runtime files, services, tokens, databases, logs, MCP config, or backups set `WORKLAB_DATA_DIR` to temp directories. API tests use `supertest`, CLI/core/MCP/UI tests are separated by folder, long-running workers and provider SDKs should be stubbed unless the test is intentionally end-to-end, and substantial changes should run `npm test`, `npm run build:ui`, and `git diff --check` (`AGENTS.md:103-146`, `CONTRIBUTING.md:11-39`, `CLAUDE.md:51-59`).
 

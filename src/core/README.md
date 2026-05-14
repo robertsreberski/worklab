@@ -17,18 +17,18 @@ through this layer to read or write SQLite.
   `src/integrations/`, `src/cli/`
 - `better-sqlite3` outside `src/core/db/**`
 
-## Future shape (target of the modularization)
+## Public Domain Barrels
 
 ```
 src/core/
-├── db/                 # open, schema, migrations, queries (DAL)
-├── workflow/           # task state machine + transitions
-├── runs/               # run input building, artifacts, logs, events
-├── kb/                 # knowledge base storage + publisher
-├── memory/             # journal, memory, consolidation helpers
-├── skills/             # skill catalog + loader
-├── automations/        # trigger definitions + audit records
-├── search/             # embeddings + FTS
-├── providers/          # custom OpenAI-compat provider rows
-└── …                   # leaf utilities (ids, slugs, env, config, cost, etc.)
+├── index.js            # compatibility barrel for existing callers
+├── db/index.js         # open, schema, migrations (DAL entrypoint)
+├── workflow/index.js   # task state machine, transitions, joins, attachments
+├── runtime/index.js    # model dispatch, run input, logs, artifacts, evidence
+├── content/index.js    # KB, mentions, journals, memory, embeddings, skills
+└── platform/index.js   # config, settings, credentials, MCP, teams, projects
 ```
+
+Prefer the narrowest public domain barrel for new edge-layer imports. Keep
+implementation files private unless a caller is in a documented coordinator
+carve-out or uses `src/core/db/queries/*`.

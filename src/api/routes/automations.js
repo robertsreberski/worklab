@@ -1,18 +1,16 @@
 import express from "express";
 import {
-  normalizeInboundWebhookPayload,
-  normalizeWebhookId,
-} from "@worklab-ai/webhooks";
-import {
+  normalizeWorklabInboundWebhookPayload,
+  normalizeWorklabWebhookId,
   newAutomationId,
   nextFireAt,
   normalizeTrigger,
   parseRunAt,
-  resolveTaskRow,
   rowToAutomation,
   triggerSummary,
   upcomingFireTimes,
-} from "../../core/index.js";
+} from "../../core/platform/index.js";
+import { resolveTaskRow } from "../../core/workflow/index.js";
 import {
   deleteAutomation,
   getAutomationById,
@@ -432,7 +430,7 @@ export function registerAutomationWebhookRoutes(app, { db, broker, automationMan
     }
     let webhookId;
     try {
-      webhookId = normalizeWebhookId(req.params.webhookId);
+      webhookId = normalizeWorklabWebhookId(req.params.webhookId);
     } catch (error) {
       return sendError(res, Object.assign(error, { status: 400, code: "validation" }));
     }
@@ -442,7 +440,7 @@ export function registerAutomationWebhookRoutes(app, { db, broker, automationMan
     }
     const automation = rowToAutomation(row);
     try {
-      const payload = normalizeInboundWebhookPayload({
+      const payload = normalizeWorklabInboundWebhookPayload({
         body: Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0),
         headers: req.headers,
         query: req.query,

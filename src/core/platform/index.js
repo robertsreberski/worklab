@@ -22,3 +22,4 @@ export * from "../execenv.js";
 export * from "../browser-tool-policy.js";
 export * from "../assistant.js";
 export * from "../assistant/view-context.js";
+export * from "../webhooks.js";

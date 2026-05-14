@@ -19,8 +19,14 @@ agent code in-process.
 
 ```
 src/coordinator/
+├── service-registry.js
+├── startup-timer.js
+├── event-loop-monitor.js
+├── static-ui.js
+├── watcher-proxy.js
 ├── task-watcher.js
 ├── watcher/
+│   ├── auto-start-scheduler.js
 │   ├── run-handler.js
 │   ├── delegation-handler.js
 │   ├── kb-publisher.js
