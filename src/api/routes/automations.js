@@ -1,3 +1,8 @@
+import express from "express";
+import {
+  normalizeInboundWebhookPayload,
+  normalizeWebhookId,
+} from "@worklab-ai/webhooks";
 import {
   newAutomationId,
   nextFireAt,
@@ -11,6 +16,8 @@ import {
 import {
   deleteAutomation,
   getAutomationById,
+  getAutomationByWebhookId,
+  getEnabledTaskAutomationByWebhookId,
   getAutomationIdAndTaskId,
   getTaskAutomation,
   insertAutomation,
@@ -39,6 +46,9 @@ function validateAutomationInput(body = {}) {
     throw Object.assign(new Error("automations use trigger"), { status: 400, code: "validation" });
   }
   const trigger = body.trigger || {};
+  if (trigger.type === "webhook") {
+    throw Object.assign(new Error("webhook automations must be attached to a task"), { status: 400, code: "validation" });
+  }
   if (trigger.type === "once" && parseRunAt(trigger.run_at) == null) {
     throw Object.assign(new Error("trigger.run_at is required for one-off automations"), { status: 400, code: "validation" });
   }
@@ -92,6 +102,23 @@ function taskKey(db, taskId) {
   return taskId ? getTaskKeyById(db, taskId) : null;
 }
 
+function webhookIdForTrigger(trigger) {
+  return trigger?.type === "webhook" ? trigger.webhook_id : null;
+}
+
+function webhookPath(automation) {
+  const webhookId = webhookIdForTrigger(automation?.trigger);
+  return webhookId ? `/api/webhooks/${webhookId}` : null;
+}
+
+function assertUniqueWebhookId(db, webhookId, exceptId = null) {
+  if (!webhookId) return;
+  const existing = getAutomationByWebhookId(db, webhookId);
+  if (existing && existing.id !== exceptId) {
+    throw Object.assign(new Error("webhook id already exists"), { status: 409, code: "conflict" });
+  }
+}
+
 function listSummary(db, automation) {
   const windowStart = Date.now() - 30 * 86_400_000;
   const recent30d = countAutomationRunsSince(db, automation.id, windowStart);
@@ -105,6 +132,7 @@ function listSummary(db, automation) {
     enabled: !!automation.enabled,
     trigger: automation.trigger,
     trigger_summary: triggerSummary(automation.trigger),
+    webhook_path: webhookPath(automation),
     next_fire_at: automation.next_fire_at || null,
     last_fired_at: automation.last_fired_at || null,
     last_run_id: automation.last_run_id || null,
@@ -122,6 +150,7 @@ function detailPayload(db, automation) {
       ...automation,
       task_title: taskTitle(db, automation.task_id),
       trigger_summary: triggerSummary(automation.trigger),
+      webhook_path: webhookPath(automation),
       upcoming_fires: upcomingFireTimes(automation.trigger, 5, Date.now()),
     },
     recent_runs: recentRuns(db, automation.id, 20),
@@ -150,6 +179,12 @@ function getTaskAutomationOr404(db, taskId, automationId) {
 }
 
 function sendError(res, error, fallbackStatus = 400) {
+  const uniqueWebhookConflict = error?.code === "SQLITE_CONSTRAINT_UNIQUE" && /webhook/i.test(error?.message || "");
+  if (uniqueWebhookConflict) {
+    return res.status(409).json({
+      error: { code: "conflict", message: "webhook id already exists" },
+    });
+  }
   return res.status(error.status || fallbackStatus).json({
     error: { code: error.code || "validation", message: error.message },
   });
@@ -185,6 +220,8 @@ export function registerAutomationRoutes(app, { db, broker, automationManager })
       const now = Date.now();
       const id = newAutomationId();
       const trigger = normalizeTrigger(req.body?.trigger || {});
+      const webhookId = webhookIdForTrigger(trigger);
+      assertUniqueWebhookId(db, webhookId);
       const enabled = req.body?.enabled !== false;
       const next_fire_at = enabled ? nextFireAt(trigger, now) : null;
       insertAutomation(db, {
@@ -195,6 +232,7 @@ export function registerAutomationRoutes(app, { db, broker, automationManager })
         agentName: null,
         tagsJson: "[]",
         triggerJson: JSON.stringify(trigger),
+        webhookId,
         enabled,
         nextFireAt: next_fire_at,
         createdAt: now,
@@ -226,6 +264,8 @@ export function registerAutomationRoutes(app, { db, broker, automationManager })
       validateTaskAutomationInput({ trigger: nextTrigger });
       const now = Date.now();
       const trigger = normalizeTrigger(nextTrigger || {});
+      const webhookId = webhookIdForTrigger(trigger);
+      assertUniqueWebhookId(db, webhookId, current.id);
       const enabled = "enabled" in (req.body || {}) ? req.body.enabled !== false : current.enabled !== false;
       const nextFire = enabled ? nextFireAt(trigger, now) : null;
       updateTaskBoundAutomation(db, {
@@ -233,6 +273,7 @@ export function registerAutomationRoutes(app, { db, broker, automationManager })
         taskId: task.id,
         title: task.title,
         triggerJson: JSON.stringify(trigger),
+        webhookId,
         enabled,
         nextFireAt: nextFire,
         updatedAt: now,
@@ -300,6 +341,7 @@ export function registerAutomationRoutes(app, { db, broker, automationManager })
         agentName: req.body.agent_name,
         tagsJson: JSON.stringify(req.body.tags || []),
         triggerJson: JSON.stringify(trigger),
+        webhookId: null,
         enabled,
         nextFireAt: next_fire_at,
         createdAt: now,
@@ -343,6 +385,7 @@ export function registerAutomationRoutes(app, { db, broker, automationManager })
         agentName: next.agent_name,
         tagsJson: JSON.stringify(next.tags || []),
         triggerJson: JSON.stringify(trigger),
+        webhookId: null,
         enabled,
         nextFireAt: nextFire,
         updatedAt: now,
@@ -378,6 +421,56 @@ export function registerAutomationRoutes(app, { db, broker, automationManager })
     } catch (error) {
       const notFound = /not found/.test(error.message || "");
       res.status(notFound ? 404 : 400).json({ error: { code: notFound ? "not_found" : "invalid_state", message: error.message } });
+    }
+  });
+}
+
+export function registerAutomationWebhookRoutes(app, { db, broker, automationManager }) {
+  app.post("/api/webhooks/:webhookId", express.raw({ type: "*/*", limit: "10mb" }), async (req, res) => {
+    if (!automationManager?.runNow) {
+      return res.status(501).json({ error: { code: "not_configured", message: "automation manager not wired" } });
+    }
+    let webhookId;
+    try {
+      webhookId = normalizeWebhookId(req.params.webhookId);
+    } catch (error) {
+      return sendError(res, Object.assign(error, { status: 400, code: "validation" }));
+    }
+    const row = getEnabledTaskAutomationByWebhookId(db, webhookId);
+    if (!row) {
+      return res.status(404).json({ error: { code: "not_found", message: "webhook not found" } });
+    }
+    const automation = rowToAutomation(row);
+    try {
+      const payload = normalizeInboundWebhookPayload({
+        body: Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0),
+        headers: req.headers,
+        query: req.query,
+        receivedAt: new Date().toISOString(),
+      });
+      const result = await automationManager.runNow(automation.id, {
+        triggerType: "webhook",
+        webhookPayload: {
+          webhook_id: webhookId,
+          automation_id: automation.id,
+          ...payload,
+        },
+      });
+      broker?.broadcast?.("global", { type: "task_updated", id: automation.task_id });
+      return res.status(202).json({
+        ok: !result?.skipped,
+        automation_id: automation.id,
+        task_id: automation.task_id,
+        task_key: taskKey(db, automation.task_id),
+        run_id: result?.runId || null,
+        skipped: !!result?.skipped,
+        reason: result?.reason || null,
+      });
+    } catch (error) {
+      const notFound = /not found/.test(error.message || "") || error.code === "not_found";
+      return res.status(notFound ? 404 : 400).json({
+        error: { code: notFound ? "not_found" : "invalid_state", message: error.message },
+      });
     }
   });
 }

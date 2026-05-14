@@ -1,5 +1,6 @@
 import { newAutomationRunId, newAutomationTriggerId, newRunId } from "./ids.js";
 import { insertAutomationRun, insertAutomationTrigger } from "./db/queries/automation-audit.js";
+import { normalizeOptionalWebhookId } from "@worklab-ai/webhooks";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -33,7 +34,10 @@ export function parseRunAt(value) {
 }
 
 export function normalizeTrigger(raw = {}) {
-  const type = ["once", "daily", "weekly", "monthly"].includes(raw?.type) ? raw.type : "daily";
+  const type = ["once", "daily", "weekly", "monthly", "webhook"].includes(raw?.type) ? raw.type : "daily";
+  if (type === "webhook") {
+    return { type, webhook_id: normalizeOptionalWebhookId(raw?.webhook_id) };
+  }
   if (type === "once") {
     return { type, run_at: parseRunAt(raw?.run_at) || Date.now() };
   }
@@ -62,6 +66,7 @@ export function normalizeTrigger(raw = {}) {
 
 export function triggerSummary(raw) {
   const trigger = normalizeTrigger(raw);
+  if (trigger.type === "webhook") return `Webhook · ${trigger.webhook_id}`;
   if (trigger.type === "once") return `Once · ${new Date(trigger.run_at).toLocaleString()}`;
   const time = `${pad2(trigger.hour)}:${pad2(trigger.minute)} UTC`;
   if (trigger.type === "daily") return `Daily · ${time}`;
@@ -74,6 +79,7 @@ export function triggerSummary(raw) {
 
 export function nextFireAt(rawTrigger, afterMs = Date.now()) {
   const trigger = normalizeTrigger(rawTrigger);
+  if (trigger.type === "webhook") return null;
   if (trigger.type === "once") return trigger.run_at || null;
 
   const after = new Date(afterMs);
@@ -124,6 +130,7 @@ export function nextFireAt(rawTrigger, afterMs = Date.now()) {
 
 export function upcomingFireTimes(rawTrigger, count = 5, afterMs = Date.now()) {
   const trigger = normalizeTrigger(rawTrigger);
+  if (trigger.type === "webhook") return [];
   if (trigger.type === "once") return trigger.run_at ? [trigger.run_at] : [];
   const times = [];
   let cursor = afterMs;

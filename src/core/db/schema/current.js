@@ -453,6 +453,7 @@ CREATE TABLE IF NOT EXISTS automations (
   agent_name TEXT REFERENCES agents(name) ON DELETE SET NULL,
   tags TEXT NOT NULL DEFAULT '[]',
   trigger_json TEXT NOT NULL DEFAULT '{}',
+  webhook_id TEXT,
   enabled INTEGER NOT NULL DEFAULT 1,
   next_fire_at INTEGER,
   last_fired_at INTEGER,
@@ -464,6 +465,7 @@ CREATE TABLE IF NOT EXISTS automations (
 );
 CREATE INDEX IF NOT EXISTS idx_automations_enabled_next_fire ON automations(enabled, next_fire_at);
 CREATE INDEX IF NOT EXISTS idx_automations_task ON automations(task_id, updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_automations_webhook_id_unique ON automations(webhook_id) WHERE webhook_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS automation_runs (
   id TEXT PRIMARY KEY,

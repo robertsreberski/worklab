@@ -74,6 +74,7 @@
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@slack/bolt": "^4.7.1",
     "@worklab-ai/agent-runtime": "0.1.3",
+    "@worklab-ai/webhooks": "0.1.3",
     "better-sqlite3": "^11.7.0",
     "chokidar": "^4.0.0",
     "cors": "^2.8.5",

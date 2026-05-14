@@ -115,6 +115,49 @@ describe("automations routes", () => {
     expect(task.body.task.automation_summary.next_fire_at).toBeTruthy();
   });
 
+  it("creates webhook task automations with a generated id and no next fire", async () => {
+    const { agent, db } = makeTestServer();
+    seedAgent(db);
+    const { taskKey } = seedTask(db);
+
+    const create = await agent.post(`/api/tasks/${taskKey}/automations`).send({
+      trigger: { type: "webhook" },
+      enabled: true,
+    }).expect(201);
+
+    expect(create.body.automation.trigger.type).toBe("webhook");
+    expect(create.body.automation.trigger.webhook_id).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(create.body.automation.trigger_summary).toContain("Webhook");
+    expect(create.body.automation.webhook_path).toBe(`/api/webhooks/${create.body.automation.trigger.webhook_id}`);
+    expect(create.body.automation.next_fire_at).toBeNull();
+    expect(create.body.automation.upcoming_fires).toEqual([]);
+
+    const task = await agent.get(`/api/tasks/${taskKey}`).expect(200);
+    expect(task.body.task.automation_summary).toMatchObject({
+      count: 1,
+      enabled_count: 1,
+      paused_count: 0,
+      next_fire_at: null,
+    });
+  });
+
+  it("rejects duplicate webhook automation ids", async () => {
+    const { agent, db } = makeTestServer();
+    seedAgent(db);
+    const first = seedTask(db, { id: "task_1", taskKey: "T-1" });
+    const second = seedTask(db, { id: "task_2", taskKey: "T-2" });
+
+    await agent.post(`/api/tasks/${first.taskKey}/automations`).send({
+      trigger: { type: "webhook", webhook_id: "Shared_Hook_123" },
+    }).expect(201);
+
+    const duplicate = await agent.post(`/api/tasks/${second.taskKey}/automations`).send({
+      trigger: { type: "webhook", webhook_id: "Shared_Hook_123" },
+    }).expect(409);
+
+    expect(duplicate.body.error.message).toMatch(/webhook id/i);
+  });
+
   it("manual task automation run creates a task run and trigger audit", async () => {
     const holder = { db: null };
     const watcher = {
@@ -158,5 +201,65 @@ describe("automations routes", () => {
     expect(runRow).toMatchObject({ task_id: taskId, mode: "execute" });
     expect(linkRow).toMatchObject({ automation_id: create.body.automation.id, trigger_type: "manual" });
     expect(triggerRow).toMatchObject({ task_id: taskId, run_id: run.body.runId, outcome: "started" });
+  });
+
+  it("triggers a task automation from unauthenticated webhook POST data", async () => {
+    const holder = { db: null };
+    const watcher = {
+      handleRunRequested: async (taskId, options = {}) => {
+        const task = holder.db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+        const runId = "run_webhook_auto";
+        holder.db.prepare(`
+          INSERT INTO task_runs (id, task_id, mode, stage, agent_name, started_at, status, process_status, diagnostics_json)
+          VALUES (?, ?, 'execute', ?, ?, ?, 'running', 'running', ?)
+        `).run(runId, taskId, task.stage, task.owner_agent, Date.now(), JSON.stringify(options.diagnosticsSeed || {}));
+        return { runId };
+      },
+      isActive: () => false,
+      maybeAutoStart: () => {},
+      maybeAutoStartDependents: () => {},
+      cancel: () => false,
+      shutdown: async () => {},
+    };
+    const automationHolder = { current: null };
+    const automationManager = {
+      refresh: () => automationHolder.current?.refresh(),
+      runNow: (...args) => automationHolder.current.runNow(...args),
+      isActive: (...args) => automationHolder.current?.isActive(...args) || false,
+    };
+    const { agent, db, broker } = makeTestServer({ watcher, automationManager });
+    holder.db = db;
+    seedAgent(db);
+    const { id: taskId, taskKey } = seedTask(db);
+    automationHolder.current = createAutomationManager({ db, broker, watcher, spawn: spawnFake });
+
+    const create = await agent.post(`/api/tasks/${taskKey}/automations`).send({
+      trigger: { type: "webhook", webhook_id: "Inbound_Hook_123" },
+      enabled: true,
+    }).expect(201);
+    const trigger = await agent
+      .post("/api/webhooks/Inbound_Hook_123?source=test")
+      .set("content-type", "application/json")
+      .send({ result: "complete", nested: { value: 1 } })
+      .expect(202);
+
+    expect(trigger.body).toMatchObject({
+      ok: true,
+      automation_id: create.body.automation.id,
+      task_id: taskId,
+      task_key: taskKey,
+      run_id: "run_webhook_auto",
+    });
+    expect(db.prepare("SELECT automation_id, trigger_type FROM automation_runs WHERE run_id = 'run_webhook_auto'").get())
+      .toMatchObject({ automation_id: create.body.automation.id, trigger_type: "webhook" });
+    expect(db.prepare("SELECT trigger_type, outcome FROM automation_triggers WHERE automation_id = ?").get(create.body.automation.id))
+      .toMatchObject({ trigger_type: "webhook", outcome: "started" });
+    const diagnostics = JSON.parse(db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = 'run_webhook_auto'").get().diagnostics_json);
+    expect(diagnostics.webhook).toMatchObject({
+      webhook_id: "Inbound_Hook_123",
+      body_kind: "json",
+      query: { source: "test" },
+    });
+    expect(diagnostics.webhook.body_preview).toContain("complete");
   });
 });

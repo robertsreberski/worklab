@@ -18,6 +18,36 @@ describe("buildExecuteSystemPrompt", () => {
     expect(p).toContain("do things");
   });
 
+  it("includes bounded webhook trigger payload context when present", () => {
+    const p = buildExecuteSystemPrompt({
+      agent: baseAgent,
+      task: baseTask,
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+      webhookTrigger: {
+        webhook_id: "Inbound_Hook_123",
+        received_at: "2026-05-14T12:00:00.000Z",
+        content_type: "application/json",
+        body_kind: "json",
+        body_bytes: 5120,
+        truncated: true,
+        query: { source: "test" },
+        body_preview: "{\n  \"result\": \"complete\"\n}\n[truncated payload]",
+      },
+    });
+
+    expect(p).toContain("## Webhook trigger");
+    expect(p).toContain("Webhook id: `Inbound_Hook_123`");
+    expect(p).toContain("Content type: application/json");
+    expect(p).toContain("Payload bytes: 5120");
+    expect(p).toContain("Truncated: yes");
+    expect(p).toContain("\"source\": \"test\"");
+    expect(p).toContain("\"result\": \"complete\"");
+  });
+
   it("renders the balanced polished planning harness by default", () => {
     const p = buildPlanSystemPrompt({ agent: baseAgent, task: { ...baseTask, stage: "plan" }, skills: [], memory: "", journalTail: "", comments: [], pinnedKb: [] });
     expect(p).toContain("## Planning harness");

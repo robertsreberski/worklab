@@ -173,7 +173,7 @@ export function createAutomationManager({
     return getTaskById(db, task.id);
   }
 
-  async function runTaskAutomation(automation, { triggerType = "manual", now = Date.now() } = {}) {
+  async function runTaskAutomation(automation, { triggerType = "manual", now = Date.now(), webhookPayload = null } = {}) {
     if (!watcher?.handleRunRequested) throw new Error("task watcher not wired");
     const task = getTaskById(db, automation.task_id);
     if (!task) {
@@ -206,7 +206,12 @@ export function createAutomationManager({
 
     try {
       const runnableTask = reopenDoneTask(task, now);
-      const run = await watcher.handleRunRequested(runnableTask.id);
+      const runOptions = triggerType === "webhook" && webhookPayload
+        ? { diagnosticsSeed: { webhook: webhookPayload } }
+        : undefined;
+      const run = runOptions
+        ? await watcher.handleRunRequested(runnableTask.id, runOptions)
+        : await watcher.handleRunRequested(runnableTask.id);
       db.transaction(() => {
         insertAutomationRun(db, {
           id: newAutomationRunId(),
@@ -274,13 +279,13 @@ export function createAutomationManager({
     broker?.broadcast?.("global", { type: "automation_updated", id: automationId });
   }
 
-  async function runNow(automationId, { triggerType = "manual", now = Date.now() } = {}) {
+  async function runNow(automationId, { triggerType = "manual", now = Date.now(), webhookPayload = null } = {}) {
     const row = getAutomationById(db, automationId);
     if (!row) throw new Error(`automation ${automationId} not found`);
     if (active.has(automationId)) throw new Error("automation already running");
     const automation = rowToAutomation(row);
     if (automation.task_id) {
-      return runTaskAutomation(automation, { triggerType, now });
+      return runTaskAutomation(automation, { triggerType, now, webhookPayload });
     }
     const { providerKind } = assertAgentRunnable(automation.agent_name);
 

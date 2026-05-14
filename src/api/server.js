@@ -17,7 +17,7 @@ import { registerSearchRoutes } from "./routes/search.js";
 import { registerMentionRoutes } from "./routes/mentions.js";
 import { registerAttachmentRoutes } from "./routes/attachments.js";
 import { registerFileRoutes } from "./routes/files.js";
-import { registerAutomationRoutes } from "./routes/automations.js";
+import { registerAutomationRoutes, registerAutomationWebhookRoutes } from "./routes/automations.js";
 import { registerGoalRoutes } from "./routes/goals.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerTeamRoutes } from "./routes/teams.js";
@@ -85,6 +85,7 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   const broker = createSseBroker();
 
   app.use(cors());
+  registerAutomationWebhookRoutes(app, { db, broker, automationManager });
   app.use(express.json({ limit: "10mb" }));
   app.use("/api", apiTimingMiddleware(logger));
 

@@ -4,6 +4,19 @@ export function getAutomationById(db, id) {
   return db.prepare("SELECT * FROM automations WHERE id = ?").get(id);
 }
 
+export function getAutomationByWebhookId(db, webhookId) {
+  return db.prepare("SELECT * FROM automations WHERE webhook_id = ?").get(webhookId);
+}
+
+export function getEnabledTaskAutomationByWebhookId(db, webhookId) {
+  return db.prepare(`
+    SELECT * FROM automations
+    WHERE webhook_id = ?
+      AND enabled = 1
+      AND task_id IS NOT NULL
+  `).get(webhookId);
+}
+
 export function listEnabledAutomations(db) {
   return db
     .prepare("SELECT * FROM automations WHERE enabled = 1 ORDER BY updated_at DESC")
@@ -89,6 +102,7 @@ export function insertAutomation(db, {
   agentName,
   tagsJson,
   triggerJson,
+  webhookId,
   enabled,
   nextFireAt,
   createdAt,
@@ -96,9 +110,9 @@ export function insertAutomation(db, {
 }) {
   db.prepare(`
     INSERT INTO automations (
-      id, task_id, title, instructions, agent_name, tags, trigger_json,
+      id, task_id, title, instructions, agent_name, tags, trigger_json, webhook_id,
       enabled, next_fire_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     taskId || null,
@@ -107,6 +121,7 @@ export function insertAutomation(db, {
     agentName || null,
     tagsJson,
     triggerJson,
+    webhookId || null,
     enabled ? 1 : 0,
     nextFireAt,
     createdAt,
@@ -119,15 +134,16 @@ export function updateTaskBoundAutomation(db, {
   taskId,
   title,
   triggerJson,
+  webhookId,
   enabled,
   nextFireAt,
   updatedAt,
 }) {
   db.prepare(`
     UPDATE automations
-    SET title = ?, trigger_json = ?, enabled = ?, next_fire_at = ?, updated_at = ?
+    SET title = ?, trigger_json = ?, webhook_id = ?, enabled = ?, next_fire_at = ?, updated_at = ?
     WHERE id = ? AND task_id = ?
-  `).run(title, triggerJson, enabled ? 1 : 0, nextFireAt, updatedAt, id, taskId);
+  `).run(title, triggerJson, webhookId || null, enabled ? 1 : 0, nextFireAt, updatedAt, id, taskId);
 }
 
 export function updateAutomation(db, {
@@ -137,6 +153,7 @@ export function updateAutomation(db, {
   agentName,
   tagsJson,
   triggerJson,
+  webhookId,
   enabled,
   nextFireAt,
   updatedAt,
@@ -144,7 +161,7 @@ export function updateAutomation(db, {
   db.prepare(`
     UPDATE automations
     SET title = ?, instructions = ?, agent_name = ?, tags = ?,
-        trigger_json = ?, enabled = ?, next_fire_at = ?, updated_at = ?
+        trigger_json = ?, webhook_id = ?, enabled = ?, next_fire_at = ?, updated_at = ?
     WHERE id = ?
   `).run(
     title,
@@ -152,6 +169,7 @@ export function updateAutomation(db, {
     agentName || null,
     tagsJson,
     triggerJson,
+    webhookId || null,
     enabled ? 1 : 0,
     nextFireAt,
     updatedAt,

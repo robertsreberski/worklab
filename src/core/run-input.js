@@ -322,6 +322,9 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = 
   const settings = readSettings(db);
   const runSnapshot = loadRunSnapshot(db, runId);
   const runDiagnostics = safeParseJson(runSnapshot?.diagnostics_json, {});
+  const webhookTrigger = runDiagnostics?.webhook && typeof runDiagnostics.webhook === "object"
+    ? runDiagnostics.webhook
+    : null;
   const workspaceMode = runSnapshot?.workspace_mode || "direct";
   const sourceWorkdir = runSnapshot?.source_workdir || null;
   const worktree = safeParseJson(runSnapshot?.worktree_json, null);
@@ -430,6 +433,7 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = 
     settings,
     delegation,
     nativeSubagents,
+    webhookTrigger,
     runStartedAt: runSnapshot?.started_at || null,
   };
 }
@@ -746,6 +750,7 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
     resolvedBlockersHash: shortHash(blockerSignature.join("|")),
     delegationHash: shortHash(delegationSignature),
     nativeSubagentsHash: shortHash(nativeSubagentsSignature),
+    webhookHash: shortHash(JSON.stringify(setup.webhookTrigger || {})),
     planningHash: shortHash(planningSignature),
     memoryHash: shortHash(setup.memory || ""),
     learningHash: shortHash((setup.learningMemories || []).map((memory) => `${memory.id}:${memory.updated_at}:${memory.status}`).join("|")),
@@ -790,6 +795,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       settings: setup.settings,
       resumeContext: setup.resumeContext,
       taskArtifactsMarkdown: formatTaskArtifactsForPrompt(taskArtifacts),
+      webhookTrigger: setup.webhookTrigger,
       worklabToolSurfaceMarkdown,
       allowedTools, disallowedTools, mcpServers, delegation, nativeSubagents,
     };

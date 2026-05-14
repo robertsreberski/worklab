@@ -184,6 +184,31 @@ function formatContextText(text, maxChars = 1200) {
   return clipText(collapseDuplicateParagraphs(stripWorklabResultJson(text)), maxChars);
 }
 
+function formatWebhookTrigger(webhook) {
+  if (!webhook || typeof webhook !== "object") return "";
+  const query = Object.keys(webhook.query || {}).length
+    ? JSON.stringify(webhook.query, null, 2)
+    : "{}";
+  return [
+    webhook.webhook_id ? `Webhook id: \`${webhook.webhook_id}\`` : "",
+    webhook.received_at ? `Received: ${webhook.received_at}` : "",
+    webhook.content_type ? `Content type: ${webhook.content_type}` : "",
+    webhook.body_kind ? `Body kind: ${webhook.body_kind}` : "",
+    Number.isFinite(Number(webhook.body_bytes)) ? `Payload bytes: ${Number(webhook.body_bytes)}` : "",
+    `Truncated: ${webhook.truncated ? "yes" : "no"}`,
+    "",
+    "Query:",
+    "```json",
+    clipText(query, 1200),
+    "```",
+    "",
+    "Payload preview:",
+    "```text",
+    clipText(webhook.body_preview || "", 4000),
+    "```",
+  ].filter((line) => line !== "").join("\n");
+}
+
 function formatPriorRuns(priorRuns) {
   if (!priorRuns?.length) return "";
   return priorRuns
@@ -665,6 +690,8 @@ export function buildSystemPrompt(input, mode) {
     if (input.project) sectionNames.push("Project");
     parts.push(section("Task", buildTaskBody(input.task, input.comments, { dataDir: input.dataDir })));
     sectionNames.push("Task");
+    parts.push(section("Webhook trigger", formatWebhookTrigger(input.webhookTrigger)));
+    if (input.webhookTrigger) sectionNames.push("Webhook trigger");
     if (mode === "execute" || mode === "review") {
       parts.push(section("Plan artifact", formatPlanArtifact(input.task)));
       if (input.task?.plan_body) sectionNames.push("Plan artifact");

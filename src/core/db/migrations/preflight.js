@@ -127,6 +127,7 @@ export function ensureCurrentSchemaColumnsBeforeSchema(db) {
     ["enabled", "enabled INTEGER NOT NULL DEFAULT 1"],
     ["next_fire_at", "next_fire_at INTEGER"],
     ["task_id", "task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE"],
+    ["webhook_id", "webhook_id TEXT"],
     ["updated_at", "updated_at INTEGER NOT NULL DEFAULT 0"],
   ]);
   ensureColumns(db, "automation_runs", [
