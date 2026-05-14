@@ -71,6 +71,7 @@ import {
   postAgentFinalComment,
   updateRunResult,
 } from "./watcher/run-result-effects.js";
+import { createPendingTaskScheduler } from "./watcher/auto-start-scheduler.js";
 
 export { buildDelegationContextBlock } from "./watcher/delegation-context.js";
 
@@ -115,15 +116,15 @@ export function createTaskWatcher({
     return true;
   }
 
+  const autoStartScheduler = createPendingTaskScheduler({
+    active,
+    pendingStarts,
+    canStart: canAutoStart,
+    run: handleRunRequested,
+  });
+
   function scheduleAutoStart(taskId, onError) {
-    if (!canAutoStart(taskId)) return;
-    if (active.has(taskId) || pendingStarts.has(taskId)) return;
-    pendingStarts.add(taskId);
-    setTimeout(() => {
-      pendingStarts.delete(taskId);
-      if (!canAutoStart(taskId)) return;
-      handleRunRequested(taskId).catch(onError);
-    }, 0);
+    autoStartScheduler.schedule(taskId, onError);
   }
 
   function maybeAutoStartTask(taskId, onError) {
