@@ -209,6 +209,18 @@ export {
 } from "./run-events.js";
 
 export {
+  assertRunLogPathInsideDataDir,
+  createRunEventStore,
+  logPayloadFidelity,
+  parseJsonlRunEvents,
+  parseRunEvents,
+  runEventLimit,
+  runEventMode,
+  runLogPathInsideDataDir,
+  shapeRunLog,
+} from "./run-event-store.js";
+
+export {
   EMPTY_RUN_TODO_STATE,
   EMPTY_RUN_TODO_STATE_JSON,
   RUN_TODO_MAX_ACTIVE_FORM_LENGTH,

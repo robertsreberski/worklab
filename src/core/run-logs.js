@@ -1,18 +1,19 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
 import { getRunById } from "./db/queries/runs.js";
 import { getAgentLogEvents } from "./db/queries/agent-logs.js";
+import {
+  assertRunLogPathInsideDataDir,
+  parseJsonlRunEvents,
+  parseRunEvents,
+} from "./run-event-store.js";
+
 function runLogError(code, message) {
   return Object.assign(new Error(message), { code });
 }
 
-function parseEvents(value) {
-  try {
-    const parsed = JSON.parse(value || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+function assertConfiguredRawPath(filePath, dataDir) {
+  if (!dataDir) throw runLogError("not_configured", "data directory is required");
+  return assertRunLogPathInsideDataDir(filePath, dataDir);
 }
 
 function jsonlFromEvents(events = []) {
@@ -80,27 +81,12 @@ function tailFile(filePath, limitBytes) {
   }
 }
 
-function parseJsonlEvents(content) {
-  const out = [];
-  for (const line of String(content || "").split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (parsed && typeof parsed === "object") out.push(parsed);
-    } catch {
-      // Tail reads can start in the middle of a JSONL line. Ignore fragments.
-    }
-  }
-  return out;
-}
-
 export function readJsonlEventsFromFile(filePath, { dataDir = null, limitBytes = 2 * 1024 * 1024 } = {}) {
   if (!filePath) return [];
-  const rawPath = dataDir ? assertInsideDataDir(filePath, dataDir) : filePath;
+  const rawPath = dataDir ? assertRunLogPathInsideDataDir(filePath, dataDir) : filePath;
   if (!existsSync(rawPath)) return [];
   const payload = tailFile(rawPath, normalizeLimitBytes(limitBytes));
-  return parseJsonlEvents(payload.content);
+  return parseJsonlRunEvents(payload.content);
 }
 
 function oneLine(value, limit = 240) {
@@ -224,15 +210,6 @@ function summarizeEvents(events = [], payload = {}) {
   };
 }
 
-function assertInsideDataDir(filePath, dataDir) {
-  if (!dataDir) throw runLogError("not_configured", "data directory is required");
-  const root = resolve(dataDir);
-  const target = resolve(filePath);
-  const rel = relative(root, target);
-  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return target;
-  throw runLogError("forbidden", "raw log path is outside data dir");
-}
-
 function normalizeRun(row) {
   return {
     id: row.id,
@@ -259,7 +236,7 @@ export function readRunLog({ db, dataDir, runId, mode = "summary", limitBytes = 
   if (!run) throw runLogError("not_found", "run not found");
 
   if (run.raw_output_path) {
-    const rawPath = assertInsideDataDir(run.raw_output_path, dataDir);
+    const rawPath = assertConfiguredRawPath(run.raw_output_path, dataDir);
     if (existsSync(rawPath)) {
       const payload = normalizedMode === "full"
         ? {
@@ -271,7 +248,7 @@ export function readRunLog({ db, dataDir, runId, mode = "summary", limitBytes = 
           }
         : tailFile(rawPath, normalizedLimitBytes);
       if (normalizedMode === "summary") {
-        const events = parseJsonlEvents(payload.content);
+        const events = parseJsonlRunEvents(payload.content);
         const summary = summarizeEvents(events, payload);
         return {
           run: normalizeRun(run),
@@ -294,7 +271,7 @@ export function readRunLog({ db, dataDir, runId, mode = "summary", limitBytes = 
 
   const logRow = getAgentLogEvents(db, runId);
   if (!logRow) throw runLogError("not_found", "run log not available");
-  const events = parseEvents(logRow.events);
+  const events = parseRunEvents(logRow.events);
   const content = jsonlFromEvents(events);
   const payload = normalizedMode === "full"
     ? {
@@ -306,7 +283,7 @@ export function readRunLog({ db, dataDir, runId, mode = "summary", limitBytes = 
       }
     : tailString(content, normalizedLimitBytes);
   if (normalizedMode === "summary") {
-    const summaryEvents = payload.truncated ? parseJsonlEvents(payload.content) : events;
+    const summaryEvents = payload.truncated ? parseJsonlRunEvents(payload.content) : events;
     const summary = summarizeEvents(summaryEvents, payload);
     return {
       run: normalizeRun(run),
