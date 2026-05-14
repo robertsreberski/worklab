@@ -1,4 +1,5 @@
 import { accessSync, constants, existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join, isAbsolute, resolve } from "node:path";
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
@@ -6,6 +7,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const DEFAULT_MCP_HEALTH_TIMEOUT_MS = 5000;
+const require = createRequire(import.meta.url);
 
 function isPrivateHost(host) {
   if (host === "localhost" || host === "127.0.0.1" || host === "::1") return true;
@@ -75,8 +77,15 @@ export function loadMcpConfig(dataDir) {
  * @returns {Record<string, object>}
  */
 export function getBuiltinMcpServers(repoRoot) {
+  let webhookServerPath;
+  try {
+    webhookServerPath = require.resolve("@worklab-ai/webhooks/server");
+  } catch {
+    webhookServerPath = join(repoRoot, "packages/webhooks/src/server.js");
+  }
   return {
     worklab: { command: join(repoRoot, "src/mcp/launch-worklab-mcp.sh") },
+    webhooks: { command: process.execPath, args: [webhookServerPath] },
   };
 }
 

@@ -90,9 +90,11 @@ describe("pickMcpServers", () => {
 });
 
 describe("getBuiltinMcpServers", () => {
-  it("returns worklab entry with absolute launcher path", () => {
+  it("returns worklab and webhooks entries with absolute launchers", () => {
     const r = getBuiltinMcpServers("/repo/root");
     expect(r.worklab.command).toBe("/repo/root/src/mcp/launch-worklab-mcp.sh");
+    expect(r.webhooks.command).toBe(process.execPath);
+    expect(r.webhooks.args[0]).toMatch(/webhooks.+server\.js$/);
   });
 });
 
@@ -104,6 +106,7 @@ describe("getAvailableMcpServers", () => {
     } });
     const available = getAvailableMcpServers(d, { repoRoot: process.cwd() });
     expect(available.worklab).toBeTruthy();
+    expect(available.webhooks).toBeTruthy();
     expect(available.node.command).toBe(process.execPath);
     expect(available.missing).toBeUndefined();
   });
@@ -155,5 +158,22 @@ describe("MCP health checks", () => {
     expect(response.checked_at).toMatch(/T/);
     expect(response.results).toHaveLength(1);
     expect(response.results[0]).toMatchObject({ name: "missing", source: "user", health: "error" });
+  });
+
+  it("lists tools from the built-in webhook server", async () => {
+    const d = mk({ mcpServers: {} });
+    const response = await getMcpServerHealth(d, {
+      repoRoot: process.cwd(),
+      names: ["webhooks"],
+      timeoutMs: 2000,
+    });
+    expect(response.results).toHaveLength(1);
+    expect(response.results[0]).toMatchObject({
+      name: "webhooks",
+      source: "builtin",
+      health: "ok",
+      static_available: true,
+    });
+    expect(response.results[0].tools_preview).toContain("trigger_webhook");
   });
 });
