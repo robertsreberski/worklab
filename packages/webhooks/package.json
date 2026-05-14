@@ -1,0 +1,46 @@
+{
+  "name": "@worklab-ai/webhooks",
+  "version": "0.1.3",
+  "description": "Reusable webhook helpers and MCP tool for Worklab agents",
+  "type": "module",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/robertsreberski/worklab.git",
+    "directory": "packages/webhooks"
+  },
+  "bugs": {
+    "url": "https://github.com/robertsreberski/worklab/issues"
+  },
+  "homepage": "https://github.com/robertsreberski/worklab/tree/main/packages/webhooks#readme",
+  "keywords": [
+    "ai",
+    "agents",
+    "mcp",
+    "webhooks",
+    "worklab"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./server": "./src/server.js"
+  },
+  "bin": {
+    "worklab-webhooks-mcp": "./src/server.js"
+  },
+  "main": "./src/index.js",
+  "files": [
+    "src/**/*.js",
+    "!src/__tests__/**",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  }
+}
