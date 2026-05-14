@@ -670,10 +670,6 @@ export function attachLiveInputState(runs, watcher) {
   }));
 }
 
-export function selectRunsWithLog(db, whereClause, ...params) {
-  return selectRunsWithLogJoin(db, whereClause, ...params).map(rowToRun);
-}
-
 export function selectTaskRunsWithLog(db, taskId, { view = "full", limit = null, cursor = null } = {}) {
   const rows = listTaskRunsWithLogJoin(db, taskId, { view, limit, cursor });
   return rows.map(view === "summary" ? rowToRunSummary : rowToRun);
