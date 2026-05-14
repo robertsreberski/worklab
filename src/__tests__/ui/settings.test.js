@@ -16,6 +16,7 @@ import {
   secondsValue,
   serviceStatusMeta,
   settingsPayload,
+  SETTINGS_SECTION_LINKS,
   slackRejectedSenderLabel,
   slackUserMatchesBot,
   updateInstallDescription,
@@ -25,6 +26,7 @@ import {
 
 const appShellSourcePath = resolve(import.meta.dirname, "../../ui/src/components/AppShell.jsx");
 const settingsSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/Settings.jsx");
+const settingsHelpersSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/settings/helpers.js");
 const settingsShellSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/settings/SettingsShell.jsx");
 const settingsStylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
 const providersSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/settings/ProvidersTab.jsx");
@@ -47,7 +49,8 @@ describe("settings UI duration conversions", () => {
 
   it("drives settings overview cards and section nav from the same section map", () => {
     const source = readFileSync(settingsSourcePath, "utf8");
-    const sectionIds = [...source.matchAll(/id: "(settings-[^"]+)"/g)].map((match) => match[1]);
+    const helpersSource = readFileSync(settingsHelpersSourcePath, "utf8");
+    const sectionIds = SETTINGS_SECTION_LINKS.map((item) => item.id);
 
     expect(sectionIds).toEqual([
       "settings-runtime",
@@ -58,8 +61,10 @@ describe("settings UI duration conversions", () => {
       "settings-search",
       "settings-tools",
     ]);
+    expect(helpersSource).toContain("export const SETTINGS_SECTION_LINKS");
     expect(source).toContain("overviewCards.map");
     expect(source).toContain("SETTINGS_SECTION_LINKS.map");
+    expect(source).toContain("settingsOverviewCards({");
     expect(source).toContain("active={activeSectionId === card.targetId}");
     expect(source).toContain('aria-current={activeSectionId === item.id ? "location" : undefined}');
   });

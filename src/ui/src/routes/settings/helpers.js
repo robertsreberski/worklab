@@ -25,6 +25,15 @@ export const MCP_TRANSPORT_OPTIONS = [
   { value: "http", label: "HTTP" },
   { value: "sse", label: "SSE" },
 ];
+export const SETTINGS_SECTION_LINKS = [
+  { id: "settings-runtime", label: "Service", icon: "settings" },
+  { id: "settings-execution", label: "Agent runs", icon: "clock" },
+  { id: "settings-notifications", label: "Notifications", icon: "message-circle" },
+  { id: "settings-assistant", label: "Assistant", icon: "sparkles" },
+  { id: "settings-slack", label: "Slack", icon: "message-square" },
+  { id: "settings-search", label: "Search", icon: "database" },
+  { id: "settings-tools", label: "MCP tools", icon: "terminal" },
+];
 
 export function jsonEqual(left, right) {
   return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
@@ -73,6 +82,87 @@ export function listFromText(value) {
 
 export function textFromList(value) {
   return Array.isArray(value) ? value.join("\n") : String(value || "");
+}
+
+export function settingsOverviewCards({
+  currentAssistantModel,
+  endpointLabel,
+  indexStatus,
+  mcpSummary,
+  notificationMeta,
+  notificationModeDetail,
+  notificationSettingsState,
+  searchMeta,
+  serviceMeta,
+  settings,
+  slackMeta,
+  slackStatus,
+}) {
+  return [
+    {
+      targetId: "settings-runtime",
+      icon: "settings",
+      title: "Service",
+      value: serviceMeta.label,
+      detail: endpointLabel,
+      status: serviceMeta.status,
+      statusLabel: serviceMeta.label,
+    },
+    {
+      targetId: "settings-execution",
+      icon: "clock",
+      title: "Agent runs",
+      value: `${minutesValue(settings.worker_timeout_ms) || "-"} min timeout`,
+      detail: settings.consolidation_enabled ? `Memory at ${settings.consolidation_hour}:00` : "Memory refresh off",
+      status: settings.consolidation_enabled ? "enabled" : "disabled",
+      statusLabel: settings.consolidation_enabled ? "Memory on" : "Memory off",
+    },
+    {
+      targetId: "settings-notifications",
+      icon: "message-circle",
+      title: "Notifications",
+      value: `${notificationSettingsState?.mode === "pwa" ? "PWA" : "Browser"} ${notificationMeta.label.toLowerCase()}`,
+      detail: notificationModeDetail,
+      status: notificationMeta.status,
+      statusLabel: notificationMeta.label,
+    },
+    {
+      targetId: "settings-assistant",
+      icon: "sparkles",
+      title: "Assistant",
+      value: currentAssistantModel,
+      detail: `Memory ${settings.slack_agent_name || "assistant"}`,
+      status: "enabled",
+      statusLabel: "Available",
+    },
+    {
+      targetId: "settings-slack",
+      icon: "message-square",
+      title: "Slack",
+      value: slackMeta.label,
+      detail: slackStatus?.bot_user_id ? `Bot ${slackStatus.bot_user_id}` : "Socket Mode bot",
+      status: slackMeta.status,
+      statusLabel: slackMeta.label,
+    },
+    {
+      targetId: "settings-search",
+      icon: "database",
+      title: "Search",
+      value: searchMeta.label,
+      detail: indexStatus ? `${indexStatus.vectorized || 0}/${indexStatus.total || 0} vectorized` : "Index status unknown",
+      status: searchMeta.status,
+      statusLabel: searchMeta.label,
+    },
+    {
+      targetId: "settings-tools",
+      icon: "terminal",
+      title: "MCP tools",
+      value: mcpSummary.label,
+      detail: `${mcpSummary.builtin} built-in / ${mcpSummary.user} external`,
+      status: mcpSummary.status,
+      statusLabel: mcpSummary.label,
+    },
+  ];
 }
 
 export function parseJsonObject(text, label) {

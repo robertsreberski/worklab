@@ -6,6 +6,10 @@ const taskDetailSource = readFileSync(
   resolve(import.meta.dirname, "../../ui/src/routes/TaskDetail.jsx"),
   "utf8",
 );
+const taskActivitySource = readFileSync(
+  resolve(import.meta.dirname, "../../ui/src/routes/task-detail/TaskActivitySection.jsx"),
+  "utf8",
+);
 
 describe("TaskDetail team metadata", () => {
   it("renders the resolved team display name instead of the raw canonical id", () => {
@@ -17,8 +21,8 @@ describe("TaskDetail team metadata", () => {
 
 describe("TaskDetail comment author metadata", () => {
   it("renders agent comment authors as plain names instead of badges", () => {
-    expect(taskDetailSource).toContain('class="activity-author-name agent"');
-    expect(taskDetailSource).toContain("badge={false}");
+    expect(taskActivitySource).toContain('class="activity-author-name agent"');
+    expect(taskActivitySource).toContain("badge={false}");
     expect(taskDetailSource).not.toContain('<AgentLink name={agentName} label={commentAuthorLabel(item)} agents={agents} />');
   });
 });
