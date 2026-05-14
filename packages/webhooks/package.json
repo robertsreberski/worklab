@@ -1,6 +1,6 @@
 {
   "name": "@worklab-ai/webhooks",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Reusable webhook helpers and MCP tool for Worklab agents",
   "type": "module",
   "license": "GPL-3.0-only",
@@ -28,7 +28,7 @@
     "./server": "./src/server.js"
   },
   "bin": {
-    "worklab-webhooks-mcp": "./src/server.js"
+    "worklab-webhooks-mcp": "src/server.js"
   },
   "main": "./src/index.js",
   "files": [
