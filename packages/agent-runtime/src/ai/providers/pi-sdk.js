@@ -2,7 +2,7 @@ import { Agent } from "@mariozechner/pi-agent-core";
 import * as openAiCodexResponses from "@mariozechner/pi-ai/openai-codex-responses";
 import { randomUUID } from "node:crypto";
 import { estimateCost } from "../cost.js";
-import { backendCapabilities } from "../backend.js";
+import { runtimeCapabilities } from "../runtime/capabilities.js";
 import { formatLiveInputGuidance } from "../live-input-prompt.js";
 import {
   createAgentCompactionManager,
@@ -937,32 +937,32 @@ export async function generatePiResponse(systemPrompt, options = {}) {
 
 export const piOpenAiBackend = {
   kind: "pi",
-  capabilities: backendCapabilities("pi"),
+  capabilities: runtimeCapabilities("pi"),
   execute: generatePiResponse,
 };
 
 export const piCodexBackend = {
   kind: "pi",
-  capabilities: backendCapabilities("pi"),
+  capabilities: runtimeCapabilities("pi"),
   execute: generatePiResponse,
 };
 
 export const piVercelBackend = {
   kind: "pi",
-  capabilities: backendCapabilities("pi"),
+  capabilities: runtimeCapabilities("pi"),
   execute: generatePiResponse,
 };
 
 export const piGenericBackend = {
   kind: "pi",
-  capabilities: backendCapabilities("pi"),
+  capabilities: runtimeCapabilities("pi"),
   execute: generatePiResponse,
 };
 
 export const piRuntimeBridge = {
   id: "pi",
   kind: "pi",
-  capabilities: backendCapabilities("pi"),
+  capabilities: runtimeCapabilities("pi"),
   supports: (ref) => ref?.sdk === "pi",
   execute: generatePiResponse,
 };

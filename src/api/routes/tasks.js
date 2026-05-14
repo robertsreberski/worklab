@@ -15,6 +15,7 @@ import {
   runtimeTaskVisibility,
   STAGES,
   taskStage,
+  collectGitDiffArtifactsForRun,
 } from "../../core/index.js";
 import { renderToolSurfaceMarkdown } from "../../mcp/agent/tools/index.js";
 import { withMentions } from "../lib/with-mentions.js";
@@ -51,7 +52,6 @@ import {
   insertAuthoredComment,
   listTaskComments,
 } from "../../core/db/queries/comments.js";
-import { collectGitDiffArtifactsForRun } from "../../core/artifact-collection.js";
 import { DEFAULT_RUN_POLICY } from "./tasks/constants.js";
 import { routeError, sendRouteError } from "./tasks/errors.js";
 import {

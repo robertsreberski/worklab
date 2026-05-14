@@ -1,4 +1,4 @@
-import { RUNTIME_CAPABILITIES, runtimeCapabilities } from "./runtime/registry.js";
+import { RUNTIME_CAPABILITIES, runtimeCapabilities } from "./runtime/capabilities.js";
 
 // Back-compat export name for callers that still ask for backend capabilities.
 // The canonical source is the runtime bridge registry.

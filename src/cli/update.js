@@ -1,14 +1,14 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname } from "node:path";
-import { loadConfig } from "../core/index.js";
 import {
   getUpdateStatus,
+  loadConfig,
   readPackageMetadata,
   readUpdateState,
   updateLogPath,
   writeUpdateState,
-} from "../core/update-check.js";
+} from "../core/index.js";
 import { restart } from "./restart.js";
 
 function argValue(args, index, name) {

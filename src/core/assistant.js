@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { appendJournalEntry, appendJournalSummary, appendMemoryFacts, readJournalTail } from "./journal.js";
 import { readAgentMemoryContent } from "./memory.js";
 import { readSettings } from "./settings.js";
-import { generateResponse, resolveModel, WORKLAB_BUILTIN_TOOLS } from "./ai.js";
+import { generateResponse, resolveModel } from "./ai.js";
+import { WORKLAB_BUILTIN_TOOLS } from "./builtin-tools.js";
 import { loadSkills } from "./skills.js";
 import { newAssistantMessageId, newRunId } from "./ids.js";
 import {

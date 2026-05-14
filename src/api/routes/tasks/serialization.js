@@ -9,13 +9,13 @@ import {
   runTodoStateSummary,
   supportsLiveInputProvider,
   taskInstructionAttachments,
+  collectGitDiffArtifactsForRun,
 } from "../../../core/index.js";
 import {
   getTaskById,
   listTaskSummaryRowsByIds,
 } from "../../../core/db/queries/tasks.js";
 import { getAgentLogEvents } from "../../../core/db/queries/agent-logs.js";
-import { collectGitDiffArtifactsForRun } from "../../../core/artifact-collection.js";
 import {
   getLastNonRunningTaskRun,
   getLatestExecuteRunSummary,

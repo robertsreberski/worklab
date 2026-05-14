@@ -8,6 +8,7 @@ import {
 import { claudeModelSupportsOneMillionContext } from "@worklab-ai/agent-runtime/ai/runtime/context-windows.js";
 import { codexModelSupportsFastMode } from "@worklab-ai/agent-runtime/ai/runtime/fast-mode.js";
 import { createRuntime } from "@worklab-ai/agent-runtime";
+import { WORKLAB_BUILTIN_TOOLS } from "./builtin-tools.js";
 import { customPricingResolverFor } from "./custom-pricing.js";
 import { resolvePiApiKey } from "./pi-oauth.js";
 import { compactionRecorderFor } from "./run-compactions.js";
@@ -54,7 +55,7 @@ export const BUILTIN_OPENAI_MODELS = piModelIds("openai", FALLBACK_OPENAI_MODELS
 export const BUILTIN_CODEX_MODELS = piModelIds("openai-codex", FALLBACK_CODEX_MODELS);
 
 export const VALID_MODEL_SDKS = ["claude", "pi", "codex"];
-export const WORKLAB_BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
+export { WORKLAB_BUILTIN_TOOLS };
 
 const EXTRA_PI_PROVIDER_IDS = [
   "github-copilot",

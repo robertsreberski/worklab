@@ -9,10 +9,10 @@ import {
   safeRunArtifactPath,
   supportsLiveInputProvider,
   tailRunEventsByVisibleItems,
+  collectGitDiffArtifactsForRun,
 } from "../../core/index.js";
 import { getRunById, getRunRawOutputPath } from "../../core/db/queries/runs.js";
 import { getAgentLogByRunId } from "../../core/db/queries/agent-logs.js";
-import { collectGitDiffArtifactsForRun } from "../../core/artifact-collection.js";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 

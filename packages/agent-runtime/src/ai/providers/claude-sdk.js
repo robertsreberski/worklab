@@ -11,7 +11,7 @@ import {
 import { formatLiveInputGuidance } from "../live-input-prompt.js";
 import { estimateCost } from "../cost.js";
 import { modelWithContextWindow } from "../runtime/context-windows.js";
-import { backendCapabilities } from "../backend.js";
+import { runtimeCapabilities } from "../runtime/capabilities.js";
 import { MAX_TOOL_RESULT_BYTES, summarisePayload } from "../../agent/tool-bloat.js";
 import { normalizeMcpToolParams } from "../../agent/tools/pi-bridge.js";
 import {
@@ -754,14 +754,14 @@ export async function generateClaudeResponse(systemPrompt, options) {
 
 export const claudeSdkBackend = {
   kind: "claude",
-  capabilities: backendCapabilities("claude"),
+  capabilities: runtimeCapabilities("claude"),
   execute: generateClaudeResponse,
 };
 
 export const claudeRuntimeBridge = {
   id: "claude",
   kind: "claude",
-  capabilities: backendCapabilities("claude"),
+  capabilities: runtimeCapabilities("claude"),
   supports: (ref) => ref?.sdk === "claude",
   execute: generateClaudeResponse,
 };
