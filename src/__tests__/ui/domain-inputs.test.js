@@ -10,6 +10,10 @@ import {
   scheduleTimeValue,
   triggerWithTime,
 } from "../../ui/src/components/primitives/ScheduleBuilder.jsx";
+import {
+  automationWebhookUrl,
+  normalizeTaskAutomationTrigger,
+} from "../../ui/src/routes/task-detail/WorkflowCards.jsx";
 
 describe("domain date and schedule inputs", () => {
   it("round-trips local date and time values through epoch milliseconds", () => {
@@ -39,5 +43,14 @@ describe("domain date and schedule inputs", () => {
     const trigger = triggerWithTime({ type: "weekly", weekdays: [2, 4] }, "07:45");
     expect(trigger).toMatchObject({ type: "weekly", weekdays: [2, 4], hour: 7, minute: 45 });
     expect(scheduleTimeValue(trigger)).toBe("07:45");
+  });
+
+  it("preserves webhook automation triggers without schedule normalization", () => {
+    expect(normalizeTaskAutomationTrigger({ type: "webhook", webhook_id: " Hook_123 " }))
+      .toEqual({ type: "webhook", webhook_id: "Hook_123" });
+    expect(normalizeTaskAutomationTrigger({ type: "webhook" }))
+      .toEqual({ type: "webhook" });
+    expect(automationWebhookUrl({ trigger: { type: "webhook", webhook_id: "Hook_123" } }, "http://localhost:7878"))
+      .toBe("http://localhost:7878/api/webhooks/Hook_123");
   });
 });

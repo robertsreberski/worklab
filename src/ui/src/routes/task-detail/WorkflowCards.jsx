@@ -9,8 +9,9 @@ import { MarkdownContent } from "../../components/Markdown.jsx";
 import { Button } from "../../components/primitives/Button.jsx";
 import { Checkbox } from "../../components/primitives/Checkbox.jsx";
 import { Chip } from "../../components/primitives/Chip.jsx";
+import { Input } from "../../components/primitives/Input.jsx";
 import { RadioGroup } from "../../components/primitives/RadioGroup.jsx";
-import { ScheduleBuilder, normalizeScheduleTrigger as normalizeAutomationTrigger } from "../../components/primitives/ScheduleBuilder.jsx";
+import { ScheduleBuilder, normalizeScheduleTrigger } from "../../components/primitives/ScheduleBuilder.jsx";
 import { StatusPill } from "../../components/primitives/StatusPill.jsx";
 import { Textarea } from "../../components/primitives/Textarea.jsx";
 import { MentionableTextarea } from "../../components/MentionableTextarea.jsx";
@@ -30,15 +31,46 @@ import {
 function emptyAutomationDraft() {
   return {
     enabled: true,
-    trigger: normalizeAutomationTrigger({ type: "daily", hour: 9, minute: 0 }),
+    trigger: normalizeTaskAutomationTrigger({ type: "daily", hour: 9, minute: 0 }),
   };
 }
 
 function automationDraftFrom(automation) {
   return {
     enabled: automation.enabled !== false,
-    trigger: normalizeAutomationTrigger(automation.trigger),
+    trigger: normalizeTaskAutomationTrigger(automation.trigger),
   };
+}
+
+export function normalizeTaskAutomationTrigger(trigger = {}) {
+  if (trigger?.type === "webhook") {
+    const webhookId = String(trigger.webhook_id || "").trim();
+    return webhookId ? { type: "webhook", webhook_id: webhookId } : { type: "webhook" };
+  }
+  return normalizeScheduleTrigger(trigger);
+}
+
+function automationTriggerMode(trigger = {}) {
+  return trigger?.type === "webhook" ? "webhook" : "schedule";
+}
+
+function triggerForAutomationMode(mode, current = {}) {
+  if (mode === "webhook") {
+    return normalizeTaskAutomationTrigger({
+      type: "webhook",
+      webhook_id: current?.type === "webhook" ? current.webhook_id : "",
+    });
+  }
+  return normalizeScheduleTrigger(current?.type === "webhook" ? { type: "daily", hour: 9, minute: 0 } : current);
+}
+
+export function automationWebhookUrl(automation = {}, origin = globalThis?.location?.origin || "") {
+  const path = automation.webhook_path
+    || (automation.trigger?.type === "webhook" && automation.trigger.webhook_id
+      ? `/api/webhooks/${automation.trigger.webhook_id}`
+      : "");
+  if (!path) return "";
+  return origin ? `${origin}${path}` : path;
 }
 
 export function TaskContextList({ task }) {
@@ -392,6 +424,7 @@ function automationOutcomeMeta(automation) {
   if (!automation.enabled) return { label: "Paused", className: "chip-muted", icon: "minus-circle" };
   if (latest?.outcome === "skipped") return { label: "Skipped", className: "chip-warn", icon: "alert-circle" };
   if (latest?.outcome === "failed") return { label: "Failed", className: "chip-error", icon: "alert-triangle" };
+  if (automation.trigger?.type === "webhook") return { label: "Webhook", className: "chip-trigger", icon: "link" };
   return { label: "Enabled", className: "chip-trigger", icon: "clock" };
 }
 
@@ -425,19 +458,19 @@ export function TaskAutomationsCard({ taskId, automations, loading, onChanged })
     try {
       const payload = {
         enabled: !!draft.enabled,
-        trigger: normalizeAutomationTrigger(draft.trigger),
+        trigger: normalizeTaskAutomationTrigger(draft.trigger),
       };
       if (editingId === "new") {
         await api.createTaskAutomation(taskId, payload);
-        pushToast("Schedule created", { variant: "success" });
+        pushToast("Automation created", { variant: "success" });
       } else {
         await api.patchTaskAutomation(taskId, editingId, payload);
-        pushToast("Schedule saved", { variant: "success" });
+        pushToast("Automation saved", { variant: "success" });
       }
       cancelEdit();
       onChanged?.();
     } catch (error) {
-      pushToast(`Schedule save failed: ${error.message}`, { variant: "error" });
+      pushToast(`Automation save failed: ${error.message}`, { variant: "error" });
     } finally {
       setSaving(false);
     }
@@ -446,7 +479,7 @@ export function TaskAutomationsCard({ taskId, automations, loading, onChanged })
   async function deleteAutomation(automation) {
     try {
       await api.deleteTaskAutomation(taskId, automation.id);
-      pushToast("Schedule deleted", { variant: "success" });
+      pushToast("Automation deleted", { variant: "success" });
       if (editingId === automation.id) cancelEdit();
       onChanged?.();
     } catch (error) {
@@ -457,8 +490,8 @@ export function TaskAutomationsCard({ taskId, automations, loading, onChanged })
   async function runAutomation(automation) {
     try {
       const result = await api.runTaskAutomation(taskId, automation.id);
-      if (result?.skipped) pushToast(`Schedule skipped: ${result.reason}`, { variant: "info" });
-      else pushToast("Scheduled run started", { variant: "success" });
+      if (result?.skipped) pushToast(`Automation skipped: ${result.reason}`, { variant: "info" });
+      else pushToast("Automation run started", { variant: "success" });
       onChanged?.();
     } catch (error) {
       pushToast(`Run failed: ${error.message}`, { variant: "error" });
@@ -466,6 +499,7 @@ export function TaskAutomationsCard({ taskId, automations, loading, onChanged })
   }
 
   const list = automations || [];
+  const mode = automationTriggerMode(draft.trigger);
   return (
     <Card
       title={`Automations (${list.length})`}
@@ -478,11 +512,40 @@ export function TaskAutomationsCard({ taskId, automations, loading, onChanged })
     >
       {editingId && (
         <form class="task-automation-form" onSubmit={saveAutomation}>
-          <ScheduleBuilder
-            value={draft.trigger}
-            disabled={saving}
-            onChange={(trigger) => patchDraft({ trigger })}
+          <RadioGroup
+            value={mode}
+            onChange={(nextMode) => patchDraft({ trigger: triggerForAutomationMode(nextMode, draft.trigger) })}
+            options={[
+              { value: "schedule", label: "Schedule", icon: <Icon name="clock" size={13} /> },
+              { value: "webhook", label: "Webhook", icon: <Icon name="link" size={13} /> },
+            ]}
+            ariaLabel="Automation trigger type"
+            class="task-automation-mode"
           />
+          {mode === "schedule" ? (
+            <ScheduleBuilder
+              value={draft.trigger}
+              disabled={saving}
+              onChange={(trigger) => patchDraft({ trigger })}
+            />
+          ) : (
+            <div class="task-automation-webhook-field">
+              <label for="task-automation-webhook-id">Webhook id</label>
+              <Input
+                id="task-automation-webhook-id"
+                value={draft.trigger.webhook_id || ""}
+                disabled={saving}
+                placeholder="Generate on save"
+                spellcheck={false}
+                onInput={(event) => patchDraft({
+                  trigger: normalizeTaskAutomationTrigger({
+                    type: "webhook",
+                    webhook_id: event.currentTarget.value,
+                  }),
+                })}
+              />
+            </div>
+          )}
           <Checkbox
             checked={!!draft.enabled}
             onChange={(value) => patchDraft({ enabled: value })}
@@ -496,14 +559,15 @@ export function TaskAutomationsCard({ taskId, automations, loading, onChanged })
         </form>
       )}
       {loading ? (
-        <div class="field-hint">Loading schedules...</div>
+        <div class="field-hint">Loading automations...</div>
       ) : list.length === 0 ? (
-        <div class="task-automations-empty">No schedules yet.</div>
+        <div class="task-automations-empty">No automations yet.</div>
       ) : (
         <SectionStack class="task-automation-list">
           {list.map((automation) => {
             const meta = automationOutcomeMeta(automation);
             const latest = automation.recent_triggers?.[0] || null;
+            const webhookUrl = automationWebhookUrl(automation);
             return (
               <div key={automation.id} class="task-automation-row">
                 <div class="task-automation-main">
@@ -511,12 +575,27 @@ export function TaskAutomationsCard({ taskId, automations, loading, onChanged })
                     <Icon name={meta.icon} size={10} /> {meta.label}
                   </span>
                   <span class="task-automation-trigger">{automation.trigger_summary}</span>
-                  <span class="soft-meta">
-                    {automation.next_fire_at ? `next ${formatDate(automation.next_fire_at)}` : "no upcoming run"}
+                  <span class={`soft-meta${webhookUrl ? " task-automation-webhook-url" : ""}`}>
+                    {webhookUrl || (automation.next_fire_at ? `next ${formatDate(automation.next_fire_at)}` : "no upcoming run")}
                   </span>
                   {latest?.reason && <span class="task-automation-reason">{latest.reason}</span>}
                 </div>
                 <Toolbar class="task-automation-actions">
+                  {webhookUrl && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label="Copy webhook URL"
+                      title="Copy webhook URL"
+                      iconLeft={<Icon name="copy" size={12} />}
+                      onClick={() => {
+                        navigator.clipboard?.writeText(webhookUrl).then(
+                          () => pushToast("Webhook URL copied", { variant: "success" }),
+                          () => pushToast("Copy failed", { variant: "error" }),
+                        );
+                      }}
+                    />
+                  )}
                   <Button size="sm" variant="ghost" iconLeft={<Icon name="play" size={12} />} onClick={() => runAutomation(automation)}>
                     Run
                   </Button>
