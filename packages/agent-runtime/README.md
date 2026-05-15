@@ -46,6 +46,41 @@ const result = await runtime.run("You are a helpful assistant.", {
 console.log(result.text);
 ```
 
+## When to reach for this vs. other JS agent runtimes
+
+`@worklab-ai/agent-runtime` is purpose-built for **autonomous, long-running agent work** with provider portability and operational resilience as first-class concerns. It is *not* a streaming-chat UI kit. Where each peer fits:
+
+- **Vercel AI SDK** — best when you're building a chat / generative-UI experience inside a React or Next.js app. `useChat`, `useCompletion`, streaming server components, and edge-runtime compatibility are their strengths. Their provider list is curated (Anthropic, OpenAI, Google, etc., via `@ai-sdk/*` packages); there's no Pi gateway, no Claude Code CLI, no Codex CLI app-server, and no per-call provider fallback. If you're rendering a streaming chat into a browser, use them. If you're orchestrating multi-turn autonomous work that must survive a rate-limited primary provider, use us.
+- **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`) — first-party Anthropic SDK. Tight integration with Claude features (canUseTool, sub-agents, hooks, MCP). We *wrap* it as one of our four backends and add context compaction, transcript-resume across provider drops, a 22-kind failure taxonomy, a tool-bloat guard with artifact persistence, and a provider fallback router. Reach for the bare Anthropic SDK when you only ever talk to Claude and don't need cross-provider portability or resume.
+- **Mastra** — a workflow engine + memory + RAG stack. Different category: it's the layer *above* a runtime. You can layer Mastra workflows on top of `@worklab-ai/agent-runtime` if you want both.
+- **OpenAI Agents SDK** — first-party OpenAI SDK. Same trade-off as the Claude Agent SDK: tight integration with OpenAI, no other providers. Pi providers in our runtime cover OpenAI plus a dozen others through a single API.
+- **LangChain.js** — kitchen sink with deep abstraction stacks. We're deliberately lean; if you want chains, agents, vector stores, and parsers under one umbrella, LangChain is built for that. If you want a focused runtime kernel, use us.
+
+**What we natively bridge (no extra packages):**
+
+- Anthropic Claude via the Claude Agent SDK (`claude` SDK).
+- Anthropic Claude via the `claude` Code CLI binary.
+- OpenAI's Codex via the `codex` app-server CLI.
+- OpenAI, Google Gemini, AWS Bedrock, OpenRouter, xAI, Groq, Mistral, Perplexity, DeepSeek, Ollama, LlamaCPP, GLM, Vercel AI Gateway, GitHub Copilot, Gemini CLI — all through the Pi (`@mariozechner/pi-ai`) provider gateway, which our SDK adapter speaks directly.
+
+**At-a-glance:**
+
+| Need | Use this | Use Vercel AI SDK | Use Claude Agent SDK |
+|---|---|---|---|
+| Streaming chat UI in React/Next | ✗ | ✓ | ✗ |
+| Multi-provider portability | ✓ (4 backends, 15+ providers) | partial | ✗ |
+| CLI providers (claude/codex binaries) | ✓ | ✗ | ✗ |
+| Provider fallback on rate limit / overload | ✓ (`createRouterRuntime`) | ✗ | ✗ |
+| Aggressive context compaction with summarization | ✓ | ✗ | partial |
+| Transcript-tail resume after provider drops | ✓ | ✗ | ✗ |
+| Tool-output bloat guard + artifact persistence | ✓ | ✗ | ✗ |
+| MCP transports out of the box (stdio/SSE/HTTP) | ✓ | partial | ✓ |
+| HITL approval gates with risk tiers | ✓ | ✗ | partial (`canUseTool`) |
+| Multi-subscriber observer with cost/cache metrics | ✓ | partial | partial |
+| Edge-runtime compatibility | ✗ | ✓ | partial |
+
+Honest summary: if the agent runs **without a human watching the screen** for minutes-to-hours and **must survive provider blips**, this is the right tool. If a human is watching a streaming chat, Vercel's SDK is the right tool. Both can coexist in the same app.
+
 ## Picking a backend
 
 The runtime picks a backend from `options.model` + `options.executionMode`:
