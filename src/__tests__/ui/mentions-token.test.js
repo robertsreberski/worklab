@@ -7,6 +7,10 @@ import {
   parseMentionToken,
   parseMentions,
 } from "../../ui/src/lib/mentions.js";
+import {
+  mentionPickerRequest,
+  mentionPickerResults,
+} from "../../ui/src/components/primitives/MentionPicker.jsx";
 import { entityBadgeLabel, entityBadgeMeta } from "../../ui/src/lib/entityBadges.js";
 
 const repoRoot = resolve(import.meta.dirname, "../../..");
@@ -58,6 +62,40 @@ describe("UI mentions parser parity", () => {
     });
     expect(parseMentionToken("@user/foo")).toBeNull();
     expect(parseMentionToken("agent/foo")).toBeNull();
+  });
+});
+
+describe("MentionPicker request helpers", () => {
+  it("normalizes typed empty prefixes into a typed recent lookup", () => {
+    expect(mentionPickerRequest("agent/", null)).toEqual({ q: "", types: "agent" });
+    expect(mentionPickerRequest("task/T-", null)).toEqual({ q: "T-", types: "task" });
+  });
+
+  it("respects parent type restrictions for typed prefixes", () => {
+    expect(mentionPickerRequest("agent/", ["task"])).toBeNull();
+    expect(mentionPickerRequest("task/", ["task", "agent"])).toEqual({ q: "", types: "task" });
+  });
+
+  it("keeps untyped searches scoped to the parent type filter", () => {
+    expect(mentionPickerRequest("triage", ["task", "project"])).toEqual({
+      q: "triage",
+      types: ["task", "project"],
+    });
+  });
+
+  it("preserves API order for display and active selection", () => {
+    const apiResults = [
+      { token: "@run/run-1", type: "run", label: "Recent run" },
+      { token: "@agent/triager", type: "agent", label: "Triager" },
+      { token: "@task/T-42", type: "task", label: "Fix picker" },
+    ];
+
+    expect(mentionPickerResults(apiResults)).toBe(apiResults);
+    expect(mentionPickerResults(apiResults).map((result) => result.token)).toEqual([
+      "@run/run-1",
+      "@agent/triager",
+      "@task/T-42",
+    ]);
   });
 });
 

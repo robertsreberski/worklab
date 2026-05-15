@@ -10,9 +10,8 @@ import { api } from "../../lib/api.js";
 import { useDropdownPlacement } from "../../hooks/useDropdownPlacement.js";
 import { PopoverPortal } from "./PopoverPortal.jsx";
 import { entityBadgeMeta } from "../../lib/entityBadges.js";
+import { MENTION_TYPES } from "../../lib/mentions.js";
 import { Icon } from "../Icon.jsx";
-
-const TYPE_ORDER = { task: 0, project: 1, kb: 2, skill: 3, agent: 4, goal: 5, team: 6, run: 7 };
 
 const TYPE_BADGE = {
   agent: "Agent",
@@ -40,6 +39,34 @@ function debounce(fn, delay) {
   };
   wrapped.cancel = () => { if (timer) { clearTimeout(timer); timer = null; pending = null; } };
   return wrapped;
+}
+
+function normaliseTypeFilter(types) {
+  if (!types) return [];
+  const input = Array.isArray(types) ? types : String(types).split(",");
+  return input
+    .map((type) => String(type || "").trim().toLowerCase())
+    .filter((type) => MENTION_TYPES.includes(type));
+}
+
+export function mentionPickerRequest(query, types) {
+  const raw = String(query || "").trim();
+  const allowedTypes = normaliseTypeFilter(types);
+  const typed = /^([A-Za-z0-9_-]+)\/(.*)$/.exec(raw);
+  if (typed) {
+    const type = typed[1].toLowerCase();
+    if (!MENTION_TYPES.includes(type)) return null;
+    if (allowedTypes.length && !allowedTypes.includes(type)) return null;
+    return { q: typed[2], types: type };
+  }
+  if (!raw) return null;
+  const request = { q: raw };
+  if (allowedTypes.length) request.types = Array.isArray(types) ? allowedTypes : allowedTypes.join(",");
+  return request;
+}
+
+export function mentionPickerResults(results) {
+  return Array.isArray(results) ? results : [];
 }
 
 function TypeBadgeMarker({ type }) {
@@ -74,18 +101,21 @@ export const MentionPicker = forwardRef(function MentionPicker(
 
   // Keep the picker keyboard-controlled by the parent textarea so
   // focus stays in the editor while navigating.
+  const visibleResults = mentionPickerResults(results);
+
   useImperativeHandle(ref, () => ({
-    moveDown: () => setActiveIndex((i) => (results.length ? (i + 1) % results.length : 0)),
-    moveUp: () => setActiveIndex((i) => (results.length ? (i - 1 + results.length) % results.length : 0)),
+    moveDown: () => setActiveIndex((i) => (visibleResults.length ? (i + 1) % visibleResults.length : 0)),
+    moveUp: () => setActiveIndex((i) => (visibleResults.length ? (i - 1 + visibleResults.length) % visibleResults.length : 0)),
     selectActive: () => {
-      const item = results[activeIndex];
+      const item = visibleResults[activeIndex];
       if (item) onSelect?.(item);
     },
-    hasResults: () => results.length > 0,
-  }), [results, activeIndex, onSelect]);
+    hasResults: () => visibleResults.length > 0,
+  }), [visibleResults, activeIndex, onSelect]);
 
   const fetchResults = useMemo(() => debounce(async (q, typeFilter, seq) => {
-    if (!q) {
+    const request = mentionPickerRequest(q, typeFilter);
+    if (!request) {
       setResults([]);
       setLoading(false);
       return;
@@ -95,8 +125,7 @@ export const MentionPicker = forwardRef(function MentionPicker(
     const ctrl = new AbortController();
     fetchAbort.current = ctrl;
     try {
-      const params = { q, limit: 8 };
-      if (typeFilter) params.types = typeFilter;
+      const params = { ...request, limit: 8 };
       const res = await api.searchMentions(params, { signal: ctrl.signal });
       if (seq !== seqRef.current) return;
       setResults(res?.results || []);
@@ -125,9 +154,6 @@ export const MentionPicker = forwardRef(function MentionPicker(
   useEffect(() => () => fetchResults.cancel(), [fetchResults]);
 
   if (!open) return null;
-  const sorted = results
-    .slice()
-    .sort((a, b) => (TYPE_ORDER[a.type] ?? 99) - (TYPE_ORDER[b.type] ?? 99));
 
   return (
     <PopoverPortal>
@@ -151,9 +177,8 @@ export const MentionPicker = forwardRef(function MentionPicker(
       {!loading && results.length === 0 && (
         <div class="mention-picker-empty">No matches</div>
       )}
-      {sorted.map((item, idx) => {
+      {visibleResults.map((item, idx) => {
         const active = idx === activeIndex;
-        const realIdx = results.indexOf(item);
         return (
           <div
             key={item.token}
@@ -164,7 +189,7 @@ export const MentionPicker = forwardRef(function MentionPicker(
               event.preventDefault();
               onSelect?.(item);
             }}
-            onMouseEnter={() => setActiveIndex(realIdx)}
+            onMouseEnter={() => setActiveIndex(idx)}
           >
             <span class={`mention-picker-type badge-token badge-token-xs entity-badge entity-badge--${item.type}`} data-kind={item.type}>
               <TypeBadgeMarker type={item.type} />
