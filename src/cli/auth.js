@@ -3,8 +3,7 @@ import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import process from "node:process";
 import { getOAuthProvider } from "@mariozechner/pi-ai/oauth";
-import { loadConfig } from "../core/index.js";
-import { readPiAuthFile } from "../core/pi-oauth.js";
+import { loadConfig, readPiAuthFile } from "../core/index.js";
 import { applyConfigArgs, hasFlag } from "./args.js";
 
 const CONFIG_VALUE_FLAGS = new Set(["--port", "--host", "--data-dir", "--workspace", "--drain-timeout-ms"]);

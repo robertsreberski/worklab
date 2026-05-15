@@ -1,11 +1,6 @@
 // Review mode has the same tool allowlist as execute. We document — but do not
 // enforce — that reviewers should not call kb_delete. Enforcement via per-tool
 // permissions is Phase 4+.
-import {
-  buildTaskRunInput,
-  generateResponse,
-  resolveModel,
-} from "../core/index.js";
 import { parseVerdict } from "../core/review.js";
 import {
   WORKLAB_RESULT_JSON_SCHEMA,
@@ -15,9 +10,7 @@ import {
   validateWorklabResultSemantics,
 } from "../core/worklab-result/contract.js";
 import { parseWorklabResultLenient } from "../core/worklab-result/lenient-parse.js";
-import { estimateFirstTurnInput } from "@worklab-ai/agent-runtime/agent/compaction.js";
-import { createSdkEventCoalescer } from "./event-coalescer.js";
-import { maxTurnsForModel } from "./util.js";
+import { runTaskAgentTurn } from "./agent-turn.js";
 
 function validateRuntimeResult(result) {
   const validated = validateWorklabResultSemantics(result);
@@ -106,97 +99,32 @@ function reviewResultFromResponse(response) {
 }
 
 export async function runReview(ctx) {
-  const { db, config, ac, emit, liveInput, agentName, runId, taskId } = ctx;
-
-  let input;
-  try {
-    input = buildTaskRunInput({
-      config,
-      db,
-      taskId,
-      agentName,
-      runId,
-      mode: "review",
-      priorRunId: process.env.WORKLAB_PRIOR_RUN_ID,
-      worklabToolSurfaceMarkdown: ctx.worklabToolSurfaceMarkdown,
-    });
-  } catch (err) {
-    return { kind: "review", error: err.message || String(err) };
-  }
-  const { agent, skills, skillDirs, mcpServers, allowedTools, disallowedTools, systemPrompt, messages, nativeSubagents } = input;
-  const model = resolveModel(agent.model);
-  const sdkEvents = createSdkEventCoalescer((event) => emit({ type: "sdk_event", event }));
-  const firstTurn = estimateFirstTurnInput({ systemPrompt, messages });
-  emit({
-    type: "prompt_built",
-    diagnostics: {
-      first_turn_input_tokens: firstTurn.inputTokens,
-      first_turn_overhead_tokens: firstTurn.overheadTokens,
-      first_turn_input_chars: firstTurn.inputChars,
-      first_turn_overhead_chars: firstTurn.overheadChars,
-    },
+  const turn = await runTaskAgentTurn(ctx, {
+    kind: "review",
+    mode: "review",
+    priorRunId: process.env.WORKLAB_PRIOR_RUN_ID,
+    outputSchema: WORKLAB_RESULT_JSON_SCHEMA,
   });
-
-  try {
-    const result = await generateResponse(systemPrompt, {
-      model,
-      effort: agent.effort || "medium",
-      executionMode: agent.execution_mode || "sdk",
-      contextWindow: agent.context_window || "default",
-      fastMode: agent.fast_mode !== undefined ? !!agent.fast_mode : true,
-      db,
-      dataDir: config.dataDir,
-      skills,
-      skillDirs,
-      messages,
-      cwd: config.workspace,
-      mcpServers,
-      allowedTools,
-      disallowedTools,
-      nativeSubagents,
-      permissionMode: "bypassPermissions",
-      maxTurns: maxTurnsForModel(model, 30),
-      outputSchema: WORKLAB_RESULT_JSON_SCHEMA,
-      runArtifactDir: input.qaOutputDir,
-      abortSignal: ac.signal,
-      liveInput,
-      onEvent: sdkEvents.emit,
-    });
-    if (result.cancelled) return { kind: "review", cancelled: true, providerSessionId: result.providerSessionId || null };
-    if (result.error) {
-      return {
-        kind: "review",
-        error: result.error,
-        failureKind: result.failureKind,
-        errorDetails: result.errorDetails || null,
-        diagnostics: result.diagnostics || null,
-        providerSessionId: result.providerSessionId || null,
-        runtimeWarnings: result.runtimeWarnings,
-      };
-    }
-    const parsedReview = reviewResultFromResponse(result);
-    return {
-      kind: "review",
-      text: result.text,
-      usage: result.usage,
-      durationMs: result.durationMs,
-      numTurns: result.numTurns,
-      model: result.model,
-      effort: result.effort,
-      providerSessionId: result.providerSessionId || null,
-      runtimeWarnings: result.runtimeWarnings,
-      worklabResult: parsedReview.result,
-      verdict: parsedReview.verdict,
-      notes: parsedReview.notes,
-      parsedResultError: parsedReview.error || null,
-      parsedResultFatal: !!parsedReview.fatal,
-      parsedResultWarningKind: parsedReview.fatal ? "worklab_result_validation" : "review_result_parse",
-      parsedResultFatalMessage: parsedReview.error || "Reviewer did not return a valid worklab_result or verdict",
-      parsedResultRecoveredVia: parsedReview.recoveredVia || null,
-    };
-  } catch (err) {
-    return { kind: "review", error: err.message || String(err) };
-  } finally {
-    sdkEvents.flush();
-  }
+  if (turn.terminal) return turn.terminal;
+  const { result } = turn;
+  const parsedReview = reviewResultFromResponse(result);
+  return {
+    kind: "review",
+    text: result.text,
+    usage: result.usage,
+    durationMs: result.durationMs,
+    numTurns: result.numTurns,
+    model: result.model,
+    effort: result.effort,
+    providerSessionId: result.providerSessionId || null,
+    runtimeWarnings: result.runtimeWarnings,
+    worklabResult: parsedReview.result,
+    verdict: parsedReview.verdict,
+    notes: parsedReview.notes,
+    parsedResultError: parsedReview.error || null,
+    parsedResultFatal: !!parsedReview.fatal,
+    parsedResultWarningKind: parsedReview.fatal ? "worklab_result_validation" : "review_result_parse",
+    parsedResultFatalMessage: parsedReview.error || "Reviewer did not return a valid worklab_result or verdict",
+    parsedResultRecoveredVia: parsedReview.recoveredVia || null,
+  };
 }

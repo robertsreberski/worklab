@@ -1,60 +1,20 @@
 import {
   artifactPaths,
   artifactsForRunRow,
-  newCommentId,
+  createRunEventStore,
   normalizeLiveInputBody,
   resolveRunArtifactDir,
   runArtifactSummary,
   runTodoStateSummary,
   safeRunArtifactPath,
   supportsLiveInputProvider,
-  tailRunEventsByVisibleItems,
-} from "../../core/index.js";
+  collectGitDiffArtifactsForRun,
+} from "../../core/runtime/index.js";
+import { newCommentId } from "../../core/platform/index.js";
 import { getRunById, getRunRawOutputPath } from "../../core/db/queries/runs.js";
 import { getAgentLogByRunId } from "../../core/db/queries/agent-logs.js";
-import { collectGitDiffArtifactsForRun } from "../../core/artifact-collection.js";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
-
-function parseEvents(value) {
-  try {
-    const parsed = JSON.parse(value || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function parseJsonlEvents(value) {
-  const out = [];
-  for (const line of String(value || "").split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (parsed && typeof parsed === "object") out.push(parsed);
-    } catch {
-      // Ignore malformed fragments so a partially-written raw log does not
-      // break run detail hydration.
-    }
-  }
-  return out;
-}
-
-function rawPathInsideDataDir(rawPath, dataDir) {
-  if (!dataDir) return rawPath;
-  const root = resolve(dataDir);
-  const target = resolve(rawPath);
-  const rel = relative(root, target);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel)) ? target : null;
-}
-
-function readRawRunEvents(row, dataDir) {
-  if (!row?.raw_output_path) return null;
-  const rawPath = rawPathInsideDataDir(row.raw_output_path, dataDir);
-  if (!rawPath || !existsSync(rawPath)) return null;
-  return parseJsonlEvents(readFileSync(rawPath, "utf8"));
-}
+import { existsSync, statSync } from "node:fs";
+import { resolve } from "node:path";
 
 function safeJson(value, fallback) {
   if (value === null || value === undefined) return fallback;
@@ -92,82 +52,17 @@ function runProcessStatus(row) {
   return row.process_status || "running";
 }
 
-function runEventLimit(value) {
-  const parsed = Number(value || 200);
-  if (!Number.isInteger(parsed) || parsed < 1) return 200;
-  return Math.min(parsed, 500);
-}
-
-function runEventMode(value) {
-  if (value === "tail") return "tail";
-  if (value === "none") return "none";
-  return "full";
-}
-
-function logPayloadFidelity(logRow) {
-  if (logRow?.events_compaction_strategy || logRow?.events_compacted_at) return "compacted";
-  return "display";
-}
-
-function shapeRunLog(logRow, query = {}, { rawEvents = null } = {}) {
-  const mode = runEventMode(query.events);
-  if (mode === "full" && Array.isArray(rawEvents)) {
-    return {
-      ...(logRow || {}),
-      events: rawEvents,
-      event_count: rawEvents.length,
-      events_truncated: false,
-      source: "raw_output_path",
-      payload_fidelity: "full",
-    };
-  }
-  if (!logRow) return null;
-  const payloadFidelity = logPayloadFidelity(logRow);
-  if (mode === "none") {
-    const eventCount = Number(logRow.event_count || 0);
-    return {
-      ...logRow,
-      events: [],
-      event_count: eventCount,
-      events_truncated: eventCount > 0,
-      source: "agent_logs.events",
-      payload_fidelity: payloadFidelity,
-    };
-  }
-  const events = parseEvents(logRow.events);
-  if (mode !== "tail") {
-    const eventCount = Number(logRow.event_count ?? events.length);
-    return {
-      ...logRow,
-      events,
-      event_count: eventCount,
-      events_truncated: payloadFidelity === "compacted" || eventCount > events.length,
-      source: "agent_logs.events",
-      payload_fidelity: payloadFidelity,
-    };
-  }
-  const limit = runEventLimit(query.limit);
-  const tail = tailRunEventsByVisibleItems(events, limit);
-  const eventCount = Number(logRow.event_count ?? events.length);
-  return {
-    ...logRow,
-    events: tail,
-    event_count: eventCount,
-    events_truncated: eventCount > tail.length || events.length > tail.length,
-    source: "agent_logs.events",
-    payload_fidelity: payloadFidelity,
-  };
-}
-
 export function registerRunRoutes(app, { db, broker, dataDir, watcher }) {
+  const runEvents = createRunEventStore({ dataDir });
+
   app.get("/api/runs/:id", (req, res) => {
     const row = getRunById(db, req.params.id);
     if (!row) return res.status(404).json({ error: { code: "not_found", message: "run not found" } });
     const liveInputState = watcher?.getRunLiveInputState?.(row.id) || null;
-    const eventMode = runEventMode(req.query?.events);
+    const eventMode = runEvents.eventMode(req.query?.events);
     const logRow = getAgentLogByRunId(db, req.params.id, { includeEvents: eventMode !== "none" });
-    const rawEvents = eventMode === "full" ? readRawRunEvents(row, dataDir) : null;
-    const log = shapeRunLog(logRow, req.query || {}, { rawEvents });
+    const rawEvents = eventMode === "full" ? runEvents.readRawEvents(row) : null;
+    const log = runEvents.shapeLog(logRow, req.query || {}, { rawEvents });
     const run = normalizeRun(row, liveInputState, Array.isArray(log?.events) ? log.events : null);
     res.json({ run, log });
   });
@@ -230,19 +125,17 @@ export function registerRunRoutes(app, { db, broker, dataDir, watcher }) {
   app.get("/api/runs/:id/raw-log", (req, res) => {
     const row = getRunRawOutputPath(db, req.params.id);
     if (!row) return res.status(404).json({ error: { code: "not_found", message: "run not found" } });
-    if (!row.raw_output_path) {
-      return res.status(404).json({ error: { code: "not_found", message: "raw log not available" } });
+    try {
+      res.type("text/plain").send(runEvents.readRawText(row));
+    } catch (err) {
+      const status = err?.code === "forbidden" ? 403 : 404;
+      return res.status(status).json({
+        error: {
+          code: err?.code || "not_found",
+          message: err?.message || "raw log not available",
+        },
+      });
     }
-    const rawPath = resolve(row.raw_output_path);
-    if (dataDir) {
-      if (!rawPathInsideDataDir(rawPath, dataDir)) {
-        return res.status(403).json({ error: { code: "forbidden", message: "raw log path is outside data dir" } });
-      }
-    }
-    if (!existsSync(rawPath)) {
-      return res.status(404).json({ error: { code: "not_found", message: "raw log file not found" } });
-    }
-    res.type("text/plain").send(readFileSync(rawPath, "utf8"));
   });
 
   app.get("/api/runs/:id/artifact-file", (req, res, next) => {

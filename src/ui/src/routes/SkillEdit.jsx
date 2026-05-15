@@ -16,7 +16,6 @@ import { FormSection } from "../components/FormSection.jsx";
 import { FormGrid } from "../components/FormGrid.jsx";
 import { FormField } from "../components/FormField.jsx";
 import { Banner } from "../components/Banner.jsx";
-import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Card } from "../components/Card.jsx";
 import { EntityBadge } from "../components/EntityBadge.jsx";
@@ -28,6 +27,7 @@ import { humanizeSlug, skillDisplayName } from "../lib/display.js";
 import { agentLabel } from "../lib/agentLinks.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 import { useAppResume } from "../lib/pageVisibility.js";
+import { EntityEditorModals } from "./EntityEditorModals.jsx";
 
 const emptySkill = { name: "", meta: { display_name: "", trigger: "", enabled: true, priority: "" }, body: "" };
 const SKILL_EDIT_SECTIONS = [
@@ -309,38 +309,15 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
         </div>
       </div>
 
-      <Modal
-        open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
-        title={`Delete "${title}"?`}
-        size="sm"
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => { setDeleteOpen(false); destroy(); }}>Delete</Button>
-          </>
-        }
-      >
-        <p>This removes the skill permanently.</p>
-      </Modal>
-
-      <Modal
-        open={guard.promptOpen}
-        onClose={guard.keepEditing}
-        title="You have unsaved changes"
-        size="md"
-        footer={
-          <>
-            <Button variant="ghost" onClick={guard.keepEditing}>Keep editing</Button>
-            <Button variant="destructive" onClick={guard.discardAndLeave}>Discard</Button>
-            <Button variant="primary" loading={formSave.saving} onClick={() => guard.saveAndLeave().catch(() => {})}>
-              Save & leave
-            </Button>
-          </>
-        }
-      >
-        <p>Your changes have not been saved.</p>
-      </Modal>
+      <EntityEditorModals
+        deleteOpen={deleteOpen}
+        setDeleteOpen={setDeleteOpen}
+        deleteTitle={`Delete "${title}"?`}
+        deleteMessage="This removes the skill permanently."
+        onDelete={destroy}
+        guard={guard}
+        saving={formSave.saving}
+      />
     </>
   );
 }

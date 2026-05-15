@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
-import { readPackageMetadata, SCHEMA_VERSION } from "../core/index.js";
+import { SCHEMA_VERSION } from "../core/db/index.js";
+import { readPackageMetadata } from "../core/platform/index.js";
 import { getSchemaVersion, tableExists } from "../core/db/queries/schema.js";
 import { createSseBroker } from "./sse.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
@@ -80,7 +81,28 @@ function packageHealth(repoRoot) {
   }
 }
 
-export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls, updateControls, slack, assistant: assistantOptions, notifications }) {
+function serviceStatusPayload(serviceStatus) {
+  try {
+    const payload = typeof serviceStatus === "function"
+      ? serviceStatus()
+      : serviceStatus?.status?.();
+    return {
+      ok: true,
+      ...(payload && typeof payload === "object" ? payload : { services: {} }),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: {
+        code: "service_status_failed",
+        message: err?.message || "failed to read service status",
+      },
+      services: {},
+    };
+  }
+}
+
+export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls, updateControls, slack, assistant: assistantOptions, notifications, serviceStatus }) {
   const app = express();
   const broker = createSseBroker();
 
@@ -103,6 +125,7 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
     },
     package: packageHealth(config?.repoRoot || repoRoot),
   }));
+  app.get("/api/services/status", (_req, res) => res.json(serviceStatusPayload(serviceStatus)));
   app.get("/api/events/stream", (req, res) => broker.subscribe("global", res));
 
   registerProjectRoutes(app, { db, broker, dataDir, config });

@@ -1,6 +1,6 @@
 import { newAutomationRunId, newAutomationTriggerId, newRunId } from "./ids.js";
 import { insertAutomationRun, insertAutomationTrigger } from "./db/queries/automation-audit.js";
-import { normalizeOptionalWebhookId } from "@worklab-ai/webhooks";
+import { normalizeWorklabOptionalWebhookId } from "./webhooks.js";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -36,7 +36,7 @@ export function parseRunAt(value) {
 export function normalizeTrigger(raw = {}) {
   const type = ["once", "daily", "weekly", "monthly", "webhook"].includes(raw?.type) ? raw.type : "daily";
   if (type === "webhook") {
-    return { type, webhook_id: normalizeOptionalWebhookId(raw?.webhook_id) };
+    return { type, webhook_id: normalizeWorklabOptionalWebhookId(raw?.webhook_id) };
   }
   if (type === "once") {
     return { type, run_at: parseRunAt(raw?.run_at) || Date.now() };

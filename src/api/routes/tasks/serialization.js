@@ -9,13 +9,13 @@ import {
   runTodoStateSummary,
   supportsLiveInputProvider,
   taskInstructionAttachments,
+  collectGitDiffArtifactsForRun,
 } from "../../../core/index.js";
 import {
   getTaskById,
   listTaskSummaryRowsByIds,
 } from "../../../core/db/queries/tasks.js";
 import { getAgentLogEvents } from "../../../core/db/queries/agent-logs.js";
-import { collectGitDiffArtifactsForRun } from "../../../core/artifact-collection.js";
 import {
   getLastNonRunningTaskRun,
   getLatestExecuteRunSummary,
@@ -668,10 +668,6 @@ export function attachLiveInputState(runs, watcher) {
     ...run,
     live_input: liveInputForRun(run, watcher),
   }));
-}
-
-export function selectRunsWithLog(db, whereClause, ...params) {
-  return selectRunsWithLogJoin(db, whereClause, ...params).map(rowToRun);
 }
 
 export function selectTaskRunsWithLog(db, taskId, { view = "full", limit = null, cursor = null } = {}) {

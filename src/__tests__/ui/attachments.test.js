@@ -8,6 +8,7 @@ const attachmentChipsPath = resolve(repoRoot, "src/ui/src/components/AttachmentC
 const attachmentChipsSource = existsSync(attachmentChipsPath) ? readFileSync(attachmentChipsPath, "utf8") : "";
 const taskEditSource = readFileSync(resolve(repoRoot, "src/ui/src/routes/TaskEdit.jsx"), "utf8");
 const taskDetailSource = readFileSync(resolve(repoRoot, "src/ui/src/routes/TaskDetail.jsx"), "utf8");
+const taskActivitySource = readFileSync(resolve(repoRoot, "src/ui/src/routes/task-detail/TaskActivitySection.jsx"), "utf8");
 
 describe("UI attachment helpers", () => {
   it("serializes existing attachments by id so patching preserves them", () => {
@@ -58,6 +59,7 @@ describe("UI attachment helpers", () => {
 
   it("wires image dropping through the task and comment text fields", () => {
     expect(taskEditSource).toContain("onDrop={handleAttachmentDrop}");
-    expect(taskDetailSource).toContain("onDrop={handleCommentAttachmentDrop}");
+    expect(taskDetailSource).toContain("onCommentAttachmentDrop={handleCommentAttachmentDrop}");
+    expect(taskActivitySource).toContain("onDrop={onCommentAttachmentDrop}");
   });
 });

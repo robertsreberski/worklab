@@ -1,6 +1,6 @@
 import { watch } from "chokidar";
 import { join } from "node:path";
-import { getEmbeddingModel, getIndexStatus, indexAllSources, indexPath } from "../core/index.js";
+import { getEmbeddingModel, getIndexStatus, indexAllSources, indexPath } from "../core/content/index.js";
 
 const DEBOUNCE_MS = 500;
 const DEFAULT_STARTUP_SCAN_DELAY_MS = 60_000;

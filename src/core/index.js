@@ -62,7 +62,6 @@ export {
   BUILTIN_CODEX_MODELS,
   BUILTIN_OPENAI_MODELS,
   VALID_MODEL_SDKS,
-  WORKLAB_BUILTIN_TOOLS,
   generateResponse,
   getBuiltinModelByReference,
   getBuiltinModelGroups,
@@ -74,6 +73,7 @@ export {
   resolveBackendFor,
   resolveModel,
 } from "./ai.js";
+export { WORKLAB_BUILTIN_TOOLS } from "./builtin-tools.js";
 
 export {
   buildModelCapabilities,
@@ -104,6 +104,7 @@ export {
 } from "./providers.js";
 
 export { getBuiltinProviderAvailability } from "./credentials.js";
+export { readPiAuthFile } from "./pi-oauth.js";
 
 // ---------- IDs + slugs ----------
 export {
@@ -159,6 +160,14 @@ export {
   writeUpdateState,
 } from "./update-check.js";
 
+export {
+  builtinWebhookMcpServer,
+  normalizeWorklabInboundWebhookPayload,
+  normalizeWorklabOptionalWebhookId,
+  normalizeWorklabWebhookId,
+  resolveBuiltinWebhookServerPath,
+} from "./webhooks.js";
+
 // ---------- Configuration + bootstrap ----------
 export { config, loadConfig, localClientHost, worklabBaseUrl } from "./config.js";
 export {
@@ -206,6 +215,18 @@ export {
   buildRunLifecycleEvent,
   tailRunEventsByVisibleItems,
 } from "./run-events.js";
+
+export {
+  assertRunLogPathInsideDataDir,
+  createRunEventStore,
+  logPayloadFidelity,
+  parseJsonlRunEvents,
+  parseRunEvents,
+  runEventLimit,
+  runEventMode,
+  runLogPathInsideDataDir,
+  shapeRunLog,
+} from "./run-event-store.js";
 
 export {
   EMPTY_RUN_TODO_STATE,

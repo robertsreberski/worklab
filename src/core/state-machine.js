@@ -1,7 +1,6 @@
-// STAGES and DECISIONS live in the provider/result layer
-// (src/ai/result/decisions.js) — that's the source of truth for the
-// worklab_result contract; the workflow re-exports them so existing
-// importers don't have to chase the new path until Phase 7.
+// STAGES and DECISIONS live beside the Worklab result contract. Re-exporting
+// them here keeps workflow callers on the state-machine seam while the result
+// contract remains the source of truth for vocabulary.
 import { DECISIONS, STAGES } from "./worklab-result/decisions.js";
 
 export { DECISIONS, STAGES };

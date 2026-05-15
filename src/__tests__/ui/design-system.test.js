@@ -26,6 +26,7 @@ const taskRailPath = resolve(repoRoot, "src/ui/src/routes/task-detail/TaskRail.j
 const teamsPath = resolve(repoRoot, "src/ui/src/routes/library/TeamsTab.jsx");
 const taskDetailPath = resolve(repoRoot, "src/ui/src/routes/TaskDetail.jsx");
 const taskEditPath = resolve(repoRoot, "src/ui/src/routes/TaskEdit.jsx");
+const taskActivityPath = resolve(repoRoot, "src/ui/src/routes/task-detail/TaskActivitySection.jsx");
 const runInputPreviewPath = resolve(repoRoot, "src/ui/src/routes/task-detail/RunInputPreviewModal.jsx");
 const settingsPath = resolve(repoRoot, "src/ui/src/routes/Settings.jsx");
 const settingsShellPath = resolve(repoRoot, "src/ui/src/routes/settings/SettingsShell.jsx");
@@ -326,10 +327,10 @@ describe("design system stylesheet", () => {
   });
 
   it("builds task detail activity composer actions on the shared Toolbar layout", () => {
-    const taskDetailSource = readFileSync(taskDetailPath, "utf8");
-    expect(taskDetailSource).toMatch(/import\s+\{[^}]*Toolbar[^}]*\}\s+from/);
-    expect(taskDetailSource).toMatch(/<Toolbar\s+class="activity-composer-actions"/);
-    expect(taskDetailSource).not.toMatch(/<div\s+class="activity-composer-actions"/);
+    const taskActivitySource = readFileSync(taskActivityPath, "utf8");
+    expect(taskActivitySource).toMatch(/import\s+\{[^}]*Toolbar[^}]*\}\s+from/);
+    expect(taskActivitySource).toMatch(/<Toolbar\s+class="activity-composer-actions"/);
+    expect(taskActivitySource).not.toMatch(/<div\s+class="activity-composer-actions"/);
   });
 
   it("builds rail action stacks on the shared ActionDock layout", () => {
@@ -543,17 +544,18 @@ describe("design system stylesheet", () => {
 
   it("builds task-detail support heads on the shared InlineHead layout", () => {
     const taskDetailSource = readFileSync(taskDetailPath, "utf8");
+    const taskActivitySource = readFileSync(taskActivityPath, "utf8");
     const runInputPreviewSource = readFileSync(runInputPreviewPath, "utf8");
     const workflowCardsSource = readFileSync(workflowCardsPath, "utf8");
-    for (const source of [taskDetailSource, runInputPreviewSource, workflowCardsSource]) {
+    for (const source of [taskDetailSource, taskActivitySource, runInputPreviewSource, workflowCardsSource]) {
       expect(source).toMatch(/import\s+\{[^}]*InlineHead[^}]*\}\s+from/);
     }
     expect(taskDetailSource).toMatch(/<InlineHead\s+class="task-hero-instructions-head"/);
-    expect(taskDetailSource).toMatch(/<InlineHead\s+class="activity-item-head"/);
+    expect(taskActivitySource).toMatch(/<InlineHead\s+class="activity-item-head"/);
     expect(runInputPreviewSource).toMatch(/<InlineHead\s+class="run-input-preview-message-head"/);
     expect(workflowCardsSource).toMatch(/<InlineHead\s+class="rail-agent-row-head"/);
     expect(taskDetailSource).not.toMatch(/<div\s+class="task-hero-instructions-head"/);
-    expect(taskDetailSource).not.toMatch(/<div\s+class="activity-item-head"/);
+    expect(taskActivitySource).not.toMatch(/<div\s+class="activity-item-head"/);
     expect(runInputPreviewSource).not.toMatch(/<div\s+class="run-input-preview-message-head"/);
     expect(workflowCardsSource).not.toMatch(/<div\s+class="rail-agent-row-head"/);
   });

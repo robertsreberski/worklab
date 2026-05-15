@@ -1,3 +1,5 @@
+import { createAppStatusApi } from "./api/app-status.js";
+
 async function request(method, path, body, options = {}) {
   const res = await fetch(`/api${path}`, {
     method,
@@ -56,6 +58,7 @@ function splitQueryAndOptions(query, options) {
 }
 
 export const api = {
+  ...createAppStatusApi(request),
   // projects
   listProjects: (query, options) => request("GET", `/projects${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
   getProject: (id, options) => request("GET", `/projects/${encodeURIComponent(id)}`, null, options),
@@ -115,7 +118,6 @@ export const api = {
   searchStatus: () => request("GET", "/search/status"),
   uploadAttachment,
   // app updates
-  getHealth: () => request("GET", "/health"),
   getUpdate: (query, options) => request("GET", withQuery("/update", query), null, options),
   applyUpdate: (version) => request("POST", "/update/apply", { version }),
   // settings

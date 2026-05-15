@@ -67,6 +67,28 @@ describe("ui API client", () => {
     });
   });
 
+  it("fetches core health and optional service status through app-status helpers", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true }),
+    }));
+
+    await api.getHealth();
+    await api.getServiceStatus();
+
+    expect(global.fetch).toHaveBeenCalledWith("/api/health", {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      body: undefined,
+    });
+    expect(global.fetch).toHaveBeenCalledWith("/api/services/status", {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      body: undefined,
+    });
+  });
+
   it("sends assistant messages through a named helper", async () => {
     global.fetch = vi.fn(async () => ({
       ok: true,

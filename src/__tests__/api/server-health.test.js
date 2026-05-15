@@ -21,3 +21,28 @@ describe("GET /api/health", () => {
     expect(res.body.pid).toBeGreaterThan(0);
   });
 });
+
+describe("GET /api/services/status", () => {
+  it("reports optional service status without changing core health", async () => {
+    const { agent } = makeTestServer({
+      serviceStatus: () => ({
+        optional_services: { started: true },
+        services: {
+          searchIndexer: { started: true },
+          slack: { enabled: true, connected: false, reason: "not_configured" },
+        },
+      }),
+    });
+
+    const res = await agent.get("/api/services/status").expect(200);
+
+    expect(res.body).toMatchObject({
+      ok: true,
+      optional_services: { started: true },
+      services: {
+        searchIndexer: { started: true },
+        slack: { enabled: true, connected: false, reason: "not_configured" },
+      },
+    });
+  });
+});

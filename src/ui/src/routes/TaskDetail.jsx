@@ -20,7 +20,6 @@ import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { IconButton } from "../components/primitives/IconButton.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { Card } from "../components/Card.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
@@ -28,27 +27,21 @@ import { EntityBadge } from "../components/EntityBadge.jsx";
 import { FormSection } from "../components/FormSection.jsx";
 import { LiveRunPanel } from "../components/LiveRunPanel.jsx";
 import { StatusMenu } from "../components/StatusMenu.jsx";
-import { Textarea } from "../components/primitives/Textarea.jsx";
-import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
 import { AttachmentChips } from "../components/AttachmentChips.jsx";
-import { Checkbox } from "../components/primitives/Checkbox.jsx";
-import { DetailHead, InlineHead, SectionMarker, Toolbar } from "../components/layout/index.js";
-import { StructuredContent } from "../components/StructuredContent.jsx";
-import { AgentLink } from "../components/AgentLink.jsx";
+import { DetailHead, InlineHead, SectionMarker } from "../components/layout/index.js";
 import { navigateHash } from "../lib/navigation.js";
 import { mergeAgentReferenceMentions } from "../lib/agentLinks.js";
 import { attachmentPayload, imageFilesFromTransfer, transferHasFiles, uploadedAttachmentDraft } from "../lib/attachments.js";
-import { ActivityRailDot, buildActivity, commentAuthorLabel } from "./task-detail/activity.jsx";
+import { buildActivity } from "./task-detail/activity.jsx";
 import { readTaskDetailCache, writeTaskDetailCache } from "./task-detail/summaryCache.js";
 import {
   TASK_DETAIL_SECTIONS,
-  formatActivityTime,
   formatDate,
   projectRouteId,
 } from "./task-detail/format.js";
-import { RunCard } from "./task-detail/RunCards.jsx";
 import { RunInputPreviewModal } from "./task-detail/RunInputPreviewModal.jsx";
 import { formatRunPreviewForCopy } from "./task-detail/runPreview.js";
+import { TaskActivitySection } from "./task-detail/TaskActivitySection.jsx";
 import { TaskDetailModals } from "./task-detail/TaskDetailModals.jsx";
 import {
   TaskAutomationsCard,
@@ -316,16 +309,6 @@ export function TaskDetail({ id, runParam = null }) {
       : visibleActivity,
     [runningRun, visibleActivity],
   );
-
-  function renderCommentAuthor(item) {
-    const agentName = item.authorType === "agent" ? item.authorId || item.author?.id : null;
-    if (agentName) {
-      return (
-        <AgentLink name={agentName} label={commentAuthorLabel(item)} agents={agents} badge={false} class="activity-author-name agent" />
-      );
-    }
-    return <span class={`activity-author-badge ${item.authorType || "human"}`}>{commentAuthorLabel(item)}</span>;
-  }
 
   const targetedRunExpanded = Boolean(
     runParam && (runningRun?.id === runParam || expandedRunIds.has(runParam)),
@@ -1072,116 +1055,37 @@ export function TaskDetail({ id, runParam = null }) {
 
             <FormSection class="task-activity-section" aria-labelledby="task-activity">
               <SectionMarker id="task-activity" num="04" kicker="Activity" meta="Comments & runs" />
-              <Card
-                title="Activity"
-                class="activity-card"
-                headerRight={runsNextCursor ? (
-                  <Button variant="ghost" size="sm" loading={runHistoryLoading} onClick={loadFullRunHistory}>
-                    Load full history
-                  </Button>
-                ) : null}
-              >
-            <div class="activity-composer">
-              <form onSubmit={addComment} class="activity-composer-form">
-                <MentionableTextarea
-                  rows={1}
-                  autoGrow
-                  class="activity-composer-input"
-                  placeholder="Add a comment or instruction…"
-                  value={newComment}
-                  onInput={(e) => setNewComment(e.target.value)}
-                  onPaste={handleCommentAttachmentPaste}
-                  onDragOver={handleCommentAttachmentDragOver}
-                  onDrop={handleCommentAttachmentDrop}
-                  pathContext={{ taskId: task?.id, projectId: task?.project_id }}
-                />
-                <AttachmentChips
-                  attachments={commentAttachments}
-                  onChange={setCommentAttachments}
-                  uploading={commentAttachmentUploading}
-                  uploadError={commentAttachmentError}
-                />
-                <Toolbar class="activity-composer-actions">
-                  <div class="activity-composer-options">
-                    <Checkbox
-                      class="activity-rerun-checkbox"
-                      checked={commentRerun && !runningRun}
-                      disabled={Boolean(runningRun)}
-                      onChange={setCommentRerun}
-                      label="Rerun task"
-                    />
-                    <span class="activity-composer-shortcut">Cmd Enter</span>
-                  </div>
-                  <Button type="submit" variant="primary" disabled={!newComment.trim() || commentSaving}>
-                    {commentSaving ? "Posting…" : commentRerun && !runningRun ? "Post & run" : "Post"}
-                  </Button>
-                </Toolbar>
-              </form>
-            </div>
-
-            {displayActivity.length > 0 ? (
-              <div class="activity-feed">
-                {displayActivity.map((item) => {
-                  if (item.type === "run") {
-                    const run = item.run;
-                    return (
-                      <div key={item.id} class="activity-feed-entry run" ref={(node) => setRunTarget(run.id, node)}>
-                        <div class="activity-feed-rail">
-                          <ActivityRailDot item={item} agentLabel={agentDisplayName(agents, run.agent_name, run.agent_name)} />
-                        </div>
-                        <div class="activity-feed-content">
-                          <RunCard
-                            run={run}
-                            expanded={expandedRunIds.has(run.id)}
-                            highlighted={highlightedRunId === run.id}
-                            onToggle={toggleRun}
-                            subscribe={(run.process_status || run.status) === "running"}
-                            agents={agents}
-                          />
-                        </div>
-                      </div>
-                    );
-                  }
-                  const canDeleteComment = item.authorType === "human" && item.commentId;
-                  return (
-                    <div key={item.id} class={`activity-feed-entry comment ${item.authorType || "human"}`}>
-                      <div class="activity-feed-rail"><ActivityRailDot item={item} /></div>
-                      <div class="activity-feed-content activity-item">
-                        <InlineHead class="activity-item-head">
-                          {renderCommentAuthor(item)}
-                          <span class="activity-item-time" title={formatDate(item.at) || undefined}>{formatActivityTime(item.at)}</span>
-                          {canDeleteComment && (
-                            <IconButton
-                              class="activity-comment-delete"
-                              size="sm"
-                              variant="ghost"
-                              icon={<Icon name="trash" size={13} />}
-                              aria-label="Delete comment"
-                              title="Delete comment"
-                              onClick={() => setCommentDeleteTarget(item)}
-                            />
-                          )}
-                        </InlineHead>
-                        {item.body && (
-                          <div class="activity-item-body"><StructuredContent content={item.body} maxHeight={200} mentions={resolvedMentions} /></div>
-                        )}
-                        {item.attachments?.length > 0 && (
-                          <AttachmentChips attachments={item.attachments} disabled class="activity-item-attachments" />
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-                {!showOlderActivity && activity.length > 12 && (
-                  <Button variant="ghost" size="sm" onClick={() => setShowOlderActivity(true)}>
-                    Show older ({activity.length - 12})
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <div class="activity-empty">{runningRun ? "No comments or completed runs yet." : "No activity yet."}</div>
-            )}
-              </Card>
+              <TaskActivitySection
+                activity={activity}
+                agents={agents}
+                commentAttachments={commentAttachments}
+                commentAttachmentError={commentAttachmentError}
+                commentAttachmentUploading={commentAttachmentUploading}
+                commentRerun={commentRerun}
+                commentSaving={commentSaving}
+                displayActivity={displayActivity}
+                expandedRunIds={expandedRunIds}
+                highlightedRunId={highlightedRunId}
+                loadFullRunHistory={loadFullRunHistory}
+                newComment={newComment}
+                onCommentAttachmentChange={setCommentAttachments}
+                onCommentAttachmentDragOver={handleCommentAttachmentDragOver}
+                onCommentAttachmentDrop={handleCommentAttachmentDrop}
+                onCommentAttachmentPaste={handleCommentAttachmentPaste}
+                onCommentRerunChange={setCommentRerun}
+                onCommentSubmit={addComment}
+                onCommentTextChange={setNewComment}
+                onDeleteComment={setCommentDeleteTarget}
+                onRunToggle={toggleRun}
+                onSetRunTarget={setRunTarget}
+                onShowOlderActivity={() => setShowOlderActivity(true)}
+                resolvedMentions={resolvedMentions}
+                runHistoryLoading={runHistoryLoading}
+                runningRun={runningRun}
+                runsNextCursor={runsNextCursor}
+                showOlderActivity={showOlderActivity}
+                task={task}
+              />
             </FormSection>
           </div>
 

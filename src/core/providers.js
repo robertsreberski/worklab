@@ -1,7 +1,7 @@
 import net from "node:net";
 import { encrypt, decrypt } from "./crypto.js";
 import { newProviderId, newModelId } from "./ids.js";
-import { WORKLAB_BUILTIN_TOOLS } from "./ai.js";
+import { WORKLAB_BUILTIN_TOOLS } from "./builtin-tools.js";
 
 export const PROVIDER_TYPES = [
   "ollama",

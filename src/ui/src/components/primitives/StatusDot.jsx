@@ -1,7 +1,7 @@
 // §3.12 StatusDot — compact status indicator.
 // Per §3.12: `pulse` is strictly tied to run.status === 'running'. Callers pass { pulse: true } only when a run
 // is actively streaming events.
-import { statusMeta } from "./StatusPill.jsx";
+import { statusMeta } from "./status-meta.js";
 
 export function StatusDot({ status, pulse = false, size = 8, class: className = "" }) {
   const meta = statusMeta(status);
