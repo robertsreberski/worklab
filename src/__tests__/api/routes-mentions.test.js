@@ -18,28 +18,28 @@ function mkServer() {
   return { ...makeTestServer({ dataDir: d }), dataDir: d };
 }
 
-function seedAgent(db, name, displayName) {
-  const now = 1700000000000;
+function seedAgent(db, name, displayName, { description = null, instructions = "", updatedAt = 1700000000000 } = {}) {
+  const now = updatedAt;
   db.prepare(`
-    INSERT INTO agents (name, display_name, sdk, model, enabled, created_at, updated_at)
-    VALUES (?, ?, 'claude', 'claude:claude-sonnet-4-6', 1, ?, ?)
-  `).run(name, displayName, now, now);
+    INSERT INTO agents (name, display_name, description, instructions, sdk, model, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'claude', 'claude:claude-sonnet-4-6', 1, ?, ?)
+  `).run(name, displayName, description, instructions, now, now);
 }
 
-function seedTask(db, { id, task_key, title }) {
-  const now = 1700000000000;
+function seedTask(db, { id, task_key, title, instructions = "", plan_body = "", updatedAt = 1700000000000 }) {
+  const now = updatedAt;
   db.prepare(`
-    INSERT INTO tasks (id, task_key, root_task_id, title, instructions, stage, created_at, updated_at)
-    VALUES (?, ?, ?, ?, '', 'plan', ?, ?)
-  `).run(id, task_key, id, title, now, now);
+    INSERT INTO tasks (id, task_key, root_task_id, title, instructions, plan_body, stage, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'plan', ?, ?)
+  `).run(id, task_key, id, title, instructions, plan_body, now, now);
 }
 
-function seedProject(db, { id, slug, name }) {
-  const now = 1700000000000;
+function seedProject(db, { id, slug, name, description = "", context = "", updatedAt = 1700000000000 }) {
+  const now = updatedAt;
   db.prepare(`
-    INSERT INTO projects (id, slug, name, archived, created_at, updated_at)
-    VALUES (?, ?, ?, 0, ?, ?)
-  `).run(id, slug, name, now, now);
+    INSERT INTO projects (id, slug, name, description, context_markdown, archived, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+  `).run(id, slug, name, description, context, now, now);
 }
 
 function seedTeam(db, { id, slug, name }) {
@@ -148,6 +148,80 @@ describe("GET /api/mentions/search", () => {
 
     const res = await agent.get("/api/mentions/search?q=triage&types=project").expect(200);
     expect(res.body.results[0].id).toBe("triage");
+  });
+
+  it("matches content fields below stronger name and id matches", async () => {
+    const { agent, db } = mkServer();
+    seedTask(db, {
+      id: "task-name",
+      task_key: "T-10",
+      title: "Triage rollout",
+      updatedAt: 1700000000000,
+    });
+    seedTask(db, {
+      id: "task-keyword",
+      task_key: "T-11",
+      title: "Support rotation",
+      instructions: "Use the triage runbook before escalating.",
+      updatedAt: 1700001000000,
+    });
+
+    const res = await agent.get("/api/mentions/search?q=triage&types=task").expect(200);
+    expect(res.body.results.map((result) => result.id)).toEqual(["T-10", "T-11"]);
+  });
+
+  it("ranks id matches above newer content-only matches", async () => {
+    const { agent, db } = mkServer();
+    seedTask(db, {
+      id: "task-id",
+      task_key: "T-99",
+      title: "Legacy cleanup",
+      updatedAt: 1700000000000,
+    });
+    seedTask(db, {
+      id: "task-content",
+      task_key: "T-100",
+      title: "Recent notes",
+      plan_body: "Refer back to T-99 before closing this.",
+      updatedAt: 1700005000000,
+    });
+
+    const res = await agent.get("/api/mentions/search?q=T-99&types=task").expect(200);
+    expect(res.body.results.map((result) => result.id)).toEqual(["T-99", "T-100"]);
+  });
+
+  it("sorts same-strength matches by recency", async () => {
+    const { agent, db } = mkServer();
+    seedProject(db, {
+      id: "proj-old",
+      slug: "portal-old",
+      name: "Portal Old",
+      updatedAt: 1700000000000,
+    });
+    seedProject(db, {
+      id: "proj-new",
+      slug: "portal-new",
+      name: "Portal New",
+      updatedAt: 1700009000000,
+    });
+
+    const res = await agent.get("/api/mentions/search?q=portal&types=project").expect(200);
+    expect(res.body.results.map((result) => result.id)).toEqual(["portal-new", "portal-old"]);
+  });
+
+  it("returns recent typed-prefix results for an empty query", async () => {
+    const { agent, db } = mkServer();
+    seedAgent(db, "older-agent", "Older Agent", { updatedAt: 1700000000000 });
+    seedAgent(db, "newer-agent", "Newer Agent", { updatedAt: 1700009000000 });
+
+    const res = await agent.get("/api/mentions/search?q=&types=agent").expect(200);
+    expect(res.body.results.map((result) => result.id)).toEqual(["newer-agent", "older-agent"]);
+  });
+
+  it("requires q when the request is not a typed-prefix lookup", async () => {
+    const { agent } = mkServer();
+    const res = await agent.get("/api/mentions/search?q=").expect(400);
+    expect(res.body.error.code).toBe("validation");
   });
 
   it("caps limit at 25 and uses 8 by default", async () => {

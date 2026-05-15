@@ -1,34 +1,18 @@
 // /api/mentions/search — typeahead used by the @-mention picker.
 //
-// Fans out across the five mentionable entity types, ranks results
-// (exact > prefix > substring) per type, then merges into a single
-// flat list with per-result `token`/`href`/`label`/`sublabel`. The
-// picker inserts the canonical token at the caret on selection.
+// Fans out across mentionable entity types, ranks by weighted similarity
+// (name, then id, then content) and recency, then returns a flat list with
+// per-result `token`/`href`/`label`/`sublabel`. The picker inserts the
+// canonical token at the caret on selection.
 
 import {
-  listAgentsByNamePrefix,
-} from "../../core/db/queries/agents.js";
-import {
-  listProjectsByNamePrefix,
-} from "../../core/db/queries/projects.js";
-import {
-  searchGoalsForMention,
-} from "../../core/db/queries/goals.js";
-import {
-  searchRunsForMention,
-} from "../../core/db/queries/runs.js";
-import {
-  listTasksByTitlePrefix,
-} from "../../core/db/queries/tasks.js";
-import {
-  listTeamsByNamePrefix,
-} from "../../core/db/queries/teams.js";
-import {
   MENTION_TYPES,
-  kbListByTitlePrefix,
+  kbList,
+  kbRead,
   loadSkills,
   serializeMention,
 } from "../../core/index.js";
+import { statSync } from "node:fs";
 import { join } from "node:path";
 
 const DEFAULT_LIMIT = 12;
@@ -40,14 +24,18 @@ function parseLimit(value) {
   return Math.max(1, Math.min(Math.trunc(n), MAX_LIMIT));
 }
 
-function parseTypes(value) {
-  if (!value) return MENTION_TYPES;
+function parseTypesInfo(value) {
+  if (!value) return { requested: [], valid: [], types: MENTION_TYPES };
   const requested = String(value)
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
   const valid = requested.filter((t) => MENTION_TYPES.includes(t));
-  return valid.length ? valid : MENTION_TYPES;
+  return {
+    requested,
+    valid,
+    types: valid.length ? valid : MENTION_TYPES,
+  };
 }
 
 function humanize(value) {
@@ -56,23 +44,6 @@ function humanize(value) {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function rankPrefix(haystack, needle) {
-  if (!haystack) return 4;
-  const a = String(haystack).toLowerCase();
-  const b = String(needle).toLowerCase();
-  if (a === b) return 0;
-  if (a.startsWith(b)) return 1;
-  if (a.includes(b)) return 2;
-  return 4;
-}
-
-function rankAgent(row, q) {
-  return Math.min(
-    rankPrefix(row.name, q),
-    rankPrefix(row.display_name, q) + 0.1,
-  );
 }
 
 function shapeAgent(row) {
@@ -186,58 +157,6 @@ function shapeRun(row) {
   };
 }
 
-function rankRow(type, row, q) {
-  if (type === "agent") return rankAgent(row, q);
-  if (type === "task") {
-    return Math.min(
-      rankPrefix(row.task_key, q),
-      rankPrefix(row.title, q) + 0.1,
-    );
-  }
-  if (type === "project") {
-    return Math.min(
-      rankPrefix(row.slug, q),
-      rankPrefix(row.name, q) + 0.1,
-    );
-  }
-  if (type === "team") {
-    return Math.min(
-      rankPrefix(row.slug, q),
-      rankPrefix(row.name, q) + 0.1,
-    );
-  }
-  if (type === "kb") {
-    return Math.min(
-      rankPrefix(row.slug, q),
-      rankPrefix(row.title, q) + 0.1,
-    );
-  }
-  if (type === "skill") {
-    return Math.min(
-      rankPrefix(row.name, q),
-      rankPrefix(row.display_name, q) + 0.1,
-      rankPrefix(row.trigger, q) + 0.2,
-    );
-  }
-  if (type === "goal") {
-    return Math.min(
-      rankPrefix(row.id, q),
-      rankPrefix(row.project_slug, q) + 0.1,
-      rankPrefix(row.project_name, q) + 0.1,
-      rankPrefix(row.team_slug, q) + 0.2,
-      rankPrefix(row.team_name, q) + 0.2,
-    );
-  }
-  if (type === "run") {
-    return Math.min(
-      rankPrefix(row.id, q),
-      rankPrefix(row.task_key, q) + 0.1,
-      rankPrefix(row.task_title, q) + 0.2,
-    );
-  }
-  return 4;
-}
-
 const SHAPERS = {
   agent: shapeAgent,
   task: shapeTask,
@@ -249,51 +168,291 @@ const SHAPERS = {
   run: shapeRun,
 };
 
-function searchType(type, { db, dataDir, q, limit }) {
+const FIELD_WEIGHTS = {
+  name: 0,
+  id: 40,
+  content: 80,
+};
+
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function textScore(value, q, base) {
+  const haystack = normalizeText(value);
+  if (!haystack) return Infinity;
+  if (!q) return 0;
+  if (haystack === q) return base;
+  if (haystack.startsWith(q)) return base + 10;
+  if (haystack.includes(q)) return base + 20;
+  return Infinity;
+}
+
+function minFieldScore(values, q, base) {
+  return values.reduce((score, value) => Math.min(score, textScore(value, q, base)), Infinity);
+}
+
+function candidateFields(type, row) {
+  if (type === "agent") {
+    return {
+      name: [row.display_name, row.name],
+      id: [row.name],
+      content: [row.description, row.instructions],
+      recency: row.updated_at || row.created_at || 0,
+      stable: row.display_name || row.name,
+    };
+  }
+  if (type === "task") {
+    return {
+      name: [row.title],
+      id: [row.task_key, row.id],
+      content: [row.instructions, row.plan_body],
+      recency: row.updated_at || row.created_at || 0,
+      stable: row.title || row.task_key || row.id,
+    };
+  }
+  if (type === "project") {
+    return {
+      name: [row.name],
+      id: [row.slug, row.id],
+      content: [row.description, row.context_markdown],
+      recency: row.updated_at || row.created_at || 0,
+      stable: row.name || row.slug || row.id,
+    };
+  }
+  if (type === "team") {
+    return {
+      name: [row.name],
+      id: [row.slug, row.id],
+      content: [row.description, row.goal],
+      recency: row.updated_at || row.created_at || 0,
+      stable: row.name || row.slug || row.id,
+    };
+  }
   if (type === "kb") {
-    if (!dataDir) return [];
-    return kbListByTitlePrefix({ dataDir, query: q, limit });
+    return {
+      name: [row.title],
+      id: [row.slug],
+      content: [row.category, row.subcategory, row.body],
+      recency: Date.parse(row.updated_at || row.created_at || "") || 0,
+      stable: row.title || row.slug,
+    };
   }
   if (type === "skill") {
-    if (!dataDir) return [];
-    const needle = q.toLowerCase();
-    return loadSkills(join(dataDir, "skills"))
-      .filter((skill) => [
-        skill.name,
-        skill.display_name,
-        skill.trigger,
-      ].some((value) => String(value || "").toLowerCase().includes(needle)))
-      .slice(0, limit);
+    return {
+      name: [row.display_name, row.name],
+      id: [row.name],
+      content: [row.trigger, row.body],
+      recency: row.updated_at || 0,
+      stable: row.display_name || row.name,
+    };
   }
   if (type === "goal") {
-    if (!db) return [];
-    return searchGoalsForMention(db, q, limit);
+    return {
+      name: [row.project_name, row.team_name],
+      id: [row.id, row.root_task_id, row.project_slug, row.team_slug],
+      content: [row.status, row.status_reason, row.contract_json],
+      recency: row.last_lead_at || row.updated_at || row.created_at || 0,
+      stable: row.project_name || row.id,
+    };
   }
   if (type === "run") {
-    if (!db) return [];
-    return searchRunsForMention(db, q, limit);
+    return {
+      name: [row.task_title],
+      id: [row.id, row.task_key, row.task_id],
+      content: [row.summary, row.details, row.error_text, row.status, row.process_status],
+      recency: row.started_at || row.ended_at || 0,
+      stable: row.task_title || row.id,
+    };
   }
-  switch (type) {
-    case "agent": return listAgentsByNamePrefix(db, q, limit);
-    case "task": return listTasksByTitlePrefix(db, q, limit);
-    case "project": return listProjectsByNamePrefix(db, q, limit);
-    case "team": return listTeamsByNamePrefix(db, q, limit);
-    default: return [];
+  return { name: [], id: [], content: [], recency: 0, stable: "" };
+}
+
+function rankRow(type, row, q) {
+  const fields = candidateFields(type, row);
+  const score = Math.min(
+    minFieldScore(fields.name, q, FIELD_WEIGHTS.name),
+    minFieldScore(fields.id, q, FIELD_WEIGHTS.id),
+    minFieldScore(fields.content, q, FIELD_WEIGHTS.content),
+  );
+  return {
+    score,
+    recency: fields.recency,
+    stable: fields.stable || "",
+  };
+}
+
+function escapeLike(value) {
+  return String(value || "").replace(/[\\%_]/g, "\\$&");
+}
+
+function likeWhere(columns, q) {
+  if (!q) return { clause: "1 = 1", params: [] };
+  const pattern = `%${escapeLike(q)}%`;
+  return {
+    clause: `(${columns.map((column) => `${column} LIKE ? ESCAPE '\\'`).join(" OR ")})`,
+    params: columns.map(() => pattern),
+  };
+}
+
+function skillUpdatedAt(skill) {
+  try {
+    return statSync(join(skill.assetsPath, "SKILL.md")).mtimeMs;
+  } catch {
+    return 0;
   }
 }
 
+function searchType(type, { db, dataDir, q, limit }) {
+  if (type === "kb") {
+    if (!dataDir) return [];
+    return kbList({ dataDir })
+      .map((meta) => {
+        const entry = q ? kbRead({ dataDir, slug: meta.slug }) : null;
+        return { ...meta, body: entry?.body || "" };
+      })
+      .slice(0, limit);
+  }
+  if (type === "skill") {
+    if (!dataDir) return [];
+    return loadSkills(join(dataDir, "skills"))
+      .map((skill) => ({ ...skill, updated_at: skillUpdatedAt(skill) }))
+      .slice(0, limit);
+  }
+  if (!db) return [];
+  if (type === "goal") {
+    const where = likeWhere([
+      "g.id",
+      "g.root_task_id",
+      "g.status",
+      "g.status_reason",
+      "g.contract_json",
+      "p.name",
+      "p.slug",
+      "t.name",
+      "t.slug",
+    ], q);
+    return db.prepare(`
+      SELECT
+        g.id,
+        g.status,
+        g.status_reason,
+        g.contract_json,
+        g.project_id,
+        g.team_id,
+        g.root_task_id,
+        g.last_lead_at,
+        g.created_at,
+        g.updated_at,
+        p.name AS project_name,
+        p.slug AS project_slug,
+        t.name AS team_name,
+        t.slug AS team_slug
+      FROM goals g
+      LEFT JOIN projects p ON p.id = g.project_id
+      LEFT JOIN teams t ON t.id = g.team_id
+      WHERE ${where.clause}
+      ORDER BY COALESCE(g.last_lead_at, g.updated_at) DESC
+      LIMIT ?
+    `).all(...where.params, limit);
+  }
+  if (type === "run") {
+    const where = likeWhere([
+      "r.id",
+      "r.task_id",
+      "r.summary",
+      "r.details",
+      "r.error_text",
+      "r.status",
+      "r.process_status",
+      "t.task_key",
+      "t.title",
+    ], q);
+    return db.prepare(`
+      SELECT
+        r.id,
+        r.task_id,
+        r.mode,
+        r.stage,
+        r.status,
+        r.process_status,
+        r.summary,
+        r.details,
+        r.error_text,
+        r.started_at,
+        r.ended_at,
+        t.task_key,
+        t.title AS task_title
+      FROM task_runs r
+      LEFT JOIN tasks t ON t.id = r.task_id
+      WHERE ${where.clause}
+      ORDER BY r.started_at DESC, r.rowid DESC
+      LIMIT ?
+    `).all(...where.params, limit);
+  }
+  if (type === "agent") {
+    const where = likeWhere(["name", "display_name", "description", "instructions"], q);
+    return db.prepare(`
+      SELECT name, display_name, description, instructions, enabled, created_at, updated_at
+      FROM agents
+      WHERE ${where.clause}
+      ORDER BY updated_at DESC, name
+      LIMIT ?
+    `).all(...where.params, limit);
+  }
+  if (type === "task") {
+    const where = likeWhere(["id", "task_key", "title", "instructions", "plan_body"], q);
+    return db.prepare(`
+      SELECT id, task_key, title, instructions, plan_body, stage, project_id, created_at, updated_at
+      FROM tasks
+      WHERE is_team_root = 0
+        AND ${where.clause}
+      ORDER BY updated_at DESC
+      LIMIT ?
+    `).all(...where.params, limit);
+  }
+  if (type === "project") {
+    const where = likeWhere(["id", "slug", "name", "description", "context_markdown"], q);
+    return db.prepare(`
+      SELECT id, slug, name, description, context_markdown, archived, created_at, updated_at
+      FROM projects
+      WHERE archived = 0
+        AND ${where.clause}
+      ORDER BY updated_at DESC
+      LIMIT ?
+    `).all(...where.params, limit);
+  }
+  if (type === "team") {
+    const where = likeWhere(["id", "slug", "name", "description", "goal"], q);
+    return db.prepare(`
+      SELECT id, slug, name, description, goal, status, created_at, updated_at
+      FROM teams
+      WHERE status <> 'archived'
+        AND ${where.clause}
+      ORDER BY updated_at DESC
+      LIMIT ?
+    `).all(...where.params, limit);
+  }
+  return [];
+}
+
 export function searchMentions({ db, dataDir, q, types, limit }) {
-  const perTypeLimit = Math.max(3, Math.ceil(limit / types.length));
+  const normalizedQuery = normalizeText(q);
+  const candidateLimit = Math.max(50, Math.min(250, limit * 8));
   const buckets = [];
   for (const type of types) {
-    const rows = searchType(type, { db, dataDir, q, limit: perTypeLimit });
+    const rows = searchType(type, { db, dataDir, q: normalizedQuery, limit: candidateLimit });
     for (const row of rows) {
-      const rank = rankRow(type, row, q);
+      const rank = rankRow(type, row, normalizedQuery);
+      if (!Number.isFinite(rank.score)) continue;
       buckets.push({ rank, type, row });
     }
   }
   buckets.sort((a, b) => {
-    if (a.rank !== b.rank) return a.rank - b.rank;
+    if (a.rank.score !== b.rank.score) return a.rank.score - b.rank.score;
+    if (a.rank.recency !== b.rank.recency) return b.rank.recency - a.rank.recency;
+    const stable = String(a.rank.stable).localeCompare(String(b.rank.stable));
+    if (stable !== 0) return stable;
     return a.type.localeCompare(b.type);
   });
   return buckets.slice(0, limit).map(({ type, row }) => SHAPERS[type](row));
@@ -303,14 +462,14 @@ export function registerMentionRoutes(app, { db, dataDir }) {
   app.get("/api/mentions/search", (req, res, next) => {
     try {
       const q = String(req.query.q || req.query.query || "").trim();
-      if (!q) {
+      const typeInfo = parseTypesInfo(req.query.types);
+      if (!q && typeInfo.valid.length === 0) {
         return res.status(400).json({
           error: { code: "validation", message: "q is required" },
         });
       }
-      const types = parseTypes(req.query.types);
       const limit = parseLimit(req.query.limit);
-      const results = searchMentions({ db, dataDir, q, types, limit });
+      const results = searchMentions({ db, dataDir, q, types: typeInfo.types, limit });
       res.json({ results });
     } catch (err) {
       next(err);
