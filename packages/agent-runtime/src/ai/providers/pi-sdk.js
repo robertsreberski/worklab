@@ -14,6 +14,7 @@ import {
   getPiBuiltinTools,
   initPiMcpTools,
 } from "../../agent/tools/pi-bridge.js";
+import { createApprovalManager } from "../../agent/approval.js";
 import { resolvePiRuntimeModel } from "./pi-models.js";
 import {
   promptTextFromMessages,
@@ -454,6 +455,16 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     || randomUUID();
 
   const onEvent = (event) => emitCaptured(events, options.onEvent, event);
+  const approvalManager = options.onToolApprovalRequest
+    ? createApprovalManager({
+      onToolApprovalRequest: options.onToolApprovalRequest,
+      defaultRiskTier: options.approvalDefaultRiskTier,
+      timeoutMs: options.approvalTimeoutMs,
+      onEvent,
+      riskTiersByTool: options.toolRiskTiers,
+      alwaysAllowTools: options.approvalAlwaysAllowTools,
+    })
+    : null;
 
   try {
     const runtime = resolvePiRuntimeModel(resolved, options);
@@ -496,6 +507,8 @@ export async function generatePiResponse(systemPrompt, options = {}) {
         toolPayloadMaxBytes,
         onTruncate,
         toolPolicy: options.toolPolicy,
+        approvalManager,
+        approvalModel: runtime.model?.id || runtime.model?.name || resolved.model,
       });
 
     const structuredTool = createStructuredOutputTool(options.outputSchema, (value) => {

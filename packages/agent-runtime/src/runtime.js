@@ -31,6 +31,11 @@ const HOST_KEYS = [
   "resolvePiApiKey",
   "persistArtifact",
   "onCompactionRecorded",
+  "onToolApprovalRequest",
+  "toolRiskTiers",
+  "approvalDefaultRiskTier",
+  "approvalTimeoutMs",
+  "approvalAlwaysAllowTools",
 ];
 
 const TOOL_RUNTIME_KEYS = [

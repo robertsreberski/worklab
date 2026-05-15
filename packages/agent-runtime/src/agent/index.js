@@ -27,6 +27,13 @@ export {
 } from "./allowlists.js";
 
 export {
+  APPROVAL_DECISIONS,
+  RISK_TIERS,
+  createApprovalManager,
+  wrapToolsWithApprovalGate,
+} from "./approval.js";
+
+export {
   BINARY_BLOAT_TOOLS,
   DEFAULT_TOOL_BLOAT_CONFIG,
   MAX_TOOL_RESULT_BYTES,

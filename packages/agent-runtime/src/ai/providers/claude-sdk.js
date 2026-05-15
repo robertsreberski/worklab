@@ -15,6 +15,7 @@ import { runtimeCapabilities } from "../runtime/capabilities.js";
 import { MAX_TOOL_RESULT_BYTES, summarisePayload } from "../../agent/tool-bloat.js";
 import { normalizeMcpToolParams } from "../../agent/tools/pi-bridge.js";
 import { readRuntimeBrand } from "../../agent/tools/shared/runtime-context.js";
+import { createApprovalManager } from "../../agent/approval.js";
 import {
   claudeNativeAgentDefinitions,
   claudeToolsWithNativeSubagents,
@@ -463,6 +464,24 @@ function makeSdkUserMessage(body, sessionId, uuid = randomUUID()) {
   };
 }
 
+function createClaudeCanUseTool(approvalManager, modelName) {
+  return async function canUseTool(toolName, input, context = {}) {
+    const decision = await approvalManager.request({
+      toolName,
+      input,
+      model: modelName,
+      toolUseId: context?.toolUseId || context?.tool_use_id || null,
+    });
+    if (decision.decision === "deny") {
+      return {
+        behavior: "deny",
+        message: `Tool ${toolName} denied by host approval gate (${decision.reason || "no reason"})`,
+      };
+    }
+    return { behavior: "allow", updatedInput: input };
+  };
+}
+
 async function* livePromptMessages({ initialPrompt, liveInput, sessionId }) {
   yield makeSdkUserMessage(initialPrompt, sessionId);
   for await (const message of liveInput) {
@@ -515,16 +534,33 @@ export async function generateClaudeResponse(systemPrompt, options) {
     toolResultsSeen += 1;
   }
 
+  const approvalManager = options.onToolApprovalRequest
+    ? createApprovalManager({
+      onToolApprovalRequest: options.onToolApprovalRequest,
+      defaultRiskTier: options.approvalDefaultRiskTier,
+      timeoutMs: options.approvalTimeoutMs,
+      onEvent: emitEvent,
+      riskTiersByTool: options.toolRiskTiers,
+      alwaysAllowTools: options.approvalAlwaysAllowTools,
+    })
+    : null;
+  // The Claude SDK invokes `canUseTool` only when permissionMode opts out of
+  // bypass. When the host enabled approval gates, force the SDK out of
+  // bypass; otherwise the callback would be skipped silently.
+  const effectivePermissionMode = approvalManager && permissionMode === "bypassPermissions"
+    ? "default"
+    : permissionMode;
   const nativeAgents = claudeNativeAgentDefinitions(options.nativeSubagents);
   const queryOptions = {
     systemPrompt,
     model: modelWithContextWindow(model.model, options.contextWindow),
     cwd,
-    permissionMode,
-    ...(permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
+    permissionMode: effectivePermissionMode,
+    ...(effectivePermissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
     allowedTools: claudeToolsWithNativeSubagents(allowedTools, options.nativeSubagents),
     disallowedTools,
     mcpServers,
+    ...(approvalManager ? { canUseTool: createClaudeCanUseTool(approvalManager, model.model) } : {}),
     ...(nativeAgents ? { agents: nativeAgents } : {}),
     hooks: mergeHookMatchers(hooks, createClaudeRuntimeHooks({
       cwd,

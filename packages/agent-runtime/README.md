@@ -77,6 +77,16 @@ createRuntime({
   ripgrepPath,             // explicit path to `rg`; falls back to vendored binary, then PATH
   qaOutputDir,             // fallback dir for Playwright MCP filename routing
 
+  // -- approval gates (HITL) --
+  // Optional. When set, the runtime asks the host before every tool call
+  // whose risk tier is "medium" or "high" (and not session-allowlisted).
+  // See the "Approval gates" section below for the request/response shape.
+  onToolApprovalRequest,           // async (req) => { decision, reason? }
+  toolRiskTiers: { Bash: "high" }, // per-tool tier override (low|medium|high)
+  approvalDefaultRiskTier: "medium",
+  approvalTimeoutMs: 60_000,       // timeout → auto-deny
+  approvalAlwaysAllowTools: [],    // start with these in session allowlist
+
   // -- host-customisable identity strings (all optional, defaults shown) --
   runtimeBrand: {
     schemaPrefix: "worklab",       // prefix for snapshot/result schema ids
@@ -167,6 +177,45 @@ Override or extend the tool surface by passing `mcpServers` for MCP-backed tools
 Pass `options.outputSchema` (a JSON Schema). On Claude SDK / Codex app-server / Pi SDK, the runtime wires the schema into the provider's structured-output API. The matched JSON lands in `result.structuredResult`.
 
 The package does **not** validate `structuredResult` against your schema — it only forwards what the provider produced. Hosts run their own validation (Zod, AJV, etc.).
+
+## Approval gates (human-in-the-loop)
+
+Pass `onToolApprovalRequest` to gate tool calls behind a runtime approval. The runtime calls your callback once per tool invocation whose risk tier requires it, and pauses the agent until you respond.
+
+```js
+const runtime = createRuntime({
+  toolRiskTiers: { Bash: "high", Read: "low" },
+  async onToolApprovalRequest(req) {
+    // req = { requestId, toolName, toolUseId, argumentsSummary, riskTier, model }
+    // argumentsSummary is already secret-redacted (API keys, Bearer tokens,
+    // and known JSON fields like "api_key" / "password" stripped).
+    if (req.toolName === "Bash" && req.argumentsSummary.includes("rm -rf")) {
+      return { decision: "deny", reason: "destructive" };
+    }
+    return { decision: "approve" };
+  },
+});
+```
+
+Tiers (configurable per tool):
+
+- **low** — auto-approved; the callback is not called.
+- **medium** (default) — calls the host; if no callback is supplied, auto-approves.
+- **high** — calls the host; if no callback is supplied, fails closed (deny).
+
+Responses:
+
+- `{ decision: "approve" }` — allow this call.
+- `{ decision: "deny", reason? }` — block; the agent receives a tool error.
+- `{ decision: "always" }` — allow + session-allowlist for the run.
+
+Backend coverage: Claude SDK (via `canUseTool`) and Pi SDK (via tool dispatch wrapping). Claude CLI and Codex CLI bridge into their backend's own approval models (`permissionMode` / `approvalPolicy`) — per-call runtime gates aren't available there.
+
+Approval lifecycle is observable via `onEvent`:
+
+- `tool_approval_pending` — emitted before calling the host.
+- `tool_approval_granted` — host approved.
+- `tool_approval_denied` — host denied, timed out, threw, or no callback for a high-risk tool.
 
 ## Tool-result bloat handling
 

@@ -25,6 +25,7 @@ import {
 } from "../../ai/file-change-stats.js";
 import { formatSkillBodyWithPathNote } from "../prompt/skill-index.js";
 import { MAX_TOOL_RESULT_BYTES, summarisePayload, wrapToolsWithBloatGuard } from "../tool-bloat.js";
+import { wrapToolsWithApprovalGate } from "../approval.js";
 import { readRuntimeBrand, readToolRuntime } from "./shared/runtime-context.js";
 
 function textResult(text, details = {}) {
@@ -318,6 +319,8 @@ export function getPiBuiltinTools(allowedTools, {
   onTruncate = null,
   toolPayloadMaxBytes = MAX_TOOL_RESULT_BYTES,
   toolPolicy = null,
+  approvalManager = null,
+  approvalModel = null,
 } = {}) {
   const textLimitSchema = integerSchema();
   const bashLimitSchema = integerSchema();
@@ -386,7 +389,10 @@ export function getPiBuiltinTools(allowedTools, {
   const tools = names.map((name) => all[name]).filter(Boolean);
   const skillTool = readSkillTool(skillNames, dataDir);
   if (skillTool) tools.push(skillTool);
-  return wrapToolsWithBloatGuard(tools, {
+  const gated = approvalManager
+    ? wrapToolsWithApprovalGate(tools, approvalManager, { model: approvalModel })
+    : tools;
+  return wrapToolsWithBloatGuard(gated, {
     persistArtifact,
     maxBytes: toolPayloadMaxBytes,
     onTruncate,
