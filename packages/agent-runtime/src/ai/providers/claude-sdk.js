@@ -12,6 +12,7 @@ import { formatLiveInputGuidance } from "../live-input-prompt.js";
 import { estimateCost } from "../cost.js";
 import { modelWithContextWindow } from "../runtime/context-windows.js";
 import { runtimeCapabilities } from "../runtime/capabilities.js";
+import { buildCapabilitiesUsed, toolCompactionAppliedFromWarnings } from "../runtime/capabilities-used.js";
 import { MAX_TOOL_RESULT_BYTES, summarisePayload } from "../../agent/tool-bloat.js";
 import { normalizeMcpToolParams } from "../../agent/tools/pi-bridge.js";
 import { readRuntimeBrand } from "../../agent/tools/shared/runtime-context.js";
@@ -809,6 +810,22 @@ export async function generateClaudeResponse(systemPrompt, options) {
     },
   });
 
+  const configuredSubagents = (options.nativeSubagents || []).map((entry) => entry?.name).filter(Boolean);
+  const capabilitiesUsed = buildCapabilitiesUsed({
+    promptCacheActive: cachedTokens > 0 || cacheCreationTokens > 0,
+    thinkingEnabled: effort !== "low",
+    structuredOutputEnforced: !!options.outputSchema,
+    // Claude SDK doesn't surface a per-call "subagent was invoked" signal,
+    // so we report null when subagents were configured (unknown) and false
+    // when none were configured (definitely not).
+    subagentInvoked: configuredSubagents.length > 0 ? null : false,
+    mcpServersUsed: Object.keys(mcpServers || {}),
+    nativeSubagentsUsed: configuredSubagents,
+    toolCompactionApplied: toolCompactionAppliedFromWarnings(runtimeWarnings),
+    contextCompactionApplied: null, // Claude SDK doesn't use the worklab compaction layer
+  });
+  emitEvent({ type: "capabilities_resolved", sdk: "claude", model: model.model, capabilitiesUsed });
+
   return {
     text: rawFinalText(),
     structuredResult,
@@ -826,6 +843,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
     failureKind,
     providerSessionId,
     runtimeWarnings,
+    capabilitiesUsed,
   };
 }
 

@@ -15,6 +15,7 @@ import {
   initPiMcpTools,
 } from "../../agent/tools/pi-bridge.js";
 import { createApprovalManager } from "../../agent/approval.js";
+import { buildCapabilitiesUsed, toolCompactionAppliedFromWarnings } from "../runtime/capabilities-used.js";
 import { resolvePiRuntimeModel } from "./pi-models.js";
 import {
   promptTextFromMessages,
@@ -873,6 +874,25 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       ...(compaction?.diagnostics?.() || {}),
     };
 
+    const compactionDiag = compaction?.diagnostics?.() || {};
+    const capabilitiesUsed = buildCapabilitiesUsed({
+      promptCacheActive: usage.cacheRead > 0 || usage.cacheWrite > 0,
+      thinkingEnabled: options.effort && options.effort !== "none" && options.effort !== "low"
+        ? true
+        : (options.effort === "none" || options.effort === "low" ? false : null),
+      structuredOutputEnforced: !!options.outputSchema,
+      subagentInvoked: subagentResults.length > 0,
+      mcpServersUsed: mcpClients.map((entry) => entry?.name).filter(Boolean),
+      nativeSubagentsUsed: piNativeTeammates(options.nativeSubagents).map((entry) => entry.name),
+      toolCompactionApplied: toolCompactionAppliedFromWarnings(runtimeWarnings),
+      contextCompactionApplied: Number(compactionDiag?.context_compactions || 0) > 0
+        ? true
+        : compaction
+          ? false
+          : null,
+    });
+    onEvent({ type: "capabilities_resolved", sdk: resolved.sdk, model: reference, capabilitiesUsed });
+
     return {
       text,
       thinking: finalThinking,
@@ -897,6 +917,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       providerSessionId,
       runtimeWarnings,
       diagnostics,
+      capabilitiesUsed,
       ...(structuredResult !== null && structuredResult !== undefined
         ? { structuredResult, structuredResultSource: "StructuredOutput" }
         : { structuredResult: undefined, structuredResultSource: null }),

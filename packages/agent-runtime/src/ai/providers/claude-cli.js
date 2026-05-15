@@ -10,6 +10,7 @@ import { estimateCost } from "../cost.js";
 import { createStderrTail } from "../failure.js";
 import { modelWithContextWindow } from "../runtime/context-windows.js";
 import { readRuntimeBrand } from "../../agent/tools/shared/runtime-context.js";
+import { buildCapabilitiesUsed } from "../runtime/capabilities-used.js";
 import {
   claudeNativeAgentDefinitions,
   claudeToolsWithNativeSubagents,
@@ -502,6 +503,16 @@ export async function generateCliResponse(systemPrompt, options = {}) {
           ? { had_partial_progress: true }
           : {}),
       },
+      capabilitiesUsed: buildCapabilitiesUsed({
+        promptCacheActive: (cachedTokens || 0) > 0 || (cacheCreationTokens || 0) > 0,
+        thinkingEnabled: null,
+        structuredOutputEnforced: !!options.outputSchema,
+        subagentInvoked: null,
+        mcpServersUsed: Object.keys(options.mcpServers || {}),
+        nativeSubagentsUsed: [],
+        toolCompactionApplied: false,
+        contextCompactionApplied: null,
+      }),
     };
   } catch (err) {
     return {
@@ -525,6 +536,16 @@ export async function generateCliResponse(systemPrompt, options = {}) {
         ...(err?.code ? { pi_error_code: String(err.code) } : {}),
         ...(events.length > 0 || texts.length > 0 ? { had_partial_progress: true } : {}),
       },
+      capabilitiesUsed: buildCapabilitiesUsed({
+        promptCacheActive: null,
+        thinkingEnabled: null,
+        structuredOutputEnforced: !!options.outputSchema,
+        subagentInvoked: null,
+        mcpServersUsed: Object.keys(options.mcpServers || {}),
+        nativeSubagentsUsed: [],
+        toolCompactionApplied: false,
+        contextCompactionApplied: null,
+      }),
     };
   } finally {
     try { rmSync(dir, { recursive: true, force: true }); } catch {}

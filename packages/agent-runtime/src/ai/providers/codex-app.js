@@ -6,6 +6,7 @@ import { formatLiveInputGuidance } from "../live-input-prompt.js";
 import { estimateCost } from "../cost.js";
 import { codexModelSupportsFastMode, normalizeFastMode } from "../runtime/fast-mode.js";
 import { readRuntimeBrand } from "../../agent/tools/shared/runtime-context.js";
+import { buildCapabilitiesUsed } from "../runtime/capabilities-used.js";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_THREAD_START_ATTEMPTS = 2;
@@ -827,6 +828,16 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
           ? { had_partial_progress: true }
           : {}),
       },
+      capabilitiesUsed: buildCapabilitiesUsed({
+        promptCacheActive: (cachedTokens || 0) > 0 || (cacheCreationTokens || 0) > 0,
+        thinkingEnabled: null,
+        structuredOutputEnforced: !!options.outputSchema,
+        subagentInvoked: null,
+        mcpServersUsed: Object.keys(options.mcpServers || {}),
+        nativeSubagentsUsed: [],
+        toolCompactionApplied: false,
+        contextCompactionApplied: null,
+      }),
     };
   } catch (err) {
     return {
@@ -850,6 +861,16 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
         ...codexErrorDiagnostics(err),
         ...(events.length > 0 || texts.length > 0 ? { had_partial_progress: true } : {}),
       },
+      capabilitiesUsed: buildCapabilitiesUsed({
+        promptCacheActive: null,
+        thinkingEnabled: null,
+        structuredOutputEnforced: !!options.outputSchema,
+        subagentInvoked: null,
+        mcpServersUsed: Object.keys(options.mcpServers || {}),
+        nativeSubagentsUsed: [],
+        toolCompactionApplied: false,
+        contextCompactionApplied: null,
+      }),
     };
   } finally {
     options.abortSignal?.removeEventListener?.("abort", abortHandler);

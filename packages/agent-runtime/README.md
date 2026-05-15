@@ -165,8 +165,20 @@ Returns:
   providerSessionId: string | null,
   runtimeWarnings: RuntimeWarning[],
   diagnostics: object,
+  capabilitiesUsed: {                  // what the backend actually did this call
+    prompt_cache_active: true|false|null,
+    thinking_enabled: true|false|null,
+    structured_output_enforced: boolean,
+    subagent_invoked: true|false|null,
+    mcp_servers_used: string[],
+    native_subagents_used: string[],
+    tool_compaction_applied: boolean,
+    context_compaction_applied: true|false|null,
+  },
 }
 ```
+
+`capabilitiesUsed` is the per-call complement to `runtimeCapabilities()`. Tristate fields use `null` to mean "this provider can't tell" — distinct from `false` ("definitely off"). It's also emitted as a `capabilities_resolved` event near the end of the run, so observers can capture it without inspecting the result object.
 
 ## Built-in tools
 
