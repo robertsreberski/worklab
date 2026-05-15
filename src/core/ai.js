@@ -7,7 +7,7 @@ import {
 } from "@worklab-ai/agent-runtime/ai/runtime/model-refs.js";
 import { claudeModelSupportsOneMillionContext } from "@worklab-ai/agent-runtime/ai/runtime/context-windows.js";
 import { codexModelSupportsFastMode } from "@worklab-ai/agent-runtime/ai/runtime/fast-mode.js";
-import { createRuntime, createMetricsObserver } from "@worklab-ai/agent-runtime";
+import { createRouterRuntime, createRuntime, createMetricsObserver } from "@worklab-ai/agent-runtime";
 import { WORKLAB_BUILTIN_TOOLS } from "./builtin-tools.js";
 import { customPricingResolverFor } from "./custom-pricing.js";
 import { resolvePiApiKey } from "./pi-oauth.js";
@@ -628,7 +628,25 @@ export async function generateResponse(systemPrompt, options) {
     effort: normalizeReasoningEffortForModel(resolved, options.effort || "medium", customContext?.modelCapabilities),
     executionMode: typeof options.executionMode === "string" ? options.executionMode : "sdk",
   };
-  const runtime = createRuntime(hostOptions);
+  // When the agent has a fallback chain configured, route through
+  // createRouterRuntime so retryable provider failures cascade to the next
+  // model in the chain (replaying transcript-tail so the second attempt
+  // continues rather than restarts). Single-model runs keep using
+  // createRuntime to avoid the chain overhead.
+  const fallbackChain = Array.isArray(options.fallbackChain) && options.fallbackChain.length > 0
+    ? options.fallbackChain.filter((entry) => entry && (entry.model || entry.sdk))
+    : null;
+  const runtime = fallbackChain && fallbackChain.length > 0
+    ? createRouterRuntime({
+      host: hostOptions,
+      chain: [
+        // Primary model is always tried first; downstream entries are the
+        // host's declared fallbacks.
+        { sdk: resolved.sdk, model: resolved.model, ...(resolved.provider ? { provider: resolved.provider } : {}) },
+        ...fallbackChain,
+      ],
+    })
+    : createRuntime(hostOptions);
   const result = await runtime.run(systemPrompt, nextOptions);
   // Mirror runtimeWarnings into the event stream so every caller's onEvent
   // sees them. Without this, only callers that manually walk result.runtimeWarnings

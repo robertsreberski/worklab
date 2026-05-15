@@ -73,6 +73,18 @@ export async function runTaskAgentTurn(ctx, {
   const approvalTimeoutMs = Number.isFinite(Number(agent.approval_timeout_ms))
     ? Number(agent.approval_timeout_ms)
     : undefined;
+  // Per-agent fallback chain — Phase 4 of the agent-runtime usage uplift.
+  // Parses the agents.fallback_chain_json column. When non-empty, generateResponse
+  // routes through createRouterRuntime so retryable provider failures cascade
+  // through the configured list. Malformed JSON falls back to the empty array
+  // (no router) so a typo in the config doesn't break the run.
+  let fallbackChain = [];
+  if (agent.fallback_chain_json) {
+    try {
+      const parsed = JSON.parse(agent.fallback_chain_json);
+      if (Array.isArray(parsed)) fallbackChain = parsed.filter(Boolean);
+    } catch { fallbackChain = []; }
+  }
   const firstTurn = estimateFirstTurnInput({ systemPrompt, messages });
   emit({
     type: "prompt_built",
@@ -116,6 +128,7 @@ export async function runTaskAgentTurn(ctx, {
           ...(approvalTimeoutMs !== undefined ? { approvalTimeoutMs } : {}),
         }
         : {}),
+      ...(fallbackChain.length > 0 ? { fallbackChain } : {}),
     });
     const terminal = terminalProviderResult(kind, result);
     return terminal ? { terminal, input } : { result, input };
