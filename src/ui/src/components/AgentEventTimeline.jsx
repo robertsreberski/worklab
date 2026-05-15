@@ -517,6 +517,70 @@ function TimelineEvent({ event, isLast, streaming }) {
   } else if (type === "cancelled") {
     railIcon = <RailIcon name="circle" tone="error" />;
     content = <div class="agentlog-event-warn">Cancelled</div>;
+  } else if (type === "cache_hit" || type === "cache_miss") {
+    const tokens = Number(event.tokens) || 0;
+    const source = event.source ? ` (${event.source})` : "";
+    railIcon = <RailIcon name={type === "cache_hit" ? "check" : "circle"} tone="muted" />;
+    content = (
+      <div class="agentlog-final-meta">
+        {type === "cache_hit" ? "Cache hit" : "Cache miss"}
+        {tokens > 0 ? `: ${tokens.toLocaleString()} tok` : ""}
+        {source}
+      </div>
+    );
+  } else if (type === "cost_accumulated") {
+    const usd = Number(event.cumulativeUsd) || 0;
+    railIcon = <RailIcon name="zap" tone="muted" />;
+    content = (
+      <div class="agentlog-final-meta">
+        Running cost: ${usd.toFixed(4)}
+        {event.tokens?.input ? ` · in ${Number(event.tokens.input).toLocaleString()}` : ""}
+        {event.tokens?.output ? ` · out ${Number(event.tokens.output).toLocaleString()}` : ""}
+      </div>
+    );
+  } else if (type === "capabilities_resolved") {
+    railIcon = <RailIcon name="settings" tone="muted" />;
+    content = (
+      <CollapsibleBlock
+        title="Capabilities used"
+        value={event.capabilitiesUsed || event.capabilities_used || event}
+        expanded={expanded}
+        onToggle={() => setExpanded((current) => !current)}
+        muted
+      />
+    );
+  } else if (type === "provider_request_started" || type === "provider_request_completed") {
+    railIcon = <RailIcon name="database" tone="muted" />;
+    const verb = type === "provider_request_started" ? "Started" : "Completed";
+    const latency = type === "provider_request_completed" && Number.isFinite(event.durationMs)
+      ? ` · ${Math.round(event.durationMs)} ms`
+      : "";
+    content = (
+      <div class="agentlog-final-meta">
+        {verb} provider request: {event.sdk || "?"}/{event.model || "?"}{latency}
+      </div>
+    );
+  } else if (type === "provider_failover_started" || type === "provider_failover_completed") {
+    railIcon = <RailIcon name="refresh-cw" tone="warn" />;
+    const verb = type === "provider_failover_started" ? "Failing over" : "Failover completed";
+    const target = event.to?.model || event.model?.model || event.model || "?";
+    const from = event.from?.model || "?";
+    content = (
+      <div class="agentlog-event-warn">
+        {verb}: {from} → {target}
+      </div>
+    );
+  } else if (type === "tool_approval_pending" || type === "tool_approval_granted" || type === "tool_approval_denied") {
+    const isDenied = type === "tool_approval_denied";
+    const isPending = type === "tool_approval_pending";
+    railIcon = <RailIcon name={isDenied ? "x-circle" : isPending ? "clock" : "check-circle"} tone={isDenied ? "error" : isPending ? "warn" : "ok"} />;
+    const label = isPending ? "Awaiting approval" : isDenied ? "Tool denied" : "Tool approved";
+    const reason = event.reason ? ` — ${event.reason}` : "";
+    content = (
+      <div class={isDenied ? "agentlog-event-warn" : "agentlog-final-meta"}>
+        {label}: {event.toolName || event.tool_name || "?"}{event.riskTier ? ` (${event.riskTier})` : ""}{reason}
+      </div>
+    );
   } else if (type === "cli_event" && event.raw) {
     const title = event.raw.type ? `CLI: ${event.raw.type}` : "CLI event";
     content = (

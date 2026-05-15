@@ -4,6 +4,7 @@ const mockRun = vi.fn();
 
 vi.mock("@worklab-ai/agent-runtime", () => ({
   createRuntime: () => ({ run: mockRun }),
+  createMetricsObserver: () => ({ recordEvent: () => {}, snapshot: () => ({}) }),
 }));
 
 const { generateResponse, resolveModel } = await import("../../core/ai.js");

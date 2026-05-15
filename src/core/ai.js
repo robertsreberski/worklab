@@ -7,7 +7,7 @@ import {
 } from "@worklab-ai/agent-runtime/ai/runtime/model-refs.js";
 import { claudeModelSupportsOneMillionContext } from "@worklab-ai/agent-runtime/ai/runtime/context-windows.js";
 import { codexModelSupportsFastMode } from "@worklab-ai/agent-runtime/ai/runtime/fast-mode.js";
-import { createRuntime } from "@worklab-ai/agent-runtime";
+import { createRuntime, createMetricsObserver } from "@worklab-ai/agent-runtime";
 import { WORKLAB_BUILTIN_TOOLS } from "./builtin-tools.js";
 import { customPricingResolverFor } from "./custom-pricing.js";
 import { resolvePiApiKey } from "./pi-oauth.js";
@@ -579,12 +579,19 @@ export async function generateResponse(systemPrompt, options) {
   ) ?? optionalOption(settings.agent_pi_codex_transport) ?? null;
 
   const runArtifactDir = options.runArtifactDir || process.env.WORKLAB_QA_OUTPUT_DIR || null;
+  // One metrics observer per call; snapshot folded back onto the result so the
+  // coordinator persists it (Phase 1 wired tool_usage_summary_json). Callers
+  // can also attach their own observers via options.observers and they ride
+  // alongside this one.
+  const metricsObserver = createMetricsObserver();
+  const callObservers = Array.isArray(options.observers) ? options.observers : [];
   const hostOptions = {
     resolveCustomPricing: options.resolveCustomPricing || customPricingResolverFor(options.db),
     onCompactionRecorded: options.onCompactionRecorded || compactionRecorderFor(options.db),
     persistArtifact: options.persistArtifact || createToolOutputSink(runArtifactDir),
     resolvePiApiKey: options.resolvePiApiKey
       || ((provider) => resolvePiApiKey(provider, { dataDir: options.dataDir })),
+    observers: [metricsObserver, ...callObservers],
   };
 
   const callerOnEvent = typeof options.onEvent === "function" ? options.onEvent : null;
@@ -631,6 +638,11 @@ export async function generateResponse(systemPrompt, options) {
     for (const warning of result.runtimeWarnings) {
       try { callerOnEvent({ type: "runtime_warning", ...warning }); } catch { /* host emit errors must not escape */ }
     }
+  }
+  // Fold the metrics-observer snapshot back onto the result so the worker
+  // emits it on the final event and the coordinator persists it.
+  if (result && typeof result === "object" && !result.observerSnapshot) {
+    try { result.observerSnapshot = metricsObserver.snapshot(); } catch { /* defensive */ }
   }
   return result;
 }

@@ -225,9 +225,12 @@ function RunEconomicsPanel({ run }) {
   const compactionCount = Number(diag.context_compactions) || 0;
   const billed = Number(run?.log?.input_tokens) || 0;
   const cacheRead = Number(run?.log?.cache_read_tokens) || 0;
+  const cacheCreation = Number(run?.log?.cache_creation_tokens) || 0;
+  const summary = run?.tool_usage_summary || null;
+  const cacheHitRatio = Number.isFinite(Number(summary?.cache?.hitRatio)) ? Number(summary.cache.hitRatio) : null;
   const haveOverhead = Number.isFinite(overheadTokens) && overheadTokens > 0;
   const haveInput = Number.isFinite(inputTokens) && inputTokens > 0;
-  if (!haveOverhead && !haveInput && !truncatedCount && !prunedCount && !compactionCount) return null;
+  if (!haveOverhead && !haveInput && !truncatedCount && !prunedCount && !compactionCount && !cacheCreation && cacheHitRatio == null) return null;
   const overheadShare = haveOverhead && haveInput ? Math.round((overheadTokens / inputTokens) * 100) : null;
   return (
     <details class="run-diagnostics run-economics">
@@ -242,10 +245,80 @@ function RunEconomicsPanel({ run }) {
         )}
         {billed > 0 && <RunMetric label="Billed input" value={`${billed.toLocaleString()} tok`} />}
         {cacheRead > 0 && <RunMetric label="Cache hit" value={`${cacheRead.toLocaleString()} tok`} />}
+        {cacheCreation > 0 && <RunMetric label="Cache write" value={`${cacheCreation.toLocaleString()} tok`} />}
+        {cacheHitRatio != null && <RunMetric label="Cache hit rate" value={`${Math.round(cacheHitRatio * 100)}%`} />}
         {truncatedCount > 0 && <RunMetric label="Truncated" value={`${truncatedCount}`} />}
         {prunedCount > 0 && <RunMetric label="Pruned" value={`${prunedCount}`} />}
         {compactionCount > 0 && <RunMetric label="Compactions" value={`${compactionCount}`} />}
       </Toolbar>
+    </details>
+  );
+}
+
+// Renders the per-call capability vector the agent runtime reports
+// (capabilitiesUsed). Null fields mean "this provider can't tell" — we
+// render those as muted "?" chips so users see what we know vs. don't.
+function RunCapabilitiesPanel({ run }) {
+  const caps = run?.capabilities_used;
+  if (!caps || typeof caps !== "object") return null;
+  const chips = [];
+  function tristateChip(label, value) {
+    if (value === true) chips.push({ label, tone: "on" });
+    else if (value === false) chips.push({ label, tone: "off" });
+    else chips.push({ label, tone: "unknown" });
+  }
+  tristateChip("Prompt cache", caps.prompt_cache_active);
+  tristateChip("Thinking", caps.thinking_enabled);
+  tristateChip("Structured output", caps.structured_output_enforced);
+  if (caps.subagent_invoked !== null && caps.subagent_invoked !== undefined) {
+    tristateChip("Subagent", caps.subagent_invoked);
+  }
+  if (caps.tool_compaction_applied) chips.push({ label: "Tool compaction", tone: "on" });
+  if (caps.context_compaction_applied === true) chips.push({ label: "Context compaction", tone: "on" });
+  const mcp = Array.isArray(caps.mcp_servers_used) ? caps.mcp_servers_used : [];
+  const subagents = Array.isArray(caps.native_subagents_used) ? caps.native_subagents_used : [];
+  if (chips.length === 0 && mcp.length === 0 && subagents.length === 0) return null;
+  return (
+    <details class="run-diagnostics run-capabilities">
+      <summary>Capabilities used</summary>
+      <Toolbar class="run-capabilities-chips" align="start">
+        {chips.map((chip) => (
+          <span key={chip.label} class={`run-capability-chip run-capability-${chip.tone}`}>{chip.label}</span>
+        ))}
+        {mcp.length > 0 && (
+          <span class="run-capability-chip run-capability-on">MCP: {mcp.join(", ")}</span>
+        )}
+        {subagents.length > 0 && (
+          <span class="run-capability-chip run-capability-on">Subagents: {subagents.join(", ")}</span>
+        )}
+      </Toolbar>
+    </details>
+  );
+}
+
+// Only renders when the per-agent fallback chain (createRouterRuntime)
+// produced one or more attempts before this run succeeded (or before the
+// chain was exhausted). Surfaces each failover hop so the user sees the
+// route the runtime actually walked.
+function RunFailoverHistoryPanel({ run }) {
+  const history = Array.isArray(run?.failover_history) ? run.failover_history : null;
+  if (!history || history.length === 0) return null;
+  return (
+    <details class="run-diagnostics run-failover">
+      <summary>{`Failover history (${history.length})`}</summary>
+      <ul class="run-failover-list">
+        {history.map((entry, index) => {
+          const model = entry?.model?.model || entry?.model?.reference || "(unknown)";
+          const reason = entry?.failureKind || entry?.retryableSubkind || "skipped";
+          const reqId = entry?.requestId ? ` · req ${entry.requestId}` : "";
+          return (
+            <li key={index} class="run-failover-item">
+              <span class="run-failover-model">{model}</span>
+              <span class="run-failover-reason">{reason}{reqId}</span>
+            </li>
+          );
+        })}
+      </ul>
     </details>
   );
 }
@@ -495,6 +568,8 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
       <RunFailureDetails run={run} agents={agents} />
       <RunVerificationPanel run={run} />
       <RunEconomicsPanel run={run} />
+      <RunCapabilitiesPanel run={run} />
+      <RunFailoverHistoryPanel run={run} />
       <RunDiagnosticsDisclosure run={run} />
       <RunHistoryNotice
         eventCount={runStream.eventCount}
