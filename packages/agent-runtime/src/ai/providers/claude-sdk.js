@@ -589,6 +589,14 @@ export async function generateClaudeResponse(systemPrompt, options) {
   const prompt = options.liveInput
     ? livePromptMessages({ initialPrompt: promptString, liveInput: options.liveInput, sessionId: reusableProviderSessionId || randomUUID() })
     : promptString;
+  const providerRequestStartedAt = Date.now();
+  emitEvent({
+    type: "provider_request_started",
+    sdk: "claude",
+    model: model.model,
+    runtime: "sdk",
+    timestamp: providerRequestStartedAt,
+  });
   const stream = query({ prompt, options: queryOptions });
 
   let text = "";
@@ -771,6 +779,35 @@ export async function generateClaudeResponse(systemPrompt, options) {
     cache_creation_tokens: cacheCreationTokens || null,
     cost_usd: costUsd,
   };
+
+  emitEvent({
+    type: "provider_request_completed",
+    sdk: "claude",
+    model: model.model,
+    runtime: "sdk",
+    timestamp: Date.now(),
+    durationMs: Date.now() - providerRequestStartedAt,
+    failureKind,
+    cancelled,
+  });
+  if (cachedTokens > 0) {
+    emitEvent({ type: "cache_hit", sdk: "claude", model: model.model, tokens: cachedTokens, source: "anthropic_prompt_cache" });
+  }
+  if (cacheCreationTokens > 0) {
+    emitEvent({ type: "cache_miss", sdk: "claude", model: model.model, tokens: cacheCreationTokens, source: "anthropic_prompt_cache" });
+  }
+  emitEvent({
+    type: "cost_accumulated",
+    sdk: "claude",
+    model: model.model,
+    cumulativeUsd: costUsd ?? 0,
+    tokens: {
+      input: inputTokens,
+      output: outputTokens,
+      cacheReadTokens: cachedTokens,
+      cacheCreationTokens,
+    },
+  });
 
   return {
     text: rawFinalText(),

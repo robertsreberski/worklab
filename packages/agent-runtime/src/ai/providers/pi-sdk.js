@@ -697,6 +697,14 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       })();
     }
 
+    onEvent({
+      type: "provider_request_started",
+      sdk: resolved.sdk,
+      model: reference,
+      runtime: "pi",
+      timestamp: Date.now(),
+    });
+
     await agent.prompt(toAgentMessages(options.messages, runtime.model));
 
     const captureState = () => {
@@ -769,6 +777,33 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       outputTokens: usage.output,
       cachedTokens: usage.cacheRead,
       cacheWriteTokens: usage.cacheWrite,
+    });
+    if (usage.cacheRead > 0) {
+      onEvent({ type: "cache_hit", sdk: resolved.sdk, model: reference, tokens: usage.cacheRead, source: "prompt_cache" });
+    }
+    if (usage.cacheWrite > 0) {
+      onEvent({ type: "cache_miss", sdk: resolved.sdk, model: reference, tokens: usage.cacheWrite, source: "prompt_cache" });
+    }
+    onEvent({
+      type: "cost_accumulated",
+      sdk: resolved.sdk,
+      model: reference,
+      cumulativeUsd: Number(usage.cost) || Number(estimatedCost) || 0,
+      tokens: {
+        input: Number(usage.input) || 0,
+        output: Number(usage.output) || 0,
+        cacheReadTokens: Number(usage.cacheRead) || 0,
+        cacheCreationTokens: Number(usage.cacheWrite) || 0,
+      },
+    });
+    onEvent({
+      type: "provider_request_completed",
+      sdk: resolved.sdk,
+      model: reference,
+      runtime: "pi",
+      timestamp: Date.now(),
+      durationMs: Date.now() - start,
+      cancelled: externalAbort,
     });
     if (!piErrorPayload && (stopReason === "error" || stopReason === "aborted")) {
       piErrorPayload = capturePiErrorPayload(lastAssistant);

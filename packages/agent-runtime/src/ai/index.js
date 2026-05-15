@@ -3,3 +3,4 @@
 export * from "./registry.js";
 export * from "./runtime/model-refs.js";
 export * from "./runtime/registry.js";
+export { createMetricsObserver, createObserverHub } from "./observer.js";

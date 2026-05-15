@@ -23,6 +23,7 @@
 // task envelopes, etc.) parse it themselves.
 
 import { resolveRuntimeBridge } from "./ai/runtime/registry.js";
+import { createObserverHub } from "./ai/observer.js";
 import { configureToolRuntime } from "./agent/tools/shared/runtime-context.js";
 import { resolveRuntimeBrand } from "./runtime-brand.js";
 
@@ -57,6 +58,7 @@ export function createRuntime(host = {}) {
   const hostDefaults = pickDefined(host, HOST_KEYS);
   const toolRuntime = pickDefined(host, TOOL_RUNTIME_KEYS);
   const runtimeBrand = resolveRuntimeBrand(host.runtimeBrand);
+  const hostObservers = Array.isArray(host.observers) ? host.observers.slice() : [];
   // Always configure: even when no tool keys are supplied, we must publish
   // the resolved brand so internal modules (transcript, pi-bridge, ripgrep
   // error message) pick it up. The brand defaults preserve worklab strings.
@@ -70,12 +72,21 @@ export function createRuntime(host = {}) {
         liveInput: !!options.liveInput,
         executionMode,
       });
-      return bridge.execute(systemPrompt, {
+      const callObservers = Array.isArray(options.observers) ? options.observers : [];
+      const hub = createObserverHub({
+        observers: [...hostObservers, ...callObservers],
+        onEvent: options.onEvent,
+      });
+      const result = await bridge.execute(systemPrompt, {
         ...hostDefaults,
         ...options,
         executionMode,
         runtimeBrand,
+        observerHub: hub,
+        onEvent: hub.emit,
       });
+      await hub.flush();
+      return result;
     },
     configureTools(next = {}) {
       configureToolRuntime(pickDefined(next, TOOL_RUNTIME_KEYS));

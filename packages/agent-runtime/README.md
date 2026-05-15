@@ -77,6 +77,12 @@ createRuntime({
   ripgrepPath,             // explicit path to `rg`; falls back to vendored binary, then PATH
   qaOutputDir,             // fallback dir for Playwright MCP filename routing
 
+  // -- observers (multi-subscriber telemetry) --
+  // Optional. Each observer receives every event the runtime emits.
+  // Built-in createMetricsObserver() aggregates cost, cache hit rate, token
+  // counts, tool-call counts, errors, and turn-latency percentiles.
+  observers: [],
+
   // -- approval gates (HITL) --
   // Optional. When set, the runtime asks the host before every tool call
   // whose risk tier is "medium" or "high" (and not session-allowlisted).
@@ -177,6 +183,41 @@ Override or extend the tool surface by passing `mcpServers` for MCP-backed tools
 Pass `options.outputSchema` (a JSON Schema). On Claude SDK / Codex app-server / Pi SDK, the runtime wires the schema into the provider's structured-output API. The matched JSON lands in `result.structuredResult`.
 
 The package does **not** validate `structuredResult` against your schema — it only forwards what the provider produced. Hosts run their own validation (Zod, AJV, etc.).
+
+## Observers & metrics
+
+The runtime emits structured events for everything that happens during a run — assistant messages, tool calls, runtime warnings, cache hits/misses, cost updates, provider request start/end, approval lifecycle. Hosts can subscribe via `host.observers[]` (any number) or the simpler `options.onEvent` callback (one subscriber). Both work simultaneously.
+
+A built-in aggregator covers the common metrics:
+
+```js
+import { createRuntime, createMetricsObserver } from "@worklab-ai/agent-runtime";
+
+const metrics = createMetricsObserver();
+const runtime = createRuntime({ observers: [metrics] });
+
+await runtime.run("...", { model: { sdk: "claude", model: "claude-sonnet-4-6" } });
+
+console.log(metrics.snapshot());
+// {
+//   events: { total, byType: { tool_use: 5, assistant: 8, ... } },
+//   tokens: { input, output, cacheReadTokens, cacheCreationTokens },
+//   cost: { cumulativeUsd },
+//   cache: { hits, misses, hitRatio, readTokensFromEvents },
+//   tools: { callsByName: { Bash: 3, Read: 2 }, errorsByName: { ... } },
+//   errors: { total, byKind: { provider_unavailable: 1 } },
+//   turns: { count, latencyMsP50, latencyMsP95 },
+//   approvals: { pending, granted, denied },
+// }
+```
+
+Custom observers implement `{ recordEvent(event), recordMetric(metric)?, flush()? }`. Fan-out is synchronous on the hot path; observers that need to do I/O must buffer internally.
+
+Notable new events emitted by the bridges:
+
+- `provider_request_started` / `_completed` — at the boundary of each LLM call (sdk, model, runtime, timestamp, durationMs).
+- `cache_hit` / `cache_miss` — when the provider reports cached / cache-creation input tokens.
+- `cost_accumulated` — running cost in USD with cumulative token breakdown.
 
 ## Approval gates (human-in-the-loop)
 
