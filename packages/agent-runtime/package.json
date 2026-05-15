@@ -1,6 +1,6 @@
 {
   "name": "@worklab-ai/agent-runtime",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Agent runtime supporting Claude SDK, Claude CLI, Codex CLI, and PI SDK out of the box",
   "type": "module",
   "license": "GPL-3.0-only",
