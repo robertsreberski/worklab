@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -49,6 +49,40 @@ describe("RunEventStore", () => {
       throw new Error("expected readRawText to reject outside path");
     } catch (err) {
       expect(err).toMatchObject({ code: "forbidden" });
+    }
+  });
+
+  it("rejects raw log symlinks that resolve outside the data directory", () => {
+    const dataDir = tempDataDir();
+    const logDir = join(dataDir, "logs", "runs");
+    const outside = join(tempDataDir(), "outside.jsonl");
+    mkdirSync(logDir, { recursive: true });
+    writeFileSync(outside, JSON.stringify({ type: "started" }));
+    const linkedRawPath = join(logDir, "linked.jsonl");
+    symlinkSync(outside, linkedRawPath);
+
+    const store = createRunEventStore({ dataDir });
+
+    expect(store.readRawEvents({ raw_output_path: linkedRawPath })).toBeNull();
+    try {
+      store.readRawText({ raw_output_path: linkedRawPath });
+      throw new Error("expected readRawText to reject outside symlink target");
+    } catch (err) {
+      expect(err).toMatchObject({ code: "forbidden" });
+    }
+  });
+
+  it("keeps missing raw log paths inside the data directory as not found", () => {
+    const dataDir = tempDataDir();
+    const missingRawPath = join(dataDir, "logs", "runs", "missing.jsonl");
+    const store = createRunEventStore({ dataDir });
+
+    expect(store.readRawEvents({ raw_output_path: missingRawPath })).toBeNull();
+    try {
+      store.readRawText({ raw_output_path: missingRawPath });
+      throw new Error("expected readRawText to reject missing path");
+    } catch (err) {
+      expect(err).toMatchObject({ code: "not_found" });
     }
   });
 

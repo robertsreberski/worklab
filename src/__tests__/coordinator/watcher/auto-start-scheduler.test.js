@@ -62,4 +62,26 @@ describe("pending task auto-start scheduler", () => {
 
     expect(onError).toHaveBeenCalledWith(error);
   });
+
+  it("routes synchronous run failures to the supplied error handler", async () => {
+    vi.useFakeTimers();
+    const active = new Map();
+    const pendingStarts = new Set();
+    const error = new Error("sync spawn failed");
+    const onError = vi.fn();
+    const scheduler = createPendingTaskScheduler({
+      active,
+      pendingStarts,
+      canStart: () => true,
+      run: vi.fn(() => {
+        throw error;
+      }),
+    });
+
+    expect(scheduler.schedule("task-1", onError)).toBe(true);
+    await vi.runAllTimersAsync();
+
+    expect(onError).toHaveBeenCalledWith(error);
+    expect(pendingStarts.has("task-1")).toBe(false);
+  });
 });

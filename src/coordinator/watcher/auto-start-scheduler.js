@@ -16,9 +16,14 @@ export function createPendingTaskScheduler({
     setTimeout(() => {
       pendingStarts?.delete?.(taskId);
       if (typeof canStart === "function" && !canStart(taskId)) return;
-      Promise.resolve(run?.(taskId)).catch((err) => {
+      const handleError = (err) => {
         if (typeof onError === "function") onError(err);
-      });
+      };
+      try {
+        Promise.resolve(run?.(taskId)).catch(handleError);
+      } catch (err) {
+        handleError(err);
+      }
     }, 0);
     return true;
   }

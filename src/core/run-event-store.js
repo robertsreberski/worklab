@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { tailRunEventsByVisibleItems } from "./run-events.js";
 
@@ -30,13 +30,32 @@ export function parseJsonlRunEvents(value) {
   return out;
 }
 
+function realpathIfExists(path) {
+  try {
+    return realpathSync(path);
+  } catch (err) {
+    if (err?.code === "ENOENT" || err?.code === "ENOTDIR") return null;
+    throw err;
+  }
+}
+
+function isPathInside(parent, child) {
+  const rel = relative(parent, child);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
 export function assertRunLogPathInsideDataDir(rawPath, dataDir) {
   if (!rawPath) throw runEventStoreError("not_found", "raw log not available");
   const target = resolve(rawPath);
   if (!dataDir) return target;
-  const root = resolve(dataDir);
-  const rel = relative(root, target);
-  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return target;
+  const lexicalRoot = resolve(dataDir);
+  const targetReal = realpathIfExists(target);
+  if (!targetReal) {
+    if (isPathInside(lexicalRoot, target)) return target;
+    throw runEventStoreError("forbidden", "raw log path is outside data dir");
+  }
+  const rootReal = realpathIfExists(lexicalRoot) || lexicalRoot;
+  if (isPathInside(rootReal, targetReal)) return targetReal;
   throw runEventStoreError("forbidden", "raw log path is outside data dir");
 }
 
