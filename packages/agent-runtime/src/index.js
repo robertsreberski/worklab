@@ -6,6 +6,7 @@
 // bridge registration, direct provider invocation, tool-runtime introspection).
 
 export { createRuntime } from "./runtime.js";
+export { createRouterRuntime } from "./ai/runtime/router.js";
 export {
   configureToolRuntime,
   readToolRuntime,

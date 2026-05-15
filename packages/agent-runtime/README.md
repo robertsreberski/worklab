@@ -196,6 +196,37 @@ Pass `options.outputSchema` (a JSON Schema). On Claude SDK / Codex app-server / 
 
 The package does **not** validate `structuredResult` against your schema — it only forwards what the provider produced. Hosts run their own validation (Zod, AJV, etc.).
 
+## Provider fallback router
+
+`createRouterRuntime({ host, chain })` wraps the standard runtime with an ordered chain of model references. On a retryable provider failure (rate limit, overload, network blip — classified via the same taxonomy as `retryableProviderFailureInfo`), it retries the same logical run against the next chain entry, replaying the transcript-tail snapshot of the previous attempt so the next provider continues rather than starts over.
+
+```js
+import { createRouterRuntime } from "@worklab-ai/agent-runtime";
+
+const router = createRouterRuntime({
+  host: { /* same shape as createRuntime */ },
+  chain: [
+    { sdk: "claude", model: "claude-opus-4-7" },
+    { sdk: "claude", model: "claude-sonnet-4-6" },
+    { model: { sdk: "pi", provider: "openai", model: "gpt-5.5" }, requires: { structured_output: true } },
+  ],
+});
+
+const result = await router.run("...", { /* same shape as runtime.run */ });
+console.log(result.failoverHistory);
+// [{ model, failureKind, requestId, retryableSubkind }, ...]  one entry per attempt that didn't succeed.
+```
+
+Behaviour:
+
+- Successful run on entry N → returns the result with `failoverHistory` set to attempts 0..N-1.
+- Retryable failure → emits `provider_failover_started`, builds a transcript snapshot, and retries on the next entry.
+- Non-retryable failure (auth, billing, invalid request) → returns immediately with `failoverHistory` containing the one attempt.
+- Cancellation → returns immediately.
+- Chain exhausted → `failureKind: "provider_unavailable_exhausted"`, `failoverHistory` lists every attempt.
+
+Chain entries can require backend capabilities via `requires: { structured_output: true, supports_mcp: true, ... }`; entries that don't satisfy the requirements are skipped (logged in `failoverHistory` as `failureKind: "skipped_capability_mismatch"`).
+
 ## Observers & metrics
 
 The runtime emits structured events for everything that happens during a run — assistant messages, tool calls, runtime warnings, cache hits/misses, cost updates, provider request start/end, approval lifecycle. Hosts can subscribe via `host.observers[]` (any number) or the simpler `options.onEvent` callback (one subscriber). Both work simultaneously.
