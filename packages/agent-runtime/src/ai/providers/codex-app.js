@@ -5,6 +5,7 @@ import { createFileChangePayload } from "../file-change-stats.js";
 import { formatLiveInputGuidance } from "../live-input-prompt.js";
 import { estimateCost } from "../cost.js";
 import { codexModelSupportsFastMode, normalizeFastMode } from "../runtime/fast-mode.js";
+import { readRuntimeBrand } from "../../agent/tools/shared/runtime-context.js";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_THREAD_START_ATTEMPTS = 2;
@@ -539,8 +540,9 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
   }
 
   async function initializeClient(nextClient) {
+    const brand = readRuntimeBrand();
     await nextClient.request("initialize", {
-      clientInfo: { name: "worklab", title: "Worklab", version: "0" },
+      clientInfo: { name: brand.clientInfoName, title: brand.clientInfoTitle, version: "0" },
       capabilities: { experimentalApi: true },
     });
   }
@@ -702,7 +704,7 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
       approvalPolicy: approvalPolicyForPermissionMode(options.permissionMode),
       sandbox: sandboxForPermissionMode(options.permissionMode),
       config,
-      serviceName: "worklab",
+      serviceName: readRuntimeBrand().serviceName,
       developerInstructions: systemPrompt,
       ephemeral: true,
       sessionStartSource: "startup",

@@ -25,7 +25,7 @@ import {
 } from "../../ai/file-change-stats.js";
 import { formatSkillBodyWithPathNote } from "../prompt/skill-index.js";
 import { MAX_TOOL_RESULT_BYTES, summarisePayload, wrapToolsWithBloatGuard } from "../tool-bloat.js";
-import { readToolRuntime } from "./shared/runtime-context.js";
+import { readRuntimeBrand, readToolRuntime } from "./shared/runtime-context.js";
 
 function textResult(text, details = {}) {
   return {
@@ -401,7 +401,11 @@ export function resolveMcpStdioCwd(cfg = {}, cwd = null) {
 }
 
 async function connectMcpClient(name, cfg, { cwd } = {}) {
-  const client = new McpClient({ name: `worklab/${name}`, version: "0.1.0" }, { capabilities: {} });
+  const brand = readRuntimeBrand();
+  const client = new McpClient(
+    { name: `${brand.mcpClientName}/${name}`, version: brand.mcpClientVersion },
+    { capabilities: {} },
+  );
   let transport;
   if (cfg.type === "http") {
     transport = new StreamableHTTPClientTransport(new URL(cfg.url), { requestInit: { headers: cfg.headers || {} } });

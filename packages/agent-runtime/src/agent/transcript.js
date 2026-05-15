@@ -1,8 +1,10 @@
 // Snapshot/render helpers for preserving partial agent progress across
 // continuations. The worker writes a bounded "transcript tail" when a run
-// terminates with usable progress but no worklab_result, and the coordinator
+// terminates with usable progress but no structured result, and the coordinator
 // passes it through `diagnosticsSeed.resume_snapshot` so the next worker can
 // prepend it to the system prompt.
+
+import { readRuntimeBrand } from "./tools/shared/runtime-context.js";
 
 // intelligence-ramp Phase 5.3: keep more turns but reserve verbatim slots for
 // the most recent few. Older turns ride along as one-paragraph summaries so
@@ -152,8 +154,9 @@ export function buildTranscriptTailSnapshot(events, {
     turn_index: turns.length - tailWindow.length + idx + 1,
     summary: summarizeTurn(turn, { maxChars: turnSummaryChars }),
   }));
+  const brand = readRuntimeBrand();
   const snapshot = {
-    schema: "worklab.transcript-tail.v1",
+    schema: `${brand.schemaPrefix}.transcript-tail.v1`,
     captured_at: Date.now(),
     turn_count: turns.length,
     earlier_turn_summaries: earlierTurnSummaries,

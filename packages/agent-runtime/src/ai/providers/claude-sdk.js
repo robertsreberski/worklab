@@ -14,6 +14,7 @@ import { modelWithContextWindow } from "../runtime/context-windows.js";
 import { runtimeCapabilities } from "../runtime/capabilities.js";
 import { MAX_TOOL_RESULT_BYTES, summarisePayload } from "../../agent/tool-bloat.js";
 import { normalizeMcpToolParams } from "../../agent/tools/pi-bridge.js";
+import { readRuntimeBrand } from "../../agent/tools/shared/runtime-context.js";
 import {
   claudeNativeAgentDefinitions,
   claudeToolsWithNativeSubagents,
@@ -198,11 +199,11 @@ function structuredOutputRejectionFromEvent(event) {
   for (const block of event.message.content) {
     if (block?.type === "tool_result" && block.is_error) {
       const text = toolResultText(block);
-      if (/structured output|required schema|worklab/i.test(text)) return text;
+      if (/structured output|required schema|did not match schema|schema violation/i.test(text)) return text;
     }
   }
   const result = event.is_error === true ? stringifyError(event.tool_use_result) : null;
-  return /structured output|required schema|worklab/i.test(result) ? result : null;
+  return /structured output|required schema|did not match schema|schema violation/i.test(result) ? result : null;
 }
 
 const CLAUDE_FILE_EDIT_MATCHER = "Edit|Write|NotebookEdit";
@@ -663,7 +664,10 @@ export async function generateClaudeResponse(systemPrompt, options) {
             errorMessage = resultError.message;
             failureKind = resultError.failureKind;
             if (failureKind === "invalid_result") {
-              runtimeWarnings.push(makeRuntimeWarning(resultError.message, "worklab_result_validation"));
+              runtimeWarnings.push(makeRuntimeWarning(
+                resultError.message,
+                `${readRuntimeBrand().schemaPrefix}_result_validation`,
+              ));
             }
             errorDetails = buildClaudeErrorDetails({
               event,

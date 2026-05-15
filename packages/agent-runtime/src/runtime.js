@@ -24,6 +24,7 @@
 
 import { resolveRuntimeBridge } from "./ai/runtime/registry.js";
 import { configureToolRuntime } from "./agent/tools/shared/runtime-context.js";
+import { resolveRuntimeBrand } from "./runtime-brand.js";
 
 const HOST_KEYS = [
   "resolveCustomPricing",
@@ -50,7 +51,11 @@ function pickDefined(source, keys) {
 export function createRuntime(host = {}) {
   const hostDefaults = pickDefined(host, HOST_KEYS);
   const toolRuntime = pickDefined(host, TOOL_RUNTIME_KEYS);
-  if (Object.keys(toolRuntime).length) configureToolRuntime(toolRuntime);
+  const runtimeBrand = resolveRuntimeBrand(host.runtimeBrand);
+  // Always configure: even when no tool keys are supplied, we must publish
+  // the resolved brand so internal modules (transcript, pi-bridge, ripgrep
+  // error message) pick it up. The brand defaults preserve worklab strings.
+  configureToolRuntime({ ...toolRuntime, runtimeBrand });
 
   return {
     async run(systemPrompt, options = {}) {
@@ -64,6 +69,7 @@ export function createRuntime(host = {}) {
         ...hostDefaults,
         ...options,
         executionMode,
+        runtimeBrand,
       });
     },
     configureTools(next = {}) {

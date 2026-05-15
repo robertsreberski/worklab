@@ -9,6 +9,7 @@ import { createFileChangePayload } from "../file-change-stats.js";
 import { estimateCost } from "../cost.js";
 import { createStderrTail } from "../failure.js";
 import { modelWithContextWindow } from "../runtime/context-windows.js";
+import { readRuntimeBrand } from "../../agent/tools/shared/runtime-context.js";
 import {
   claudeNativeAgentDefinitions,
   claudeToolsWithNativeSubagents,
@@ -329,7 +330,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
   const start = Date.now();
   const resolved = options.model;
   const prompt = promptFromMessages(options.messages);
-  const dir = mkdtempSync(join(tmpdir(), "worklab-cli-"));
+  const dir = mkdtempSync(join(tmpdir(), readRuntimeBrand().tempdirPrefix));
   const schemaPath = options.outputSchema ? join(dir, "output-schema.json") : null;
   if (schemaPath) writeFileSync(schemaPath, JSON.stringify(options.outputSchema));
   const mcpServers = options.mcpServers || {};

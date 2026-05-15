@@ -16,6 +16,11 @@
 //                      back to vendored binary, then PATH lookup.
 //   qaOutputDir      — fallback for normalizeMcpToolParams when the per-call
 //                      runArtifactDir isn't supplied.
+//   runtimeBrand     — resolved RuntimeBrand object (see runtime-brand.js).
+//                      Internal helpers read it to stamp host-specific names
+//                      (MCP client name, transcript schema id, doctor command).
+
+import { DEFAULT_RUNTIME_BRAND, resolveRuntimeBrand } from "../../../runtime-brand.js";
 
 const context = {
   workspace: undefined,
@@ -24,11 +29,16 @@ const context = {
   toolArtifactDir: undefined,
   ripgrepPath: undefined,
   qaOutputDir: undefined,
+  runtimeBrand: { ...DEFAULT_RUNTIME_BRAND },
 };
 
 export function configureToolRuntime(next = {}) {
   for (const key of Object.keys(context)) {
+    if (key === "runtimeBrand") continue;
     if (key in next) context[key] = next[key];
+  }
+  if (next.runtimeBrand !== undefined) {
+    context.runtimeBrand = resolveRuntimeBrand(next.runtimeBrand);
   }
 }
 
@@ -36,6 +46,12 @@ export function readToolRuntime() {
   return context;
 }
 
+export function readRuntimeBrand() {
+  return context.runtimeBrand || { ...DEFAULT_RUNTIME_BRAND };
+}
+
 export function resetToolRuntime() {
-  for (const key of Object.keys(context)) context[key] = undefined;
+  for (const key of Object.keys(context)) {
+    context[key] = key === "runtimeBrand" ? { ...DEFAULT_RUNTIME_BRAND } : undefined;
+  }
 }

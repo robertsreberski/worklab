@@ -9,12 +9,15 @@ import {
 } from "./constants.js";
 import { boundedInt } from "./dedup.js";
 import { writeToolArtifact } from "./output-truncation.js";
-import { readToolRuntime } from "./runtime-context.js";
+import { readRuntimeBrand, readToolRuntime } from "./runtime-context.js";
 
 const requireFromHere = createRequire(import.meta.url);
 
-export const RIPGREP_MISSING_MESSAGE =
-  "Error: ripgrep (rg) is not available. Configure ripgrepPath via configureToolRuntime() or install ripgrep on PATH; run `worklab doctor` for details.";
+// Lazy so the message respects whatever runtimeBrand the host configured.
+export function ripgrepMissingMessage() {
+  const brand = readRuntimeBrand();
+  return `Error: ripgrep (rg) is not available. Configure ripgrepPath via configureToolRuntime() or install ripgrep on PATH; run \`${brand.doctorCommand}\` for details.`;
+}
 
 // Mutable cache of the resolved ripgrep binary path. Stored on an object so
 // callers can read the latest value without re-importing the module.

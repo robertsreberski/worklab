@@ -76,8 +76,23 @@ createRuntime({
   repoRoot,                // secondary allowed root
   ripgrepPath,             // explicit path to `rg`; falls back to vendored binary, then PATH
   qaOutputDir,             // fallback dir for Playwright MCP filename routing
+
+  // -- host-customisable identity strings (all optional, defaults shown) --
+  runtimeBrand: {
+    schemaPrefix: "worklab",       // prefix for snapshot/result schema ids
+    mcpClientName: "worklab",      // MCP client name reported to MCP servers
+    mcpClientVersion: "0.1.0",     // MCP client version
+    tempdirPrefix: "worklab-cli-", // mkdtemp prefix for CLI provider scratch dirs
+    providerModelPrefix: "worklab",// id prefix for custom Pi providers
+    doctorCommand: "worklab doctor", // command suggested in tool error messages
+    serviceName: "worklab",        // Codex app-server serviceName
+    clientInfoName: "worklab",     // Codex app-server clientInfo.name
+    clientInfoTitle: "Worklab",    // Codex app-server clientInfo.title
+  },
 });
 ```
+
+`runtimeBrand` lets an external host reskin the package without forking string-by-string. Defaults preserve worklab strings, so worklab itself doesn't need to set anything.
 
 Returns:
 

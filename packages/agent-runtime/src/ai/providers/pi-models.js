@@ -1,4 +1,5 @@
 import { getModel as getPiModel } from "@mariozechner/pi-ai";
+import { readRuntimeBrand } from "../../agent/tools/shared/runtime-context.js";
 
 export const EMPTY_USAGE = {
   input: 0,
@@ -20,7 +21,7 @@ function openAiCompatBaseUrl(provider) {
 }
 
 function customProviderName(provider) {
-  return `worklab-${provider.id}`;
+  return `${readRuntimeBrand().providerModelPrefix}-${provider.id}`;
 }
 
 function customProviderKey(provider, isPrivate) {

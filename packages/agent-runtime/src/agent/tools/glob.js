@@ -13,13 +13,13 @@ import {
   workspaceRoot,
 } from "./shared/path-resolver.js";
 import {
-  RIPGREP_MISSING_MESSAGE,
   capLines,
   excludedGlobArgs,
   excludedPathSummary,
   formatSearchLines,
   normalizeGlobPattern,
   resolveRgPath,
+  ripgrepMissingMessage,
 } from "./shared/ripgrep.js";
 
 const execFileAsync = promisify(execFile);
@@ -39,7 +39,7 @@ export async function globToolImpl({ pattern, path, limit, offset = 0, max_match
     ...excludedGlobArgs(),
   ];
   const rgPath = resolveRgPath();
-  if (!rgPath) return RIPGREP_MISSING_MESSAGE;
+  if (!rgPath) return ripgrepMissingMessage();
   try {
     const { stdout } = await execFileAsync(rgPath, args, { cwd, timeout: 15000, maxBuffer: SEARCH_MAX_BUFFER });
     const lines = stdout.trim().split("\n").filter(Boolean).sort((a, b) => {
