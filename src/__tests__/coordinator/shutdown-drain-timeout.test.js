@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawnWorker } from "../../coordinator/spawn-worker.js";
 import { makeTestDb } from "../helpers/test-db.js";
 import { newRunId, newTaskId } from "../../core/ids.js";
@@ -27,6 +29,25 @@ function seedTaskAndRun(db) {
   db.prepare("INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status) VALUES (?, ?, ?, ?, ?, 'running')")
     .run(runId, taskId, "execute", "coder", now);
   return { taskId, runId };
+}
+
+function processAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    if (err?.code === "ESRCH") return false;
+    throw err;
+  }
+}
+
+async function waitForProcessExit(pid, { timeoutMs = 2000 } = {}) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (!processAlive(pid)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return !processAlive(pid);
 }
 
 describe("coordinator drain — timeout falls through to cancel", () => {
@@ -80,6 +101,49 @@ describe("coordinator drain — timeout falls through to cancel", () => {
       expect(snap.resume_kind).toBe("drained");
       expect(snap.drain_acknowledged).toBe(false);
       expect(snap.drain_timeout).toBe(true);
+    }
+  }, 10_000);
+
+  it("cleans up long-lived child processes in the worker process group after exit", async () => {
+    if (process.platform === "win32") return;
+
+    const tempDir = mkdtempSync(join(tmpdir(), "worklab-worker-child-cleanup-"));
+    const childPidFile = join(tempDir, "child.pid");
+    let childPid = null;
+    try {
+      const db = makeTestDb();
+      const broker = stubBroker();
+      const { taskId, runId } = seedTaskAndRun(db);
+      const script = {
+        spawnChildPidFile: childPidFile,
+        events: [{ type: "started", runId }],
+        exitAfterMs: 25,
+      };
+
+      const handle = spawnWorker({
+        binary: fakeBinary,
+        args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+        env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+        runId,
+        taskId,
+        broker,
+        db,
+        runIdleWarningMs: 0,
+        cancelGraceMs: 100,
+        persistDebounceMs: 5,
+      });
+
+      const result = await handle.done;
+      expect(result.processStatus).toBe("succeeded");
+      expect(existsSync(childPidFile)).toBe(true);
+      childPid = Number(readFileSync(childPidFile, "utf8").trim());
+      expect(childPid).toBeGreaterThan(0);
+      await expect(waitForProcessExit(childPid)).resolves.toBe(true);
+    } finally {
+      if (childPid && processAlive(childPid)) {
+        try { process.kill(childPid, "SIGKILL"); } catch { /* already gone */ }
+      }
+      rmSync(tempDir, { recursive: true, force: true });
     }
   }, 10_000);
 });

@@ -52,6 +52,10 @@ import {
   truncateDisplayEvent,
 } from "./spawn-worker/log-events.js";
 
+function canSignalProcessGroup() {
+  return process.platform !== "win32";
+}
+
 function isCancellationExit(code, signal) {
   return code === 130 || signal === "SIGTERM" || signal === "SIGINT";
 }
@@ -96,6 +100,7 @@ export function spawnWorker({
   const child = spawn("node", [binary, ...args], {
     env: { ...process.env, ...env },
     stdio: ["pipe", "pipe", "pipe"],
+    detached: canSignalProcessGroup(),
   });
 
   const events = [];
@@ -120,6 +125,7 @@ export function spawnWorker({
   let finalized = false;
   let exitFallbackTimer = null;
   let exitWatchdogFired = false;
+  let cleanupSigkillTimer = null;
   // R5: drained-resume protocol. drainRequested means the coordinator asked
   // the worker to wrap up cleanly; drainAcknowledged means the worker emitted
   // a `drained` stdout event before exiting. drainTimedOut means the
@@ -457,14 +463,42 @@ export function spawnWorker({
     idleTimer.unref?.();
   }
 
+  function signalWorkerProcessTree(signal = "SIGTERM") {
+    if (!child.pid) return;
+    if (canSignalProcessGroup()) {
+      try {
+        process.kill(-child.pid, signal);
+        return;
+      } catch {
+        // Fall back to the direct worker process below. ESRCH is expected when
+        // the worker and all descendants already exited.
+      }
+    }
+    try { child.kill(signal); } catch { /* already gone */ }
+  }
+
   function terminateChild() {
     try { child.stdin?.end?.(); } catch { /* already closed */ }
-    try { child.kill("SIGTERM"); } catch { /* already gone */ }
+    signalWorkerProcessTree("SIGTERM");
     if (!sigkillTimer) {
       sigkillTimer = setTimeout(() => {
-        try { child.kill("SIGKILL"); } catch { /* already gone */ }
+        signalWorkerProcessTree("SIGKILL");
       }, cancelGraceMs);
       sigkillTimer.unref?.();
+    }
+  }
+
+  function cleanupWorkerProcessTree() {
+    // The worker may have spawned long-lived tools (for example npm/Vite dev
+    // servers) that keep file watchers alive after the run is complete. Since
+    // each worker has its own process group, this targets only descendants of
+    // this run and leaves unrelated repo services alone.
+    signalWorkerProcessTree("SIGTERM");
+    if (!cleanupSigkillTimer) {
+      cleanupSigkillTimer = setTimeout(() => {
+        signalWorkerProcessTree("SIGKILL");
+      }, cancelGraceMs);
+      cleanupSigkillTimer.unref?.();
     }
   }
 
@@ -684,6 +718,10 @@ export function spawnWorker({
         clearTimeout(sigkillTimer);
         sigkillTimer = null;
       }
+      if (cleanupSigkillTimer) {
+        clearTimeout(cleanupSigkillTimer);
+        cleanupSigkillTimer = null;
+      }
       if (persistTimer) {
         clearTimeout(persistTimer);
         persistTimer = null;
@@ -700,6 +738,7 @@ export function spawnWorker({
         clearTimeout(drainTimer);
         drainTimer = null;
       }
+      cleanupWorkerProcessTree();
       const durationMs = Date.now() - startedAt;
       const endedAt = Date.now();
       let processStatus = "succeeded";

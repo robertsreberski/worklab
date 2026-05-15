@@ -1,4 +1,7 @@
 // src/__tests__/helpers/fake-worker.js
+import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+
 // Run as a child process; emits events per FAKE_WORKER_SCRIPT env var
 // Script format: JSON {
 //   "events": [{ "type": "...", ...payload, "delayMs": 10 }],
@@ -11,7 +14,8 @@
 //     "exitCode": 0,               // exit code on drain
 //     "exitAfterMs": 0             // delay between handling drain and exit
 //   },
-//   "ignoreDrain": false           // simulate a worker that doesn't drain in time
+//   "ignoreDrain": false,          // simulate a worker that doesn't drain in time
+//   "spawnChildPidFile": "/tmp/pid" // spawn a long-lived child and write its pid
 // }
 
 const script = JSON.parse(process.env.FAKE_WORKER_SCRIPT || '{"events":[],"exitCode":0}');
@@ -25,6 +29,14 @@ let drainHandled = false;
 process.on("SIGTERM", () => { aborted = true; });
 
 const drainConfig = script.drain || null;
+
+if (script.spawnChildPidFile) {
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    stdio: "ignore",
+  });
+  writeFileSync(script.spawnChildPidFile, `${child.pid}\n`);
+  child.unref();
+}
 
 function handleDrainMessage(message) {
   if (script.ignoreDrain) {
