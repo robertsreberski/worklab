@@ -810,7 +810,9 @@ export async function generateClaudeResponse(systemPrompt, options) {
     },
   });
 
-  const configuredSubagents = (options.nativeSubagents || []).map((entry) => entry?.name).filter(Boolean);
+  const configuredSubagents = Array.isArray(options.nativeSubagents?.teammates)
+    ? options.nativeSubagents.teammates.map((entry) => entry?.name).filter(Boolean)
+    : [];
   const capabilitiesUsed = buildCapabilitiesUsed({
     promptCacheActive: cachedTokens > 0 || cacheCreationTokens > 0,
     thinkingEnabled: effort !== "low",

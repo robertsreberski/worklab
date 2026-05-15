@@ -70,7 +70,6 @@ export function createRouterRuntime({ host = {}, chain = [] } = {}) {
           const rendered = renderResumeSnapshot(resumeSnapshot);
           if (rendered) {
             callOptions.systemPromptPrefix = rendered;
-            // eslint-disable-next-line no-param-reassign
             systemPrompt = `${rendered}\n\n${systemPrompt}`;
           }
         }

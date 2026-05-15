@@ -130,7 +130,11 @@ describe("generateClaudeResponse", () => {
     expect(r.usage.output_tokens).toBe(5);
     expect(r.durationMs).toBe(100);
     expect(r.numTurns).toBe(1);
-    expect(events.length).toBe(2);
+    // 2 stream events + provider_request_started/_completed + cost_accumulated + capabilities_resolved
+    const streamEvents = events.filter((e) => e.type === "assistant" || e.type === "result");
+    expect(streamEvents).toHaveLength(2);
+    expect(events.find((e) => e.type === "provider_request_started")).toBeTruthy();
+    expect(events.find((e) => e.type === "capabilities_resolved")).toBeTruthy();
   });
 
   it("prefers the SDK result text over intermediate assistant narration", async () => {
@@ -684,7 +688,9 @@ describe("generateClaudeResponse", () => {
       warning_kind: "claude_post_success_error",
     });
     expect(r.runtimeWarnings[0].message).toContain("MaxFileReadTokenExceededError");
-    expect(events).toHaveLength(3);
+    // 3 stream events + provider_request_started/_completed + cost_accumulated + capabilities_resolved
+    const streamEvents = events.filter((e) => e.type === "assistant" || e.type === "result");
+    expect(streamEvents).toHaveLength(3);
   });
 
   it("treats SDK iterator failures before a successful result as provider errors", async () => {
