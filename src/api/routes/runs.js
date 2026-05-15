@@ -13,6 +13,7 @@ import {
 import { newCommentId } from "../../core/platform/index.js";
 import { getRunById, getRunRawOutputPath } from "../../core/db/queries/runs.js";
 import { getAgentLogByRunId } from "../../core/db/queries/agent-logs.js";
+import { listApprovalsForRun } from "../../core/db/queries/task-run-approvals.js";
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -65,6 +66,39 @@ export function registerRunRoutes(app, { db, broker, dataDir, watcher }) {
     const log = runEvents.shapeLog(logRow, req.query || {}, { rawEvents });
     const run = normalizeRun(row, liveInputState, Array.isArray(log?.events) ? log.events : null);
     res.json({ run, log });
+  });
+
+  app.get("/api/runs/:id/approvals", (req, res) => {
+    const row = getRunById(db, req.params.id);
+    if (!row) return res.status(404).json({ error: { code: "not_found", message: "run not found" } });
+    const approvals = listApprovalsForRun(db, row.id);
+    res.json({ runId: row.id, approvals });
+  });
+
+  app.post("/api/runs/:id/approvals/:requestId/decision", async (req, res, next) => {
+    try {
+      const row = getRunById(db, req.params.id);
+      if (!row) return res.status(404).json({ error: { code: "not_found", message: "run not found" } });
+      const requestId = String(req.params.requestId || "");
+      const decision = String(req.body?.decision || "");
+      if (!["approve", "deny", "always"].includes(decision)) {
+        return res.status(400).json({ error: { code: "invalid_decision", message: "decision must be approve|deny|always" } });
+      }
+      const reason = typeof req.body?.reason === "string" ? req.body.reason : null;
+      const decidedBy = typeof req.body?.decided_by === "string" ? req.body.decided_by : "user";
+      if (typeof watcher?.sendRunApprovalDecision !== "function") {
+        return res.status(409).json({ error: { code: "approval_unavailable", message: "approvals are unavailable" } });
+      }
+      const result = await watcher.sendRunApprovalDecision(row.id, { requestId, decision, reason, decidedBy });
+      if (!result?.ok) {
+        return res.status(409).json({
+          error: { code: result?.code || "decision_failed", message: result?.message || "failed to deliver approval decision" },
+        });
+      }
+      res.status(202).json({ delivered: true, runId: row.id, requestId, decision, approval: result.row });
+    } catch (err) {
+      next(err);
+    }
   });
 
   app.post("/api/runs/:id/messages", async (req, res, next) => {

@@ -27,7 +27,7 @@ export async function runTaskAgentTurn(ctx, {
   outputSchema,
   priorRunId = null,
 } = {}) {
-  const { db, config, ac, emit, liveInput, agentName, runId, taskId } = ctx;
+  const { db, config, ac, emit, liveInput, approvalChannel, agentName, runId, taskId } = ctx;
 
   let input;
   try {
@@ -59,6 +59,20 @@ export async function runTaskAgentTurn(ctx, {
   } = input;
   const model = resolveModel(agent.model);
   const sdkEvents = createSdkEventCoalescer((event) => emit({ type: "sdk_event", event }));
+  // HITL approval wiring — see Phase 3 of the agent-runtime usage uplift.
+  // When the agent opts in (`require_human_approval = 1`), we install
+  // onToolApprovalRequest + per-tool risk tiers + the agent's timeout
+  // override. Without the opt-in, the package falls back to its built-in
+  // defaults (no callback ⇒ medium auto-approves, high fails closed).
+  const approvalEnabled = !!agent.require_human_approval && approvalChannel;
+  let toolRiskTiers = {};
+  if (approvalEnabled) {
+    try { toolRiskTiers = JSON.parse(agent.tool_risk_tiers_json || "{}") || {}; }
+    catch { toolRiskTiers = {}; }
+  }
+  const approvalTimeoutMs = Number.isFinite(Number(agent.approval_timeout_ms))
+    ? Number(agent.approval_timeout_ms)
+    : undefined;
   const firstTurn = estimateFirstTurnInput({ systemPrompt, messages });
   emit({
     type: "prompt_built",
@@ -95,6 +109,13 @@ export async function runTaskAgentTurn(ctx, {
       abortSignal: ac.signal,
       liveInput,
       onEvent: sdkEvents.emit,
+      ...(approvalEnabled
+        ? {
+          onToolApprovalRequest: (payload) => approvalChannel.request(payload),
+          toolRiskTiers,
+          ...(approvalTimeoutMs !== undefined ? { approvalTimeoutMs } : {}),
+        }
+        : {}),
     });
     const terminal = terminalProviderResult(kind, result);
     return terminal ? { terminal, input } : { result, input };

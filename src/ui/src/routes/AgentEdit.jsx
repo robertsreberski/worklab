@@ -57,6 +57,7 @@ const AGENT_EDIT_SECTIONS = [
   { id: "agent-edit-policy", num: "03", label: "Policy", meta: "Review" },
   { id: "agent-edit-behavior", num: "04", label: "Behavior", meta: "Prompt" },
   { id: "agent-edit-capabilities", num: "05", label: "Capabilities", meta: "Scope" },
+  { id: "agent-edit-safety", num: "06", label: "Safety", meta: "HITL & resilience" },
 ];
 
 const emptyAgent = {
@@ -80,6 +81,10 @@ const emptyAgent = {
   subagent_mode: "advisory",
   execution_mode: "cli",
   enabled: true,
+  require_human_approval: false,
+  tool_risk_tiers_json: "{}",
+  approval_timeout_ms: 300000,
+  fallback_chain_json: "[]",
 };
 
 function flattenModels(groups = []) {
@@ -1124,6 +1129,55 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                   collapseAllSelected
                 />
               </div>
+            </FormSection>
+
+            <SectionMarker id="agent-edit-safety" num="06" kicker="Safety" meta="HITL & resilience" />
+            <FormSection
+              kicker="Safety"
+              title="Approvals & fallback"
+              description="Gate sensitive tool calls behind your decision and configure provider fallback for retryable failures."
+            >
+              <FormGrid columns={2}>
+                <FormField switchInside>
+                  <Switch
+                    checked={!!agent.require_human_approval}
+                    onChange={(next) => setAgent({ ...agent, require_human_approval: next })}
+                    label="Require human approval for medium/high tools"
+                    description="When on, the worker pauses each medium-tier or high-tier tool call until you decide in the run drawer. Low-tier tools auto-approve."
+                  />
+                </FormField>
+                <FormField
+                  label="Approval timeout (ms)"
+                  description="Auto-denies if you don't respond in time. Default 300000 (5 min)."
+                >
+                  <Input
+                    type="number"
+                    min={1000}
+                    value={String(agent.approval_timeout_ms ?? 300000)}
+                    onInput={(e) => setAgent({ ...agent, approval_timeout_ms: Number(e.target.value) || 300000 })}
+                  />
+                </FormField>
+              </FormGrid>
+              <FormField
+                label="Tool risk tiers (JSON)"
+                description='Map tool names to "low", "medium", or "high". Example: {"Bash":"high","Write":"medium","Read":"low"}. Tools not listed default to medium.'
+              >
+                <Textarea
+                  rows={4}
+                  value={agent.tool_risk_tiers_json || "{}"}
+                  onInput={(e) => setAgent({ ...agent, tool_risk_tiers_json: e.target.value })}
+                />
+              </FormField>
+              <FormField
+                label="Fallback chain (JSON array)"
+                description='Optional. When set, retryable provider failures cascade to the next model in the list. Each entry: {"sdk":"claude","model":"claude-sonnet-4-6"}. Empty array (default) = single-model run.'
+              >
+                <Textarea
+                  rows={4}
+                  value={agent.fallback_chain_json || "[]"}
+                  onInput={(e) => setAgent({ ...agent, fallback_chain_json: e.target.value })}
+                />
+              </FormField>
             </FormSection>
           </main>
 

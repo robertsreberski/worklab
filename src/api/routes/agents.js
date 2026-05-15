@@ -67,6 +67,10 @@ function rowToAgent(row) {
     execution_mode: row.execution_mode || "sdk",
     context_window: normalizeContextWindow(row.context_window),
     fast_mode: effectiveFastModeForRow(row),
+    require_human_approval: !!row.require_human_approval,
+    tool_risk_tiers_json: row.tool_risk_tiers_json || "{}",
+    approval_timeout_ms: Number(row.approval_timeout_ms) || 300000,
+    fallback_chain_json: row.fallback_chain_json || "[]",
   };
 }
 
@@ -102,6 +106,10 @@ const PATCHABLE = [
   "subagent_mode",
   "execution_mode",
   "enabled",
+  "require_human_approval",
+  "tool_risk_tiers_json",
+  "approval_timeout_ms",
+  "fallback_chain_json",
 ];
 
 const VALID_EXECUTION_MODES = new Set(["sdk", "cli"]);
@@ -635,6 +643,39 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
           } catch (err) {
             return res.status(400).json({ error: { code: "validation", message: err.message } });
           }
+        } else if (k === "require_human_approval") {
+          try {
+            values.push(normalizeBooleanField(k, req.body[k], false));
+          } catch (err) {
+            return res.status(400).json({ error: { code: "validation", message: err.message } });
+          }
+        } else if (k === "approval_timeout_ms") {
+          const n = Number(req.body[k]);
+          if (!Number.isFinite(n) || n < 1000) {
+            return res.status(400).json({ error: { code: "validation", message: "approval_timeout_ms must be >= 1000" } });
+          }
+          values.push(Math.round(n));
+        } else if (k === "tool_risk_tiers_json" || k === "fallback_chain_json") {
+          const raw = req.body[k];
+          let parsed;
+          try { parsed = typeof raw === "string" ? JSON.parse(raw || (k === "fallback_chain_json" ? "[]" : "{}")) : raw; }
+          catch (err) {
+            return res.status(400).json({ error: { code: "validation", message: `${k} must be valid JSON: ${err.message}` } });
+          }
+          if (k === "tool_risk_tiers_json") {
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+              for (const v of Object.values(parsed)) {
+                if (!["low", "medium", "high"].includes(v)) {
+                  return res.status(400).json({ error: { code: "validation", message: "tool_risk_tiers values must be low|medium|high" } });
+                }
+              }
+            } else {
+              return res.status(400).json({ error: { code: "validation", message: "tool_risk_tiers_json must be a JSON object" } });
+            }
+          } else if (!Array.isArray(parsed)) {
+            return res.status(400).json({ error: { code: "validation", message: "fallback_chain_json must be a JSON array" } });
+          }
+          values.push(JSON.stringify(parsed));
         } else {
           values.push(k === "model" ? targetModel : req.body[k]);
         }

@@ -11137,6 +11137,68 @@ button.settings-overview-card:focus-visible,
   flex-direction: column;
   gap: var(--sp-1);
 }
+.run-approval-item {
+  margin-top: var(--sp-2);
+  padding: var(--sp-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  border-left: 3px solid var(--border);
+}
+.run-approval-item.run-approval-pending {
+  border-left-color: var(--status-error);
+}
+.run-approval-item.run-approval-denied {
+  border-left-color: var(--status-error);
+}
+.run-approval-item.run-approval-approved,
+.run-approval-item.run-approval-always {
+  border-left-color: var(--status-done);
+}
+.run-approval-head {
+  gap: var(--sp-2);
+  font-size: var(--text-sm);
+}
+.run-approval-tool {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.run-approval-model {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.run-approval-args {
+  margin: var(--sp-1) 0 var(--sp-2);
+  padding: var(--sp-2);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow: auto;
+}
+.run-approval-actions {
+  margin-top: var(--sp-2);
+  gap: var(--sp-2);
+}
+.run-approval-history {
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.run-approval-status {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.run-approval-by,
+.run-approval-reason {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
 .run-failover-item {
   display: flex;
   gap: var(--sp-3);

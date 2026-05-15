@@ -110,6 +110,12 @@ export const api = {
   getRun: (id, options) => request("GET", `/runs/${pathSegment(id)}`, null, options),
   getRunCostSummary: () => request("GET", "/runs/cost-summary"),
   sendRunMessage: (id, body) => request("POST", `/runs/${pathSegment(id)}/messages`, { body }),
+  listRunApprovals: (id, options) => request("GET", `/runs/${pathSegment(id)}/approvals`, null, options),
+  decideRunApproval: (id, requestId, { decision, reason = null }) => request(
+    "POST",
+    `/runs/${pathSegment(id)}/approvals/${pathSegment(requestId)}/decision`,
+    { decision, reason },
+  ),
   // activity/search
   listActivity: (query, options) => request("GET", `/activity${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
   search: (query) => request("GET", `/search?${new URLSearchParams(query)}`),

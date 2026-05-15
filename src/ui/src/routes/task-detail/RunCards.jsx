@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useRef } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 
 import { EventTimeline } from "../../components/EventTimeline.jsx";
 import { FileTree } from "../../components/FileTree.jsx";
 import { Icon } from "../../components/Icon.jsx";
 import { AgentReferenceText } from "../../components/AgentLink.jsx";
+import { Button } from "../../components/primitives/Button.jsx";
+import { Textarea } from "../../components/primitives/Textarea.jsx";
+import { api } from "../../lib/api.js";
 import { RunHistoryNotice } from "../../components/RunHistoryNotice.jsx";
 import { InlineHead, SectionGroup, SectionStack, Toolbar } from "../../components/layout/index.js";
 import { StatusPill } from "../../components/primitives/StatusPill.jsx";
@@ -300,6 +303,103 @@ function RunCapabilitiesPanel({ run }) {
 // produced one or more attempts before this run succeeded (or before the
 // chain was exhausted). Surfaces each failover hop so the user sees the
 // route the runtime actually walked.
+// HITL approval drawer. Fetches `/api/runs/:id/approvals` on mount and
+// whenever the run stream surfaces a fresh `approval_requested` event,
+// then offers approve / deny / always actions. Designed to stay close to
+// the run card so the user can see what tool is asking and what arguments
+// it wants to use without leaving context.
+function RunApprovalsPanel({ run, runStreamEvents }) {
+  const runId = run?.id;
+  const [approvals, setApprovals] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(null);
+  const [reasonByRequest, setReasonByRequest] = useState({});
+
+  const refresh = async () => {
+    if (!runId) return;
+    setLoading(true);
+    try {
+      const data = await api.listRunApprovals(runId);
+      if (Array.isArray(data?.approvals)) setApprovals(data.approvals);
+    } catch { /* surface via toast elsewhere */ }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { refresh(); }, [runId]);
+
+  // Re-fetch whenever a new approval_requested event arrives in the stream;
+  // a small set of types triggers a refresh rather than a per-event merge so
+  // the UI stays close to canonical DB state.
+  useEffect(() => {
+    if (!Array.isArray(runStreamEvents) || !runStreamEvents.length) return;
+    const last = runStreamEvents[runStreamEvents.length - 1];
+    if (!last) return;
+    if (last.type === "approval_requested" || last.type === "tool_approval_granted" || last.type === "tool_approval_denied") {
+      refresh();
+    }
+  }, [runStreamEvents?.length]);
+
+  const pending = approvals.filter((row) => row.status === "pending");
+  const settled = approvals.filter((row) => row.status !== "pending");
+  if (!pending.length && !settled.length) return null;
+
+  async function decide(approval, decision) {
+    setSubmitting(approval.request_id);
+    try {
+      await api.decideRunApproval(runId, approval.request_id, {
+        decision,
+        reason: reasonByRequest[approval.request_id] || null,
+      });
+      await refresh();
+    } catch { /* toast */ }
+    finally { setSubmitting(null); }
+  }
+
+  return (
+    <details class="run-diagnostics run-approvals" open={pending.length > 0}>
+      <summary>{pending.length ? `Pending approvals (${pending.length})` : `Approvals (${settled.length})`}</summary>
+      {pending.map((row) => (
+        <div key={row.request_id} class="run-approval-item run-approval-pending">
+          <InlineHead class="run-approval-head">
+            <span class="run-approval-tool">{row.tool_name}</span>
+            <span class={`run-capability-chip run-capability-${row.risk_tier === "high" ? "off" : "on"}`}>{row.risk_tier}</span>
+            {row.model && <span class="run-approval-model">{row.model}</span>}
+          </InlineHead>
+          {row.arguments_summary && (
+            <pre class="run-approval-args">{row.arguments_summary}</pre>
+          )}
+          <Textarea
+            rows={2}
+            placeholder="Optional reason for your decision…"
+            value={reasonByRequest[row.request_id] || ""}
+            onInput={(e) => setReasonByRequest({ ...reasonByRequest, [row.request_id]: e.target.value })}
+          />
+          <Toolbar class="run-approval-actions" align="start">
+            <Button disabled={submitting === row.request_id} onClick={() => decide(row, "approve")}>Approve</Button>
+            <Button disabled={submitting === row.request_id} onClick={() => decide(row, "always")}>Always allow</Button>
+            <Button disabled={submitting === row.request_id} kind="danger" onClick={() => decide(row, "deny")}>Deny</Button>
+          </Toolbar>
+        </div>
+      ))}
+      {settled.length > 0 && (
+        <ul class="run-approval-history">
+          {settled.map((row) => (
+            <li key={row.request_id} class={`run-approval-item run-approval-${row.status}`}>
+              <InlineHead class="run-approval-head">
+                <span class="run-approval-tool">{row.tool_name}</span>
+                <span class="run-approval-status">{row.status}</span>
+                {row.decided_by && <span class="run-approval-by">by {row.decided_by}</span>}
+                {row.reason && <span class="run-approval-reason">— {row.reason}</span>}
+              </InlineHead>
+            </li>
+          ))}
+        </ul>
+      )}
+      {loading && <div class="agentlog-final-meta">Refreshing approvals…</div>}
+    </details>
+  );
+}
+
 function RunFailoverHistoryPanel({ run }) {
   const history = Array.isArray(run?.failover_history) ? run.failover_history : null;
   if (!history || history.length === 0) return null;
@@ -569,6 +669,7 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
       <RunVerificationPanel run={run} />
       <RunEconomicsPanel run={run} />
       <RunCapabilitiesPanel run={run} />
+      <RunApprovalsPanel run={run} runStreamEvents={events} />
       <RunFailoverHistoryPanel run={run} />
       <RunDiagnosticsDisclosure run={run} />
       <RunHistoryNotice

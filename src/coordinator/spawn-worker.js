@@ -34,6 +34,11 @@ import {
   setRunRuntimeTelemetry,
   setRunTranscriptTail,
 } from "../core/db/queries/runs.js";
+import {
+  expirePendingApprovalsForRun,
+  insertApprovalRequest,
+  recordApprovalDecision,
+} from "../core/db/queries/task-run-approvals.js";
 import { buildTranscriptTailSnapshot } from "@worklab-ai/agent-runtime/agent/transcript.js";
 import {
   CONTEXT_BLOAT_TOP_EVENTS,
@@ -517,6 +522,27 @@ export function spawnWorker({
       resultError = rawEvent.message || "invalid worklab_result";
       explicitFailureKind = "invalid_result";
     }
+    if (rawEvent.type === "approval_requested" && rawEvent.request_id) {
+      try {
+        insertApprovalRequest(db, {
+          taskRunId: runId,
+          requestId: String(rawEvent.request_id),
+          toolName: rawEvent.tool_name || rawEvent.toolName || "",
+          toolUseId: rawEvent.tool_use_id || rawEvent.toolUseId || null,
+          argumentsSummary: rawEvent.arguments_summary || rawEvent.argumentsSummary || "",
+          riskTier: rawEvent.risk_tier || rawEvent.riskTier || "medium",
+          model: rawEvent.model || null,
+        });
+        broker.broadcast(runId, {
+          type: "approval_requested",
+          request_id: String(rawEvent.request_id),
+          tool_name: rawEvent.tool_name || rawEvent.toolName || "",
+          risk_tier: rawEvent.risk_tier || rawEvent.riskTier || "medium",
+        });
+      } catch (err) {
+        logger?.warn?.({ err: err.message, runId }, "failed to persist approval request");
+      }
+    }
     if (rawEvent.type === "prompt_built" && rawEvent.diagnostics) {
       promptDiagnostics = { ...(promptDiagnostics || {}), ...rawEvent.diagnostics };
     }
@@ -590,6 +616,30 @@ export function spawnWorker({
         else resolve();
       });
     });
+  }
+
+  async function sendApprovalDecision({ requestId, decision, reason = null, decidedBy = null } = {}) {
+    if (!requestId || !["approve", "deny", "always"].includes(decision)) {
+      return { ok: false, code: "invalid_decision", message: "decision must be approve|deny|always with a requestId" };
+    }
+    const row = recordApprovalDecision(db, runId, requestId, { decision, reason, decidedBy });
+    if (!row) {
+      return { ok: false, code: "no_pending_request", message: "approval request is not pending" };
+    }
+    try {
+      await writeControlMessage({ type: "approval_decision", request_id: requestId, decision, reason });
+    } catch (err) {
+      return { ok: false, code: "delivery_failed", message: err?.message || "failed to deliver decision to worker" };
+    }
+    emitEvent({
+      type: decision === "deny" ? "tool_approval_denied" : "tool_approval_granted",
+      request_id: requestId,
+      decision,
+      reason,
+      decided_by: decidedBy,
+      ts: Date.now(),
+    });
+    return { ok: true, row };
   }
 
   async function sendLiveMessage(message) {
@@ -895,6 +945,11 @@ export function spawnWorker({
         toolUsageSummary,
       });
 
+      // Expire any approval requests that never got a decision (worker
+      // exited mid-prompt). Pending rows would otherwise hang forever.
+      try { expirePendingApprovalsForRun(db, runId, { reason: "run_terminated" }); }
+      catch { /* best effort */ }
+
       broker.broadcast(runId, { type: "done", exitCode: code });
 
       resolve({
@@ -956,6 +1011,7 @@ export function spawnWorker({
     cancel,
     drain,
     sendLiveMessage,
+    sendApprovalDecision,
     get warnings() { return [...warnings]; },
     get exitWatchdogFired() { return exitWatchdogFired; },
     get drainRequested() { return drainRequested; },

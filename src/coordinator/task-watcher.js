@@ -1021,6 +1021,15 @@ export function createTaskWatcher({
     return entry.handle.sendLiveMessage(message);
   }
 
+  async function sendRunApprovalDecision(runId, payload) {
+    const entry = activeByRunId.get(runId);
+    if (!entry) return { ok: false, code: "run_not_active", message: "run is not active" };
+    if (typeof entry.handle?.sendApprovalDecision !== "function") {
+      return { ok: false, code: "approval_unsupported", message: "worker does not accept approvals" };
+    }
+    return entry.handle.sendApprovalDecision(payload);
+  }
+
   async function shutdown({ drainTimeoutMs: overrideDrainMs } = {}) {
     leadCycle.shutdown();
     for (const timer of recoveryTimers) clearTimeout(timer);
@@ -1178,6 +1187,7 @@ export function createTaskWatcher({
     shutdown,
     isActive: (taskId) => active.has(taskId),
     isRunActive: (runId) => activeByRunId.has(runId),
+    sendRunApprovalDecision,
     getRunLiveInputState,
     sendRunMessage,
     maybeAutoStart: maybeAutoStartTask,

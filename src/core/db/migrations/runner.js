@@ -210,6 +210,36 @@ function ensureWorkflowColumns(db) {
   addColumnIfMissing(db, "task_runs", "capabilities_used_json", "capabilities_used_json TEXT");
   addColumnIfMissing(db, "task_runs", "failover_history_json", "failover_history_json TEXT");
   addColumnIfMissing(db, "task_runs", "tool_usage_summary_json", "tool_usage_summary_json TEXT");
+  // v46: HITL approval + fallback chain on agents. require_human_approval
+  // toggles the per-call onToolApprovalRequest wiring; tool_risk_tiers_json
+  // maps toolName → low|medium|high (defaults to medium); approval_timeout_ms
+  // bounds the wait. fallback_chain_json carries the per-agent router chain.
+  addColumnIfMissing(db, "agents", "require_human_approval", "require_human_approval INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "agents", "tool_risk_tiers_json", "tool_risk_tiers_json TEXT NOT NULL DEFAULT '{}'");
+  addColumnIfMissing(db, "agents", "approval_timeout_ms", "approval_timeout_ms INTEGER NOT NULL DEFAULT 300000");
+  addColumnIfMissing(db, "agents", "fallback_chain_json", "fallback_chain_json TEXT NOT NULL DEFAULT '[]'");
+  // v46: HITL approval audit table.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_run_approvals (
+      id TEXT PRIMARY KEY,
+      task_run_id TEXT NOT NULL REFERENCES task_runs(id) ON DELETE CASCADE,
+      request_id TEXT NOT NULL,
+      tool_name TEXT NOT NULL,
+      tool_use_id TEXT,
+      arguments_summary TEXT NOT NULL DEFAULT '',
+      risk_tier TEXT NOT NULL DEFAULT 'medium',
+      model TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      decision TEXT,
+      reason TEXT,
+      decided_by TEXT,
+      requested_at INTEGER NOT NULL,
+      decided_at INTEGER,
+      UNIQUE(task_run_id, request_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_approvals_run_status ON task_run_approvals(task_run_id, status);
+    CREATE INDEX IF NOT EXISTS idx_approvals_pending ON task_run_approvals(status, requested_at DESC) WHERE status = 'pending';
+  `);
 }
 
 // v33: teams replace per-project allowlists and per-agent budgets. Drop the

@@ -14,12 +14,14 @@ import { runTask } from "./worker/task-runner.js";
 import { runReview } from "./worker/review-runner.js";
 import { runLeadCycle } from "./worker/lead-cycle-runner.js";
 import { emitFinalResult } from "./worker/result-emitter.js";
+import { createApprovalChannel } from "./worker/approval-channel.js";
 
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
 }
 
 const liveInput = createLiveInputQueue();
+const approvalChannel = createApprovalChannel({ emit });
 
 // R5: graceful drain protocol. The coordinator sends `{type:"worklab_drain"}`
 // on shutdown so the worker can finish the in-flight tool call instead of
@@ -60,6 +62,10 @@ function startControlReader({ controlState }) {
     }
     if (message?.type === "worklab_drain") {
       controlState.handleDrain(message);
+      return;
+    }
+    if (message?.type === "approval_decision") {
+      approvalChannel.acceptDecision(message);
       return;
     }
     if (message?.type !== "live_user_message") return;
@@ -128,6 +134,7 @@ async function main() {
     ac,
     emit,
     liveInput,
+    approvalChannel,
     agentName,
     runId,
     taskId,
@@ -156,10 +163,12 @@ async function main() {
   // (set when it issued the drain) to classify the run as `cancelled_shutdown`.
   if (controlState.isDraining()) {
     if (!result || result.cancelled || result.error) {
+      approvalChannel.denyAllPending("coordinator_shutdown");
       emit({ type: "cancelled", initiator: "coordinator_shutdown", drained: true });
       process.exit(0);
     }
   }
+  approvalChannel.denyAllPending("run_terminated");
 
   const exitCode = emitFinalResult(ctx, result);
   process.exit(exitCode);
