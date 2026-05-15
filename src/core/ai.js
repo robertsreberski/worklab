@@ -532,6 +532,18 @@ function optionOrEnv(optionValue, envValue) {
 // adapters need — normalized effort, settings, skill access dirs, and (for
 // custom Pi providers) the provider/model rows + capabilities — and passes
 // them through options.
+//
+// Host-level wiring (pricing / pi-oauth / artifact sink / compaction records)
+// is set once on the per-call `createRuntime({ ... })` so the package's
+// observer + brand surfaces stay reachable. Per-call options keep working
+// (the package merges host defaults with per-call options).
+//
+// Every caller's `runtimeWarnings` are mirrored back into the `onEvent`
+// stream as `runtime_warning` events after the run completes. This used to
+// be duplicated in assistant.js / slack/service.js; now there's a single
+// invariant: `result.runtimeWarnings` and the in-stream `runtime_warning`
+// events agree. `onEvent` defaults to a no-op so a forgetful caller doesn't
+// silently swallow events.
 export async function generateResponse(systemPrompt, options) {
   const resolved = options.model?.sdk ? options.model : parseModelReference(options.model);
   const skillDirs = Array.isArray(options.skillDirs)
@@ -565,21 +577,29 @@ export async function generateResponse(systemPrompt, options) {
     options.piCodexTransport,
     process.env.WORKLAB_PI_CODEX_TRANSPORT,
   ) ?? optionalOption(settings.agent_pi_codex_transport) ?? null;
+
+  const runArtifactDir = options.runArtifactDir || process.env.WORKLAB_QA_OUTPUT_DIR || null;
+  const hostOptions = {
+    resolveCustomPricing: options.resolveCustomPricing || customPricingResolverFor(options.db),
+    onCompactionRecorded: options.onCompactionRecorded || compactionRecorderFor(options.db),
+    persistArtifact: options.persistArtifact || createToolOutputSink(runArtifactDir),
+    resolvePiApiKey: options.resolvePiApiKey
+      || ((provider) => resolvePiApiKey(provider, { dataDir: options.dataDir })),
+  };
+
+  const callerOnEvent = typeof options.onEvent === "function" ? options.onEvent : null;
+  const onEvent = callerOnEvent || (() => {});
+
   const baseOptions = {
     ...options,
     model: resolved,
     skillDirs,
     settings,
-    resolveCustomPricing: options.resolveCustomPricing || customPricingResolverFor(options.db),
-    onCompactionRecorded: options.onCompactionRecorded || compactionRecorderFor(options.db),
     runId: options.runId || process.env.WORKLAB_RUN_ID || null,
     providerSessionId: options.providerSessionId || process.env.WORKLAB_PROVIDER_SESSION_ID || null,
-    runArtifactDir: options.runArtifactDir || process.env.WORKLAB_QA_OUTPUT_DIR || null,
-    persistArtifact: options.persistArtifact
-      || createToolOutputSink(options.runArtifactDir || process.env.WORKLAB_QA_OUTPUT_DIR || null),
-    resolvePiApiKey: options.resolvePiApiKey
-      || ((provider) => resolvePiApiKey(provider, { dataDir: options.dataDir })),
+    runArtifactDir,
     piCodexTransport,
+    onEvent,
     ...(options.codexAppServerCommand
       ? {
         codexAppServerCommand: options.codexAppServerCommand,
@@ -601,12 +621,18 @@ export async function generateResponse(systemPrompt, options) {
     effort: normalizeReasoningEffortForModel(resolved, options.effort || "medium", customContext?.modelCapabilities),
     executionMode: typeof options.executionMode === "string" ? options.executionMode : "sdk",
   };
-  // The package's createRuntime resolves the bridge from options.model and
-  // forwards everything we computed above. Worklab keeps the heavy lifting
-  // (settings, custom-provider context, env-var bridging) so the package
-  // stays generic.
-  const runtime = createRuntime();
-  return runtime.run(systemPrompt, nextOptions);
+  const runtime = createRuntime(hostOptions);
+  const result = await runtime.run(systemPrompt, nextOptions);
+  // Mirror runtimeWarnings into the event stream so every caller's onEvent
+  // sees them. Without this, only callers that manually walk result.runtimeWarnings
+  // surface warnings to the UI — see audit finding (a) on the agent-runtime
+  // usage in worklab.
+  if (callerOnEvent && Array.isArray(result?.runtimeWarnings) && result.runtimeWarnings.length > 0) {
+    for (const warning of result.runtimeWarnings) {
+      try { callerOnEvent({ type: "runtime_warning", ...warning }); } catch { /* host emit errors must not escape */ }
+    }
+  }
+  return result;
 }
 
 export { canonicalizeLegacyModelReference };

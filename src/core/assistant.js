@@ -464,9 +464,8 @@ Return only one JSON object with this exact schema:
         abortSignal: signal.signal,
         onEvent: recordEvent,
       });
-      for (const warning of response.runtimeWarnings || []) {
-        recordEvent({ type: "runtime_warning", ...warning });
-      }
+      // runtime warnings are mirrored to onEvent inside generateResponse;
+      // no need to re-emit them here.
       if (signal.signal.aborted) {
         this.finishAborted({ runId, threadId, assistantMessageId, events, signal, finalizeLog });
         return null;

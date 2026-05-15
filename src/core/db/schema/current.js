@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 44;
+export const SCHEMA_VERSION = 45;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -229,7 +229,10 @@ CREATE TABLE IF NOT EXISTS task_runs (
   cost_usd REAL,
   transcript_tail_json TEXT,
   first_turn_input_tokens INTEGER,
-  first_turn_overhead_tokens INTEGER
+  first_turn_overhead_tokens INTEGER,
+  capabilities_used_json TEXT,
+  failover_history_json TEXT,
+  tool_usage_summary_json TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_runs_task ON task_runs(task_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_task_status_started ON task_runs(task_id, status, started_at DESC);

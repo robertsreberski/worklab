@@ -106,6 +106,40 @@ export function setRunTodoState(db, runId, todoStateJson) {
   db.prepare("UPDATE task_runs SET todo_state_json = ? WHERE id = ?").run(todoStateJson, runId);
 }
 
+// Persist the per-call runtime telemetry the agent runtime now surfaces:
+// `capabilitiesUsed` (what the provider actually did this call), the
+// optional `failoverHistory` (filled by createRouterRuntime when a chain
+// is configured), and the metrics-observer `toolUsageSummary` snapshot.
+// Each field is independent — pass `null` to leave a column untouched.
+export function setRunRuntimeTelemetry(db, runId, { capabilitiesUsed, failoverHistory, toolUsageSummary } = {}) {
+  if (capabilitiesUsed === undefined && failoverHistory === undefined && toolUsageSummary === undefined) return;
+  const set = [];
+  const params = [];
+  if (capabilitiesUsed !== undefined) {
+    set.push("capabilities_used_json = ?");
+    params.push(capabilitiesUsed == null ? null : JSON.stringify(capabilitiesUsed));
+  }
+  if (failoverHistory !== undefined) {
+    set.push("failover_history_json = ?");
+    params.push(failoverHistory == null ? null : JSON.stringify(failoverHistory));
+  }
+  if (toolUsageSummary !== undefined) {
+    set.push("tool_usage_summary_json = ?");
+    params.push(toolUsageSummary == null ? null : JSON.stringify(toolUsageSummary));
+  }
+  if (!set.length) return;
+  params.push(runId);
+  db.prepare(`UPDATE task_runs SET ${set.join(", ")} WHERE id = ?`).run(...params);
+}
+
+export function getRunRuntimeTelemetry(db, runId) {
+  return db
+    .prepare(
+      "SELECT capabilities_used_json, failover_history_json, tool_usage_summary_json FROM task_runs WHERE id = ?",
+    )
+    .get(runId);
+}
+
 export function deleteRunById(db, runId) {
   db.prepare("DELETE FROM task_runs WHERE id = ?").run(runId);
 }

@@ -44,6 +44,20 @@ function providerSessionPayload(result) {
   return result?.providerSessionId ? { provider_session_id: result.providerSessionId } : {};
 }
 
+// Fields the agent runtime surfaces on every successful run that we want the
+// coordinator to persist on task_runs (capabilitiesUsed, failoverHistory) or
+// surface in the UI (observerSnapshot is also picked up here so the coordinator
+// can update task_runs.tool_usage_summary_json).
+function runtimeTelemetryPayload(result) {
+  const out = {};
+  if (result?.capabilitiesUsed) out.capabilities_used = result.capabilitiesUsed;
+  if (Array.isArray(result?.failoverHistory) && result.failoverHistory.length > 0) {
+    out.failover_history = result.failoverHistory;
+  }
+  if (result?.observerSnapshot) out.tool_usage_summary = result.observerSnapshot;
+  return out;
+}
+
 export function emitFinalResult(ctx, result) {
   const { emit } = ctx;
 
@@ -76,6 +90,7 @@ export function emitFinalResult(ctx, result) {
       model: result.model,
       effort: result.effort,
       ...providerSessionPayload(result),
+      ...runtimeTelemetryPayload(result),
     });
     return 0;
   }
@@ -90,6 +105,7 @@ export function emitFinalResult(ctx, result) {
       model: result.model,
       effort: result.effort,
       ...providerSessionPayload(result),
+      ...runtimeTelemetryPayload(result),
     });
     return 0;
   }
@@ -128,6 +144,7 @@ export function emitFinalResult(ctx, result) {
       model: result.model,
       effort: result.effort,
       ...providerSessionPayload(result),
+      ...runtimeTelemetryPayload(result),
     });
     return 0;
   }
@@ -166,6 +183,7 @@ export function emitFinalResult(ctx, result) {
       model: result.model,
       effort: result.effort,
       ...providerSessionPayload(result),
+      ...runtimeTelemetryPayload(result),
     });
     // Always emit verdict (null is valid); process exit reflects runtime
     // success only — coordinator handles invalid semantic output.
@@ -199,6 +217,7 @@ export function emitFinalResult(ctx, result) {
       model: result.model,
       effort: result.effort,
       ...providerSessionPayload(result),
+      ...runtimeTelemetryPayload(result),
     });
     return 0;
   }

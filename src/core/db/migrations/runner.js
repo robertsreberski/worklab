@@ -200,6 +200,16 @@ function ensureWorkflowColumns(db) {
   addColumnIfMissing(db, "task_runs", "worktree_json", "worktree_json TEXT");
   addColumnIfMissing(db, "task_runs", "project_context_hash", "project_context_hash TEXT");
   addColumnIfMissing(db, "task_runs", "transcript_tail_json", "transcript_tail_json TEXT");
+  // v45: runtime telemetry — fields the agent runtime now surfaces per run.
+  // capabilities_used_json: what the provider actually did (prompt cache,
+  // thinking, structured output, mcp servers, subagents, compaction).
+  // failover_history_json: ordered list of attempts when the per-agent
+  // fallback chain (createRouterRuntime) is in use; null otherwise.
+  // tool_usage_summary_json: aggregate from the per-call metrics observer
+  // (tool calls by name, error counts, cache hit ratio, latency percentiles).
+  addColumnIfMissing(db, "task_runs", "capabilities_used_json", "capabilities_used_json TEXT");
+  addColumnIfMissing(db, "task_runs", "failover_history_json", "failover_history_json TEXT");
+  addColumnIfMissing(db, "task_runs", "tool_usage_summary_json", "tool_usage_summary_json TEXT");
 }
 
 // v33: teams replace per-project allowlists and per-agent budgets. Drop the

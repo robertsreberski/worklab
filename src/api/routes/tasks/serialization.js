@@ -511,6 +511,9 @@ function rowToRun(row) {
     artifacts_json,
     artifact_summary_json,
     worktree_json,
+    capabilities_used_json,
+    failover_history_json,
+    tool_usage_summary_json,
     ...run
   } = row;
   const hasLog = Boolean(log_id);
@@ -538,6 +541,9 @@ function rowToRun(row) {
     diagnostics,
     error_details: (diagnostics && typeof diagnostics === "object" && diagnostics.error_details) || null,
     cost_usd: run.cost_usd ?? log_cost_usd ?? null,
+    capabilities_used: safeParseJson(capabilities_used_json, null),
+    failover_history: safeParseJson(failover_history_json, null),
+    tool_usage_summary: safeParseJson(tool_usage_summary_json, null),
     log: hasLog ? {
       id: log_id,
       model: log_model,

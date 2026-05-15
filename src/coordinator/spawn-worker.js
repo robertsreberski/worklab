@@ -28,7 +28,12 @@ import {
   collectWorkspaceDeltaArtifacts,
   createWorkspaceSnapshot,
 } from "../core/artifact-collection.js";
-import { getRunTodoStateRow, setRunRawOutputPath, setRunTranscriptTail } from "../core/db/queries/runs.js";
+import {
+  getRunTodoStateRow,
+  setRunRawOutputPath,
+  setRunRuntimeTelemetry,
+  setRunTranscriptTail,
+} from "../core/db/queries/runs.js";
 import { buildTranscriptTailSnapshot } from "@worklab-ai/agent-runtime/agent/transcript.js";
 import {
   CONTEXT_BLOAT_TOP_EVENTS,
@@ -872,6 +877,23 @@ export function spawnWorker({
         status,
         logId,
       );
+
+      // Persist the new runtime telemetry fields the agent runtime surfaces:
+      // capabilitiesUsed (what the provider actually used), failoverHistory
+      // (only populated by createRouterRuntime), and the metrics-observer
+      // snapshot (tool counts, cache hit rate, latency percentiles).
+      const capabilitiesUsed = finalPayload?.capabilities_used ?? finalPayload?.capabilitiesUsed ?? null;
+      const failoverHistory = Array.isArray(finalPayload?.failover_history)
+        ? finalPayload.failover_history
+        : Array.isArray(finalPayload?.failoverHistory)
+          ? finalPayload.failoverHistory
+          : null;
+      const toolUsageSummary = finalPayload?.tool_usage_summary ?? finalPayload?.observerSnapshot ?? null;
+      setRunRuntimeTelemetry(db, runId, {
+        capabilitiesUsed,
+        failoverHistory: failoverHistory && failoverHistory.length > 0 ? failoverHistory : null,
+        toolUsageSummary,
+      });
 
       broker.broadcast(runId, { type: "done", exitCode: code });
 
