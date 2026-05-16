@@ -70,7 +70,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@mariozechner/pi-ai": "^0.73.1",
+    "@earendil-works/pi-ai": "^0.74.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@slack/bolt": "^4.7.1",
     "@worklab-ai/agent-runtime": "0.1.7",

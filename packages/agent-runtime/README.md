@@ -4,7 +4,7 @@ Generic agent runtime that supports four backends out of the box:
 
 - **Claude SDK** (`@anthropic-ai/claude-agent-sdk`)
 - **Claude Code CLI** (the `claude` binary)
-- **Pi SDK** (`@mariozechner/pi-agent-core`, used for OpenAI / Codex / Gemini / OpenRouter / Ollama / etc. via Pi providers)
+- **Pi SDK** (`@earendil-works/pi-agent-core`, used for OpenAI / Codex / Gemini / OpenRouter / Ollama / etc. via Pi providers)
 - **Codex CLI** (the `codex` app-server)
 
 Hosts wire in their own pricing, persistence, credential, and compaction-recording callbacks. The runtime returns raw text + raw structured output; hosts that want a domain-specific contract (e.g. `worklab_result`) parse it on their end.
@@ -61,7 +61,7 @@ console.log(result.text);
 - Anthropic Claude via the Claude Agent SDK (`claude` SDK).
 - Anthropic Claude via the `claude` Code CLI binary.
 - OpenAI's Codex via the `codex` app-server CLI.
-- OpenAI, Google Gemini, AWS Bedrock, OpenRouter, xAI, Groq, Mistral, Perplexity, DeepSeek, Ollama, LlamaCPP, GLM, Vercel AI Gateway, GitHub Copilot, Gemini CLI — all through the Pi (`@mariozechner/pi-ai`) provider gateway, which our SDK adapter speaks directly.
+- OpenAI, Google Gemini, AWS Bedrock, OpenRouter, xAI, Groq, Mistral, Perplexity, DeepSeek, Ollama, LlamaCPP, GLM, Vercel AI Gateway, GitHub Copilot, Gemini CLI — all through the Pi (`@earendil-works/pi-ai`) provider gateway, which our SDK adapter speaks directly.
 
 **At-a-glance:**
 

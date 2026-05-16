@@ -1,4 +1,4 @@
-import { getModel as getPiModel } from "@mariozechner/pi-ai";
+import { getModel as getPiModel } from "@earendil-works/pi-ai";
 import { readRuntimeBrand } from "../../agent/tools/shared/runtime-context.js";
 
 export const EMPTY_USAGE = {

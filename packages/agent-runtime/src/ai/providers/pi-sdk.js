@@ -1,5 +1,5 @@
-import { Agent } from "@mariozechner/pi-agent-core";
-import * as openAiCodexResponses from "@mariozechner/pi-ai/openai-codex-responses";
+import { Agent } from "@earendil-works/pi-agent-core";
+import * as openAiCodexResponses from "@earendil-works/pi-ai/openai-codex-responses";
 import { randomUUID } from "node:crypto";
 import { estimateCost } from "../cost.js";
 import { runtimeCapabilities } from "../runtime/capabilities.js";

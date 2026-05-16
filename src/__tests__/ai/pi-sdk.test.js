@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createAssistantMessageEventStream } from "@mariozechner/pi-ai";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { generatePiResponse } from "@worklab-ai/agent-runtime/ai/providers/pi-sdk.js";
 import { resolveModel } from "../../core/ai.js";
 import { createLiveInputQueue } from "../../core/live-input.js";

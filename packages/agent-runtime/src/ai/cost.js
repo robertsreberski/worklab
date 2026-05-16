@@ -1,4 +1,4 @@
-import { getModel as getPiModel } from "@mariozechner/pi-ai";
+import { getModel as getPiModel } from "@earendil-works/pi-ai";
 
 const CLAUDE_PRICING = {
   "claude-haiku-4-5-20251001": { input: 1.0, cacheRead: 0.1, cacheWrite: 1.25, output: 5.0 },

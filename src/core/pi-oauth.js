@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getOAuthApiKey } from "@mariozechner/pi-ai/oauth";
+import { getOAuthApiKey } from "@earendil-works/pi-ai/oauth";
 
 const ENV_API_KEYS = {
   "openai-codex": ["OPENAI_CODEX_API_KEY", "CODEX_API_KEY"],

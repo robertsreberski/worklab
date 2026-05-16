@@ -1,4 +1,4 @@
-import { getModel as getPiModel, getModels as getPiModels, getSupportedThinkingLevels } from "@mariozechner/pi-ai";
+import { getModel as getPiModel, getModels as getPiModels, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { getSkillAccessDirs } from "@worklab-ai/agent-runtime/agent/prompt/skill-index.js";
 import {
   canonicalizeLegacyModelReference,

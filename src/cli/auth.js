@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import process from "node:process";
-import { getOAuthProvider } from "@mariozechner/pi-ai/oauth";
+import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
 import { loadConfig, readPiAuthFile } from "../core/index.js";
 import { applyConfigArgs, hasFlag } from "./args.js";
 

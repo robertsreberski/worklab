@@ -80,7 +80,7 @@ warnings, diagnostics, failure kind, and error details.
 ## Current Bridges
 
 The Pi bridge handles all `pi:*` refs. Built-in Pi providers are resolved through
-`@mariozechner/pi-ai`; Worklab custom providers are resolved from the provider
+`@earendil-works/pi-ai`; Worklab custom providers are resolved from the provider
 database and converted to Pi-compatible OpenAI-style model descriptors before
 execution.
 
