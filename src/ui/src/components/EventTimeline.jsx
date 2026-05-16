@@ -1,3 +1,4 @@
+import { useMemo } from "preact/hooks";
 import { AgentEventTimeline } from "./AgentEventTimeline.jsx";
 import { normalizeCommentText } from "../lib/commentFormatting.js";
 import { normalizeCodexItemEvent } from "@worklab-ai/agent-runtime/ai/streaming/codex-events.js";
@@ -299,10 +300,11 @@ export function normalizeWorklabEvents(events = []) {
 }
 
 export function EventTimeline({ events, streaming = false }) {
+  const normalized = useMemo(() => normalizeWorklabEvents(events), [events]);
   if (!events.length) return <div class="meta">{streaming ? "Waiting for first agent event..." : "No events yet."}</div>;
   return (
     <AgentEventTimeline
-      events={normalizeWorklabEvents(events)}
+      events={normalized}
       streaming={streaming}
     />
   );

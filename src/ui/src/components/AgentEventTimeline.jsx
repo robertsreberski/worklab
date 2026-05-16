@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import { Icon } from "./Icon.jsx";
 import { ToolCallBlock } from "./ToolCallBlock.jsx";
 import { StructuredContent } from "./StructuredContent.jsx";
@@ -615,8 +615,8 @@ function TimelineEvent({ event, isLast, streaming }) {
 }
 
 export function AgentEventTimeline({ events = [], streaming = false, messageStatus }) {
+  const items = useMemo(() => groupEvents(events), [events]);
   if (!events.length && !streaming) return null;
-  const items = groupEvents(events);
   const effectiveStatus = messageStatus || (streaming ? "streaming" : "done");
   return (
     <div class="agentlog-timeline">
