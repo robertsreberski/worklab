@@ -1,13 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import vm from "node:vm";
+import { installNotificationHandlers } from "../../ui/src/service-worker/notifications.js";
 
 function responseJson(value) {
   return { ok: true, json: vi.fn(async () => value) };
 }
 
-function loadServiceWorker({ fetchImpl } = {}) {
+function setupServiceWorker({ fetchImpl } = {}) {
   const listeners = {};
   const showNotification = vi.fn(async () => {});
   const subscription = {
@@ -33,21 +31,13 @@ function loadServiceWorker({ fetchImpl } = {}) {
       openWindow: vi.fn(async () => null),
     },
   };
-  const context = vm.createContext({
-    self,
-    URL,
-    Uint8Array,
-    atob,
-    fetch: fetchImpl || vi.fn(async () => responseJson({})),
-  });
-  const source = readFileSync(resolve("src/ui/public/sw.js"), "utf8");
-  vm.runInContext(source, context);
+  installNotificationHandlers(self, { fetch: fetchImpl || vi.fn(async () => responseJson({})) });
   return { listeners, self, subscription };
 }
 
 describe("service worker notifications", () => {
   it("shows pushed notifications with payload data", async () => {
-    const { listeners, self } = loadServiceWorker();
+    const { listeners, self } = setupServiceWorker();
     let pending;
     listeners.push({
       data: {
@@ -71,13 +61,13 @@ describe("service worker notifications", () => {
   });
 
   it("refreshes server registration when the push subscription changes", async () => {
-    const fetchImpl = vi.fn(async (url, options = {}) => {
+    const fetchImpl = vi.fn(async (url) => {
       if (url === "/api/notifications/status") {
         return responseJson({ notifications: { pwa: { publicKey: "BEl0dA" } } });
       }
       return responseJson({ ok: true });
     });
-    const { listeners, self, subscription } = loadServiceWorker({ fetchImpl });
+    const { listeners, subscription, self } = setupServiceWorker({ fetchImpl });
     let pending;
 
     listeners.pushsubscriptionchange({

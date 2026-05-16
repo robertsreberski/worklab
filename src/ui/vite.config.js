@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import preact from "@preact/preset-vite";
+import { VitePWA } from "vite-plugin-pwa";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,7 +17,23 @@ const uiPort = Number(process.env.WORKLAB_UI_PORT || "5173");
 
 export default defineConfig({
   root: resolve(__dirname),
-  plugins: [preact()],
+  plugins: [
+    preact(),
+    VitePWA({
+      strategies: "injectManifest",
+      srcDir: "src/service-worker",
+      filename: "sw.js",
+      injectRegister: null,
+      manifest: false,
+      injectManifest: {
+        globPatterns: ["**/*.{js,css,html,svg,png,ico,woff2}"],
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+      },
+      devOptions: {
+        enabled: false,
+      },
+    }),
+  ],
   build: {
     outDir: resolve(__dirname, "dist"),
     emptyOutDir: true,
