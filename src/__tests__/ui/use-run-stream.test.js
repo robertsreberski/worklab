@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   closeRunStreamsForTests,
+  FULL_HISTORY_MAX_EVENTS,
+  getRunStreamStateForTests,
   loadFullRunHistory,
   refreshRunState,
   subscribeRunState,
   subscribeRunStream,
   todoStateFromToolEvents,
+  TOOL_USE_MEMORY_LIMIT,
 } from "../../ui/src/lib/useRunStream.js";
 
 class FakeEventSource {
@@ -478,6 +481,124 @@ describe("shared run stream subscriptions", () => {
       expect(latest.eventsTruncated).toBe(true);
       expect(latest.fullHistoryLoaded).toBe(false);
     });
+
+    unsubscribe();
+  });
+
+  it("caps toolUsesById under sustained unpaired tool calls", async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        run: { id: "run-bounded", status: "running", process_status: "running" },
+        log: { events: [], event_count: 0, events_truncated: false },
+      }),
+    }));
+
+    const unsubscribe = subscribeRunState("run-bounded", () => {}, { subscribe: true });
+    await vi.waitFor(() => {
+      expect(getRunStreamStateForTests("run-bounded")).toBeTruthy();
+    });
+
+    const overflow = TOOL_USE_MEMORY_LIMIT * 4;
+    for (let index = 1; index <= overflow; index += 1) {
+      FakeEventSource.instances[0].onmessage({
+        data: JSON.stringify({
+          type: "tool_use",
+          tool_use_id: `tool-${index}`,
+          name: "shell",
+          input: {},
+          _event_seq: index,
+        }),
+      });
+    }
+
+    const entry = getRunStreamStateForTests("run-bounded");
+    expect(entry.toolUsesById.size).toBeLessThanOrEqual(TOOL_USE_MEMORY_LIMIT);
+    // The most recent tool_use must still be retained for future result pairing.
+    expect(entry.toolUsesById.has(`tool-${overflow}`)).toBe(true);
+
+    unsubscribe();
+  });
+
+  it("releases a tool_use from memory once its tool_result pairs with it", async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        run: { id: "run-pair", status: "running", process_status: "running" },
+        log: { events: [], event_count: 0, events_truncated: false },
+      }),
+    }));
+
+    const unsubscribe = subscribeRunState("run-pair", () => {}, { subscribe: true });
+    await vi.waitFor(() => {
+      expect(getRunStreamStateForTests("run-pair")).toBeTruthy();
+    });
+
+    FakeEventSource.instances[0].onmessage({
+      data: JSON.stringify({
+        type: "tool_use",
+        tool_use_id: "tool-x",
+        name: "shell",
+        input: {},
+        _event_seq: 1,
+      }),
+    });
+    expect(getRunStreamStateForTests("run-pair").toolUsesById.has("tool-x")).toBe(true);
+
+    FakeEventSource.instances[0].onmessage({
+      data: JSON.stringify({
+        type: "tool_result",
+        tool_use_id: "tool-x",
+        output: "ok",
+        _event_seq: 2,
+      }),
+    });
+    expect(getRunStreamStateForTests("run-pair").toolUsesById.has("tool-x")).toBe(false);
+
+    unsubscribe();
+  });
+
+  it("caps full-history hydration at FULL_HISTORY_MAX_EVENTS", async () => {
+    const eventCount = FULL_HISTORY_MAX_EVENTS + 500;
+    const events = Array.from({ length: eventCount }, (_, index) => ({
+      type: "text",
+      text: `event ${index + 1}`,
+      _event_seq: index + 1,
+    }));
+    globalThis.fetch = vi.fn(async (url) => {
+      const requestUrl = String(url);
+      return {
+        ok: true,
+        json: async () => ({
+          run: { id: "run-big", status: "running", process_status: "running" },
+          log: requestUrl.includes("events=tail")
+            ? { events: events.slice(-3), event_count: eventCount, events_truncated: true }
+            : { events, event_count: eventCount, events_truncated: false },
+        }),
+      };
+    });
+
+    const snapshots = [];
+    const unsubscribe = subscribeRunState("run-big", (snapshot) => snapshots.push(snapshot), {
+      subscribe: true,
+      initialEventLimit: 3,
+      maxEvents: 3,
+    });
+
+    await vi.waitFor(() => {
+      expect(snapshots.at(-1)).toMatchObject({ loading: false });
+    });
+
+    await loadFullRunHistory("run-big");
+
+    await vi.waitFor(() => {
+      const latest = snapshots.at(-1);
+      expect(latest.events.length).toBe(FULL_HISTORY_MAX_EVENTS);
+    });
+
+    const latest = snapshots.at(-1);
+    // Tail is preserved (newest events kept) so the user sees the most recent state.
+    expect(latest.events.at(-1)._event_seq).toBe(eventCount);
 
     unsubscribe();
   });

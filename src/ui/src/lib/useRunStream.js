@@ -10,6 +10,15 @@ const runStreams = new Map();
 const DEFAULT_LIVE_EVENT_LIMIT = 10;
 const DEFAULT_INITIAL_EVENT_LIMIT = DEFAULT_LIVE_EVENT_LIMIT;
 const DEFAULT_MAX_EVENTS = DEFAULT_LIVE_EVENT_LIMIT;
+// Upper bound on remembered tool_use events kept to pair with later tool_results.
+// Each entry holds an event payload (often a few KB of JSON), so an unbounded map
+// becomes the dominant heap retainer for long-running agent sessions. Pairing
+// across more than this many intervening tool calls is unusual and degrades
+// gracefully (the orphan tool_use stays in the events tail, just without its result).
+export const TOOL_USE_MEMORY_LIMIT = 256;
+// Cap for the "Load full history" path. Without this, a 50k-event run pulled in
+// "full" mode pins the entire transcript in heap for every open subscriber.
+export const FULL_HISTORY_MAX_EVENTS = 2000;
 const TOOL_USE_EVENT_TYPES = new Set(["tool_use", "toolCall"]);
 const TOOL_RESULT_EVENT_TYPES = new Set(["tool_result", "toolResult", "tool_output", "structured_output"]);
 
@@ -172,16 +181,29 @@ function rememberToolUses(entry, events = []) {
   if (!entry?.toolUsesById) return;
   for (const event of events || []) {
     for (const id of toolUseIdsFromEvent(event)) {
+      // Re-insert so insertion order tracks recency for LRU eviction below.
+      entry.toolUsesById.delete(id);
       entry.toolUsesById.set(id, event);
     }
+  }
+  while (entry.toolUsesById.size > TOOL_USE_MEMORY_LIMIT) {
+    const oldest = entry.toolUsesById.keys().next().value;
+    if (oldest === undefined) break;
+    entry.toolUsesById.delete(oldest);
   }
 }
 
 function companionToolUseEvents(entry, event) {
   if (!entry?.toolUsesById) return [];
-  return toolResultIdsFromEvent(event)
-    .map((id) => entry.toolUsesById.get(id))
-    .filter(Boolean);
+  const matches = [];
+  for (const id of toolResultIdsFromEvent(event)) {
+    const stored = entry.toolUsesById.get(id);
+    if (!stored) continue;
+    matches.push(stored);
+    // Once paired with its result the tool_use no longer needs to be retained.
+    entry.toolUsesById.delete(id);
+  }
+  return matches;
 }
 
 function containsEvent(events, target) {
@@ -352,8 +374,10 @@ function applyRunHydration(entry, data, maxEvents, { fullHistory = false } = {})
     entry.eventsTruncated = entry.maxEvents !== null && entry.events.length < entry.eventCount;
   }
   if (fullHistory) {
-    const stillTruncated = Boolean(data?.log?.events_truncated)
+    const serverTruncated = Boolean(data?.log?.events_truncated)
       || data?.log?.payload_fidelity === "compacted";
+    const locallyCapped = entry.maxEvents !== null && entry.events.length < entry.eventCount;
+    const stillTruncated = serverTruncated || locallyCapped;
     entry.fullHistoryLoaded = !stillTruncated;
     entry.eventsTruncated = stillTruncated;
     entry.eventCount = Math.max(Number(entry.eventCount || 0), entry.events.length);
@@ -496,7 +520,7 @@ export function loadFullRunHistory(runId, { subscribe = true } = {}) {
   const entry = ensureRunStream(runId);
   return hydrateRunState(runId, entry, {
     initialEventLimit: null,
-    maxEvents: null,
+    maxEvents: FULL_HISTORY_MAX_EVENTS,
     subscribe,
   });
 }
@@ -531,6 +555,10 @@ export function closeRunStreamsForTests() {
   }
   runStreams.clear();
   closeSharedEventSourcesForTests();
+}
+
+export function getRunStreamStateForTests(runId) {
+  return runStreams.get(runId) || null;
 }
 
 export function useRunStream(runId, {
@@ -589,7 +617,7 @@ export function useRunStream(runId, {
     refreshRunState(runId, {
       subscribe,
       initialEventLimit: fullHistoryLoaded ? null : initialEventLimit,
-      maxEvents: fullHistoryLoaded ? null : maxEvents,
+      maxEvents: fullHistoryLoaded ? FULL_HISTORY_MAX_EVENTS : maxEvents,
     });
   });
 
