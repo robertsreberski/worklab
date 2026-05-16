@@ -42,6 +42,10 @@ const COMMANDER_TASK_LIST_STORAGE_PREFIX = "worklab:commander-task-list:";
 const COMMANDER_TASK_LIST_STORAGE_VERSION = 1;
 export const COMMANDER_COST_SUMMARY_INITIAL_DELAY_MS = 1200;
 export const COMMANDER_COST_SUMMARY_POLL_MS = 60_000;
+// SSE bursts on busy runs can fire dozens of task_updated events per second.
+// Coalescing reloads into one fetch per ~half second keeps the list responsive
+// while skipping the redundant intermediate fetches the user would never see.
+export const COMMANDER_RELOAD_THROTTLE_MS = 500;
 const commanderTaskListCache = new Map();
 
 export function formatCommanderCost(value) {
@@ -632,7 +636,7 @@ export function Commander({ query: routeQuery = {} }) {
         setError(e.message || "Failed to load tasks");
       });
   }, [groupFilter, showCompleted, stageFilter, taskListCacheKey]);
-  const reloadSoon = useThrottledCallback(reload, 100);
+  const reloadSoon = useThrottledCallback(reload, COMMANDER_RELOAD_THROTTLE_MS);
   const flushRunProgress = useCallback(() => {
     runProgressFrameRef.current = null;
     const queued = runProgressQueueRef.current;
@@ -662,7 +666,7 @@ export function Commander({ query: routeQuery = {} }) {
       .then((r) => { if (!controller.signal.aborted) setProjects(r.projects || []); })
       .catch((e) => { if (e?.name !== "AbortError") setProjects([]); });
   }, []);
-  const reloadProjectsSoon = useThrottledCallback(reloadProjects, 100);
+  const reloadProjectsSoon = useThrottledCallback(reloadProjects, COMMANDER_RELOAD_THROTTLE_MS);
   const reloadTeams = useCallback(() => {
     teamsReloadAbortRef.current?.abort?.();
     const controller = new AbortController();
@@ -671,7 +675,7 @@ export function Commander({ query: routeQuery = {} }) {
       .then((r) => { if (!controller.signal.aborted) setTeams(r.teams || []); })
       .catch((e) => { if (e?.name !== "AbortError") setTeams([]); });
   }, []);
-  const reloadTeamsSoon = useThrottledCallback(reloadTeams, 100);
+  const reloadTeamsSoon = useThrottledCallback(reloadTeams, COMMANDER_RELOAD_THROTTLE_MS);
   const refreshOnResume = useCallback(() => {
     if (!pageIsVisible()) return;
     hiddenTaskReloadRef.current = false;
