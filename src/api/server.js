@@ -109,6 +109,13 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   app.use(cors());
   registerAutomationWebhookRoutes(app, { db, broker, automationManager });
   app.use(express.json({ limit: "10mb" }));
+  // SSE drives all freshness for client state. Caching /api responses (browser,
+  // service worker, or shared proxy) would risk stale views without buying any
+  // bandwidth back, since the data refreshes via the event stream anyway.
+  app.use("/api", (_req, res, next) => {
+    res.set("Cache-Control", "no-store");
+    next();
+  });
   app.use("/api", apiTimingMiddleware(logger));
 
   app.get("/api/health", (_req, res) => res.json({

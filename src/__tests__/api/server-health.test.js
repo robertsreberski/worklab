@@ -22,6 +22,14 @@ describe("GET /api/health", () => {
   });
 });
 
+describe("API caching headers", () => {
+  it("marks /api responses as no-store so SW and browser caches stay out of the way", async () => {
+    const { agent } = makeTestServer();
+    const res = await agent.get("/api/health").expect(200);
+    expect(res.headers["cache-control"]).toBe("no-store");
+  });
+});
+
 describe("GET /api/services/status", () => {
   it("reports optional service status without changing core health", async () => {
     const { agent } = makeTestServer({
