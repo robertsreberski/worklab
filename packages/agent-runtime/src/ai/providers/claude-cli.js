@@ -81,8 +81,116 @@ function isCodexReasoningEvent(raw) {
     || (CODEX_REASONING_ITEM_EVENTS.has(raw.type) && raw.item?.type === "reasoning");
 }
 
-function normalizeCliEvent(raw, context = {}) {
+const ANTHROPIC_STREAM_EVENT_TYPES = new Set([
+  "message_start",
+  "message_delta",
+  "message_stop",
+  "content_block_start",
+  "content_block_delta",
+  "content_block_stop",
+  "ping",
+]);
+
+// Claude Code CLI emits one `assistant` event per finalised content block in
+// stream-json mode, but for `thinking` blocks the text is only ever sent via
+// `thinking_delta` chunks under `--include-partial-messages`. The finalised
+// block carries the signature but `thinking: ""`. The buffer accumulates the
+// streamed thinking deltas and splices them back into the finalised assistant
+// event before it is forwarded to the host.
+export function createThinkingBuffer() {
+  let currentMessageId = null;
+  const byMessage = new Map();
+
+  function unwrap(raw) {
+    return raw?.type === "stream_event" && raw.event ? raw.event : raw;
+  }
+
+  function isStreamShape(raw) {
+    if (!raw || typeof raw !== "object") return false;
+    if (raw.type === "stream_event") return true;
+    return ANTHROPIC_STREAM_EVENT_TYPES.has(raw.type);
+  }
+
+  function bufferFor(messageId) {
+    if (!messageId) return null;
+    let bucket = byMessage.get(messageId);
+    if (!bucket) {
+      bucket = new Map();
+      byMessage.set(messageId, bucket);
+    }
+    return bucket;
+  }
+
+  function onStreamEvent(raw) {
+    const inner = unwrap(raw);
+    if (!inner || typeof inner !== "object") return;
+
+    if (inner.type === "message_start") {
+      currentMessageId = inner.message?.id || null;
+      // Defensive: drop any stale state if the same id reappears.
+      if (currentMessageId) byMessage.delete(currentMessageId);
+      return;
+    }
+
+    if (inner.type === "content_block_start") {
+      if (inner.content_block?.type !== "thinking") return;
+      const bucket = bufferFor(currentMessageId);
+      if (bucket) bucket.set(inner.index, { text: "", consumed: false });
+      return;
+    }
+
+    if (inner.type === "content_block_delta") {
+      const bucket = bufferFor(currentMessageId);
+      if (!bucket) return;
+      const entry = bucket.get(inner.index);
+      if (!entry) return;
+      if (inner.delta?.type === "thinking_delta" && typeof inner.delta.thinking === "string") {
+        entry.text += inner.delta.thinking;
+      }
+      // signature_delta is ignored: the signature already lands on the
+      // finalised assistant event we will rehydrate.
+    }
+  }
+
+  function rehydrate(assistantRaw) {
+    if (!assistantRaw || typeof assistantRaw !== "object") return assistantRaw;
+    const messageId = assistantRaw.message?.id;
+    const content = assistantRaw.message?.content;
+    if (!messageId || !Array.isArray(content)) return assistantRaw;
+    const bucket = byMessage.get(messageId);
+    if (!bucket || bucket.size === 0) return assistantRaw;
+
+    const pending = [...bucket.entries()]
+      .filter(([, entry]) => !entry.consumed && entry.text)
+      .sort(([a], [b]) => (Number(a) || 0) - (Number(b) || 0));
+    if (pending.length === 0) return assistantRaw;
+
+    let mutated = null;
+    let cursor = 0;
+    for (let i = 0; i < content.length; i++) {
+      const block = content[i];
+      if (!block || block.type !== "thinking" || block.thinking) continue;
+      if (cursor >= pending.length) break;
+      const [, entry] = pending[cursor++];
+      entry.consumed = true;
+      if (!mutated) {
+        mutated = { ...assistantRaw, message: { ...assistantRaw.message, content: [...content] } };
+      }
+      mutated.message.content[i] = { ...block, thinking: entry.text };
+    }
+    return mutated || assistantRaw;
+  }
+
+  return { isStreamShape, onStreamEvent, rehydrate };
+}
+
+export function normalizeCliEvent(raw, context = {}) {
   if (!raw || typeof raw !== "object") return { type: "cli_event", raw };
+  const thinkingBuffer = context.thinkingBuffer;
+  if (thinkingBuffer && thinkingBuffer.isStreamShape(raw)) {
+    thinkingBuffer.onStreamEvent(raw);
+    return null;
+  }
   if (CODEX_RAW_REASONING_EVENT_TYPES.has(raw.type)) return null;
   if (CODEX_REASONING_EVENT_TYPES.has(raw.type) || (CODEX_REASONING_ITEM_EVENTS.has(raw.type) && raw.item?.type === "reasoning")) {
     const text = codexReasoningSummaryText(raw).trim();
@@ -90,7 +198,10 @@ function normalizeCliEvent(raw, context = {}) {
       ? { type: "assistant", message: { content: [{ type: "thinking", text }] } }
       : null;
   }
-  if (raw.type === "assistant" || raw.type === "user" || raw.type === "result" || raw.type === "error") return raw;
+  if (raw.type === "assistant") {
+    return thinkingBuffer ? thinkingBuffer.rehydrate(raw) : raw;
+  }
+  if (raw.type === "user" || raw.type === "result" || raw.type === "error") return raw;
   if (raw.type === "message" && raw.message) return { type: "assistant", message: raw.message };
   if (raw.type === "item.completed" && raw.item?.type === "agent_message" && typeof raw.item.text === "string") {
     return { type: "assistant", message: { content: [{ type: "text", text: raw.item.text }] } };
@@ -277,6 +388,7 @@ export function buildCliCommand({
     const args = [
       "-p",
       "--output-format", "stream-json",
+      "--include-partial-messages",
       "--verbose",
       ...(outputSchema ? ["--json-schema", JSON.stringify(outputSchema)] : []),
       "--model", modelWithContextWindow(model, contextWindow),
@@ -388,6 +500,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
   const cliEventContext = {
     cwd: commandSpec.cwd,
     fileChangeSnapshots: new Map(),
+    thinkingBuffer: createThinkingBuffer(),
   };
 
   const stderrTail = createStderrTail({ limit: 8 * 1024 });
