@@ -8526,6 +8526,21 @@ html.assistant-resizing * {
   letter-spacing: 0;
   line-height: 0.98;
 }
+.settings-update-install-hint {
+  margin-top: var(--sp-3);
+}
+.settings-update-install-cmd,
+.app-update-banner-cmd {
+  display: inline-block;
+  margin-top: var(--sp-2);
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
 .settings-about-hero p {
   max-width: 54ch;
   color: var(--text-muted);

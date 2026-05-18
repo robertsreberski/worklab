@@ -330,11 +330,16 @@ describe("settings UI duration conversions", () => {
 
   it("wires a global app update banner from AppShell", () => {
     const source = readFileSync(appShellSourcePath, "utf8");
+    const hookSource = readFileSync(
+      resolve(import.meta.dirname, "../../ui/src/routes/settings/use-update-status.js"),
+      "utf8",
+    );
 
     expect(source).toContain("function UpdateBanner");
-    expect(source).toContain("api.getUpdate");
-    expect(source).toContain("api.applyUpdate");
+    expect(source).toContain("useUpdateStatus");
     expect(source).toContain("worklab.updateBannerDismissedVersion");
+    expect(hookSource).toContain("api.getUpdate");
+    expect(hookSource).toContain("api.applyUpdate");
   });
 
   it("summarizes search index health for the settings overview", () => {

@@ -5,7 +5,6 @@
 
 import { createContext } from "preact";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { api } from "../lib/api.js";
 import { Icon } from "./Icon.jsx";
 import { ToastHost } from "./Toast.jsx";
 import { Banner } from "./Banner.jsx";
@@ -25,6 +24,12 @@ import {
   assistantMaxWidthForViewport,
   clampAssistantWidth,
 } from "../lib/assistantLayout.js";
+import {
+  latestUpdateVersion as latestUpdateVersionFromHook,
+  updateInstallCommand,
+  updateInstallExplanation,
+  useUpdateStatus,
+} from "../routes/settings/use-update-status.js";
 
 export const ROUTE_GROUPS = [
   {
@@ -106,26 +111,30 @@ function dismissedUpdateVersion() {
 }
 
 function latestUpdateVersion(update) {
-  return update?.package?.latest_version || "";
+  return latestUpdateVersionFromHook(update);
 }
 
 function shouldShowUpdateBanner(update, dismissedVersion) {
   const latest = latestUpdateVersion(update);
-  return !!(update?.update_available && update?.install?.supported && latest && dismissedVersion !== latest);
+  return !!(update?.update_available && latest && dismissedVersion !== latest);
 }
 
 function UpdateBanner({ update, dismissedVersion, applying, onApply, onDismiss }) {
   if (!shouldShowUpdateBanner(update, dismissedVersion)) return null;
   const current = update?.package?.current_version || "-";
   const latest = latestUpdateVersion(update);
+  const installSupported = !!update?.install?.supported;
+  const detail = installSupported
+    ? `Version ${latest} is available. Current version is ${current}.`
+    : `Version ${latest} is available. ${updateInstallExplanation(update.install)}`;
   return (
     <div class="app-update-banner-wrap">
       <Banner
         variant="info"
         title="Worklab update available"
-        detail={`Version ${latest} is available. Current version is ${current}.`}
+        detail={detail}
         class="app-update-banner"
-        actions={(
+        actions={installSupported ? (
           <Button
             size="sm"
             variant="primary"
@@ -135,9 +144,13 @@ function UpdateBanner({ update, dismissedVersion, applying, onApply, onDismiss }
           >
             Update and restart
           </Button>
-        )}
+        ) : undefined}
         onDismiss={onDismiss}
-      />
+      >
+        {!installSupported && (
+          <code class="app-update-banner-cmd">{updateInstallCommand(update.install, update)}</code>
+        )}
+      </Banner>
     </div>
   );
 }
@@ -359,8 +372,12 @@ export function AppShell({
   const [sectionSheetOpen, setSectionSheetOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(assistantInitialOpen);
   const [assistantWidth, setAssistantWidth] = useState(assistantInitialWidth);
-  const [updateStatus, setUpdateStatus] = useState(null);
-  const [updateApplying, setUpdateApplying] = useState(false);
+  const {
+    status: updateStatus,
+    setStatus: setUpdateStatus,
+    applying: updateApplying,
+    apply: applyUpdateHook,
+  } = useUpdateStatus({ autoLoad: !embedded });
   const [dismissedVersion, setDismissedVersion] = useState(dismissedUpdateVersion);
   const [viewportWidth, setViewportWidth] = useState(
     typeof window === "undefined" ? 0 : window.innerWidth,
@@ -448,15 +465,6 @@ export function AppShell({
     ensureNotificationServiceWorker().catch(() => {});
   }, [embedded]);
 
-  useEffect(() => {
-    if (embedded) return;
-    let cancelled = false;
-    api.getUpdate().then((response) => {
-      if (!cancelled) setUpdateStatus(response.update || null);
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [embedded]);
-
   function dismissUpdateBanner() {
     const latest = latestUpdateVersion(updateStatus);
     if (!latest) return;
@@ -466,34 +474,11 @@ export function AppShell({
     } catch {}
   }
 
-  function pollForRestartedVersion(targetVersion, attempts = 0) {
-    window.setTimeout(async () => {
-      try {
-        const health = await api.getHealth();
-        if (health?.package?.version === targetVersion) {
-          window.location.reload();
-          return;
-        }
-      } catch {}
-      if (attempts < 90) {
-        pollForRestartedVersion(targetVersion, attempts + 1);
-      } else {
-        setUpdateApplying(false);
-      }
-    }, 1000);
-  }
-
   async function applyUpdate() {
-    const latest = latestUpdateVersion(updateStatus);
-    if (!latest) return;
-    setUpdateApplying(true);
     try {
-      const response = await api.applyUpdate(latest);
-      setUpdateStatus(response.update ? { ...response.update, job: response.apply } : updateStatus);
+      await applyUpdateHook();
       pushToast("Update queued. Worklab will restart.", { variant: "success" });
-      pollForRestartedVersion(latest);
     } catch (err) {
-      setUpdateApplying(false);
       pushToast(`Update failed: ${err.message}`, { variant: "error" });
     }
   }

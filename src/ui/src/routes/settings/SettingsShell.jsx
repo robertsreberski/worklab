@@ -1,9 +1,20 @@
 import { AppShell } from "../../components/AppShell.jsx";
 import { Tabs } from "../../components/primitives/Tabs.jsx";
 import { Icon } from "../../components/Icon.jsx";
-import { PageHeader, PanelGrid } from "../../components/layout/index.js";
+import { Banner } from "../../components/Banner.jsx";
+import { Button } from "../../components/primitives/Button.jsx";
+import { PageHeader, PanelGrid, Toolbar } from "../../components/layout/index.js";
 import { navigateHash } from "../../lib/navigation.js";
-import { SettingPanel } from "./components.jsx";
+import { pushToast } from "../../lib/toast.js";
+import { FieldNote, SettingPanel } from "./components.jsx";
+import {
+  updateInstallCommand,
+  updateInstallExplanation,
+  updateStateForBadge,
+  updateStateLabel,
+  useUpdateStatus,
+} from "./use-update-status.js";
+import { updateInstallDescription, updateStatusMeta } from "./helpers.js";
 
 export const SETTINGS_TAB_ORDER = ["general", "providers", "about"];
 const SETTINGS_TAB_LABELS = { general: "General", providers: "Providers", about: "About" };
@@ -56,12 +67,48 @@ export function SettingsRouteShell({
 }
 
 export function AboutTab() {
+  const {
+    status: updateStatus,
+    busy: updateBusy,
+    applying: updateApplying,
+    error: updateError,
+    refresh: refreshUpdate,
+    apply: applyUpdate,
+  } = useUpdateStatus();
+
+  const currentVersion = updateStatus?.package?.current_version || "";
+  const badgeState = updateStateForBadge(updateStatus, { busy: updateBusy, error: updateError });
+  const badgeLabel = updateStateLabel(updateStatus, { busy: updateBusy, error: updateError });
+  const updateMeta = updateStatusMeta(updateStatus);
+
+  async function onCheck() {
+    try {
+      await refreshUpdate({ refresh: true });
+      pushToast("Update check refreshed.", { variant: "success" });
+    } catch (err) {
+      pushToast(`Update check failed: ${err.message}`, { variant: "error" });
+    }
+  }
+
+  async function onApply() {
+    try {
+      await applyUpdate();
+      pushToast("Update queued. Worklab will restart.", { variant: "success" });
+    } catch (err) {
+      pushToast(`Update failed: ${err.message}`, { variant: "error" });
+    }
+  }
+
   return (
     <div class="settings-about">
       <section class="settings-about-hero" aria-labelledby="settings-about-title">
         <div class="settings-about-hero-copy">
           <span class="form-section-kicker">Local command center</span>
           <h2 id="settings-about-title">Worklab</h2>
+          <div class="settings-about-version">
+            <span class="settings-about-version-num">{currentVersion ? `v${currentVersion}` : "—"}</span>
+            <span class="settings-about-version-status" data-state={badgeState}>{badgeLabel}</span>
+          </div>
           <p>
             A private workbench for planning, running, and reviewing agent work
             against local projects and tools.
@@ -86,6 +133,34 @@ export function AboutTab() {
         </figure>
       </section>
       <PanelGrid class="settings-about-grid">
+        <SettingPanel icon="download" title="App updates" meta={`v${updateStatus?.package?.current_version || "—"}`} status={updateMeta.status} statusLabel={updateMeta.label}>
+          <PanelGrid class="settings-note-grid">
+            <FieldNote label="Current" value={updateStatus?.package?.current_version} />
+            <FieldNote label="Latest" value={updateStatus?.package?.latest_version} />
+            <FieldNote label="Install" value={updateInstallDescription(updateStatus?.install)} />
+            <FieldNote label="Last check" value={updateStatus?.checked_at ? new Date(updateStatus.checked_at).toLocaleString() : "-"} />
+            <FieldNote label="Job" value={updateStatus?.job?.status} />
+            {updateError && <FieldNote label="Error" value={updateError} />}
+          </PanelGrid>
+          {updateStatus?.update_available && !updateStatus?.install?.supported && (
+            <Banner
+              variant="info"
+              title={`Worklab ${updateStatus?.package?.latest_version || ""} is available`}
+              detail={updateInstallExplanation(updateStatus.install)}
+              class="settings-update-install-hint"
+            >
+              <code class="settings-update-install-cmd">{updateInstallCommand(updateStatus.install, updateStatus)}</code>
+            </Banner>
+          )}
+          <Toolbar class="settings-update-actions">
+            <Button size="sm" loading={updateBusy} iconLeft={<Icon name="refresh-cw" size={14} />} onClick={onCheck}>Check for updates</Button>
+            {updateStatus?.update_available && updateStatus?.install?.supported && (
+              <Button size="sm" variant="primary" loading={updateBusy || updateApplying} iconLeft={<Icon name="download" size={14} />} onClick={onApply}>
+                {`Update to ${updateStatus?.package?.latest_version || ""}`}
+              </Button>
+            )}
+          </Toolbar>
+        </SettingPanel>
         <SettingPanel icon="sparkles" title="Operating model" meta="Single-user orchestration">
           <p>
             Runs, providers, agents, projects, memory, and MCP tools stay visible

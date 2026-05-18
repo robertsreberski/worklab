@@ -70,6 +70,11 @@ import {
   SettingsRouteShell,
 } from "./settings/SettingsShell.jsx";
 import {
+  updateInstallCommand,
+  updateInstallExplanation,
+  useUpdateStatus,
+} from "./settings/use-update-status.js";
+import {
   MCP_HEALTH_ALL_KEY,
   buildMcpHealthDraft,
   mcpHealthBuiltinKey,
@@ -128,9 +133,14 @@ function SettingsGeneral() {
   const [mcpHealthBusy, setMcpHealthBusy] = useState({});
   const [slackStatus, setSlackStatus] = useState(null);
   const [restarting, setRestarting] = useState(false);
-  const [updateStatus, setUpdateStatus] = useState(null);
-  const [updateBusy, setUpdateBusy] = useState(false);
-  const [updateError, setUpdateError] = useState(null);
+  const {
+    status: updateStatus,
+    busy: updateBusy,
+    applying: updateApplying,
+    error: updateError,
+    refresh: loadUpdateStatus,
+    apply: applyUpdateHook,
+  } = useUpdateStatus({ autoLoad: false });
   const [notificationSettingsState, setNotificationSettingsState] = useState(() => notificationSettings());
   const [notificationServerStatus, setNotificationServerStatus] = useState(null);
   const [notificationBusy, setNotificationBusy] = useState(false);
@@ -191,18 +201,6 @@ function SettingsGeneral() {
     return response;
   }, []);
 
-  const loadUpdateStatus = useCallback(async ({ refresh = false } = {}) => {
-    try {
-      const response = await api.getUpdate(refresh ? { refresh: "1" } : undefined);
-      setUpdateStatus(response.update || null);
-      setUpdateError(null);
-      return response.update || null;
-    } catch (err) {
-      setUpdateError(err.message || "Update check failed");
-      return null;
-    }
-  }, []);
-
   useEffect(() => {
     const controller = new AbortController();
     loadSettings({ signal: controller.signal }).catch((err) => {
@@ -220,7 +218,7 @@ function SettingsGeneral() {
     });
     loadSlackStatus().catch(() => setSlackStatus(null));
     loadNotificationStatus().catch(() => setNotificationServerStatus(null));
-    loadUpdateStatus();
+    loadUpdateStatus().catch(() => {});
     loadMcp().catch((err) => pushToast(`MCP failed: ${err.message}`, { variant: "error" }));
     return () => controller.abort();
   }, [loadMcp, loadNotificationStatus, loadRuntime, loadSettings, loadSlackStatus, loadUpdateStatus]);
@@ -238,7 +236,7 @@ function SettingsGeneral() {
     loadSlackStatus().catch(() => setSlackStatus(null));
     setNotificationSettingsState(notificationSettings());
     loadNotificationStatus().catch(() => setNotificationServerStatus(null));
-    loadUpdateStatus();
+    loadUpdateStatus().catch(() => {});
     if (!isDirty) {
       loadSettings().catch((err) => setLoadError(err.message || "Settings failed"));
       loadRuntime();
@@ -350,27 +348,16 @@ function SettingsGeneral() {
   }
 
   async function refreshUpdateStatus() {
-    setUpdateBusy(true);
-    try {
-      await loadUpdateStatus({ refresh: true });
-      pushToast("Update check refreshed.", { variant: "success" });
-    } finally {
-      setUpdateBusy(false);
-    }
+    await loadUpdateStatus({ refresh: true });
+    pushToast("Update check refreshed.", { variant: "success" });
   }
 
   async function applyAppUpdate() {
-    const latest = updateStatus?.package?.latest_version;
-    if (!latest) return;
-    setUpdateBusy(true);
     try {
-      const response = await api.applyUpdate(latest);
-      setUpdateStatus(response.update ? { ...response.update, job: response.apply } : updateStatus);
+      await applyUpdateHook();
       pushToast("Update queued. Worklab will restart.", { variant: "success" });
     } catch (err) {
       pushToast(`Update failed: ${err.message}`, { variant: "error" });
-    } finally {
-      setUpdateBusy(false);
     }
   }
 
@@ -639,10 +626,20 @@ function SettingsGeneral() {
                   <FieldNote label="Job" value={updateStatus?.job?.status} />
                   {updateError && <FieldNote label="Error" value={updateError} />}
                 </PanelGrid>
+                {updateStatus?.update_available && !updateStatus?.install?.supported && (
+                  <Banner
+                    variant="info"
+                    title={`Worklab ${updateStatus?.package?.latest_version || ""} is available`}
+                    detail={updateInstallExplanation(updateStatus.install)}
+                    class="settings-update-install-hint"
+                  >
+                    <code class="settings-update-install-cmd">{updateInstallCommand(updateStatus.install, updateStatus)}</code>
+                  </Banner>
+                )}
                 <Toolbar class="settings-update-actions">
                   <Button size="sm" loading={updateBusy} iconLeft={<Icon name="refresh-cw" size={14} />} onClick={refreshUpdateStatus}>Check</Button>
                   {updateStatus?.update_available && updateStatus?.install?.supported && (
-                    <Button size="sm" variant="primary" loading={updateBusy} iconLeft={<Icon name="download" size={14} />} onClick={applyAppUpdate}>
+                    <Button size="sm" variant="primary" loading={updateBusy || updateApplying} iconLeft={<Icon name="download" size={14} />} onClick={applyAppUpdate}>
                       Update and restart
                     </Button>
                   )}
