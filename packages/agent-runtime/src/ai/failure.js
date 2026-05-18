@@ -27,7 +27,7 @@ const PROVIDER_UNAVAILABLE_RE = /(econn|enotfound|etimedout|service unavailable|
 const TOOL_FAILURE_RE = /(tool .* failed|mcp tool|permission denied|EACCES|read-only file system)/i;
 const NON_RETRYABLE_PROVIDER_RE = /(invalid[_ ]request|unknown parameter|invalid api key|incorrect api key|authentication|authorization|not authorized|forbidden|billing|insufficient[_ ]quota|quota exceeded|model[_ ]not[_ ]found|unsupported model|permission denied|bad request|401|403|404)/i;
 const RETRYABLE_PROVIDER_RE = /(currently overloaded|server(?:s)? (?:is |are )?overloaded|try again later|retry your request|request id|service unavailable|temporar(?:y|ily)|timed? ?out|stream disconnected|fetch failed|econnreset|econnrefused|eai_again|enotfound|etimedout|network|429|too many requests|500|502|503|504|gateway|internal server error)/i;
-const PROVIDER_ABORT_RE = /\b(?:terminated|aborted before final output|aborted before final|stream aborted|stream was aborted|stream disconnected|websocket (?:error|disconnected|closed)|socket hang up|und_err_socket|econnreset|premature close)\b/i;
+export const PROVIDER_ABORT_RE = /\b(?:terminated|aborted before final output|aborted before final|stream aborted|stream was aborted|stream disconnected|websocket (?:error|disconnected|closed)|socket hang up|und_err_socket|econnreset|premature close)\b/i;
 
 function requestIdFromText(text) {
   const match = /\b(?:request[_ -]?id|req[_ -]?id)\s*[:#]?\s*([A-Za-z0-9._:-]{8,})/i.exec(text || "");

@@ -179,6 +179,7 @@ describe("generatePiResponse cancellation handling", () => {
       allowedTools: [],
       skills: [],
       mcpServers: {},
+      piStreamRetryMax: 0,
     });
 
     expect(result.cancelled).toBe(false);
@@ -312,6 +313,7 @@ describe("generatePiResponse Codex transport", () => {
       mcpServers: {},
       providerSessionId: "pi-session-ws",
       piCodexTransport: "websocket-cached",
+      piStreamRetryMax: 0,
     });
 
     expect(result.error).toBe("WebSocket error");
@@ -661,6 +663,7 @@ describe("generatePiResponse error details", () => {
       allowedTools: [],
       skills: [],
       mcpServers: {},
+      piStreamRetryMax: 0,
     });
 
     expect(result.error).toBeTruthy();
@@ -689,5 +692,134 @@ describe("generatePiResponse error details", () => {
     expect(result.cancelled).toBe(true);
     expect(result.error).toBeNull();
     expect(result.errorDetails ?? null).toBeNull();
+  });
+});
+
+describe("generatePiResponse stream retry", () => {
+  function erroredAssistant(model, message = "terminated") {
+    return (modelArg) => {
+      const stream = createAssistantMessageEventStream();
+      queueMicrotask(() => {
+        const partial = {
+          role: "assistant",
+          content: [{ type: "text", text: "" }],
+          api: modelArg.api,
+          provider: modelArg.provider,
+          model: modelArg.id,
+          usage: EMPTY_USAGE,
+          stopReason: "error",
+          errorMessage: message,
+          timestamp: Date.now(),
+        };
+        stream.push({ type: "start", partial });
+        stream.push({ type: "error", reason: "error", error: partial });
+      });
+      return stream;
+    };
+  }
+
+  it("retries on mid-stream `terminated` and succeeds on the next attempt", async () => {
+    const model = resolveModel("pi:openai-codex:gpt-5.5");
+    let calls = 0;
+    const streamFn = (...args) => {
+      calls += 1;
+      if (calls === 1) return erroredAssistant(model, "terminated")(...args);
+      return completeStream("recovered")(...args);
+    };
+
+    const result = await generatePiResponse("sys", {
+      model,
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn,
+      allowedTools: [],
+      skills: [],
+      mcpServers: {},
+      piStreamRetryBaseMs: 0,
+    });
+
+    expect(calls).toBeGreaterThanOrEqual(2);
+    expect(result.error).toBeNull();
+    expect(result.failureKind).toBeNull();
+    expect(result.text).toBe("recovered");
+    expect(result.diagnostics.pi_stream_retries).toBe(1);
+    expect(result.diagnostics.pi_stream_retry_events).toEqual([
+      { attempt: 1, reason: "terminated" },
+    ]);
+    expect(result.runtimeWarnings.some((w) => w.warning_kind === "pi_stream_retry")).toBe(true);
+  });
+
+  it("does not retry when the error message is not in PROVIDER_ABORT_RE", async () => {
+    const model = resolveModel("pi:openai-codex:gpt-5.5");
+    let calls = 0;
+    const streamFn = (...args) => {
+      calls += 1;
+      return erroredAssistant(model, "Bad Request: invalid model")(...args);
+    };
+
+    const result = await generatePiResponse("sys", {
+      model,
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn,
+      allowedTools: [],
+      skills: [],
+      mcpServers: {},
+      piStreamRetryBaseMs: 0,
+    });
+
+    expect(calls).toBe(1);
+    expect(result.error).toBe("Bad Request: invalid model");
+    expect(result.failureKind).toBe("provider_unavailable");
+    expect(result.diagnostics.pi_stream_retries).toBeUndefined();
+  });
+
+  it("caps stream retries at piStreamRetryMax", async () => {
+    const model = resolveModel("pi:openai-codex:gpt-5.5");
+    let calls = 0;
+    const streamFn = (...args) => {
+      calls += 1;
+      return erroredAssistant(model, "terminated")(...args);
+    };
+
+    const result = await generatePiResponse("sys", {
+      model,
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn,
+      allowedTools: [],
+      skills: [],
+      mcpServers: {},
+      piStreamRetryMax: 2,
+      piStreamRetryBaseMs: 0,
+    });
+
+    expect(calls).toBe(3); // initial + 2 retries
+    expect(result.failureKind).toBe("provider_unavailable");
+    expect(result.diagnostics.pi_stream_retries).toBe(2);
+    expect(result.runtimeWarnings.filter((w) => w.warning_kind === "pi_stream_retry").length).toBe(2);
+  });
+
+  it("skips retry entirely when piStreamRetryMax is 0", async () => {
+    const model = resolveModel("pi:openai-codex:gpt-5.5");
+    let calls = 0;
+    const streamFn = (...args) => {
+      calls += 1;
+      return erroredAssistant(model, "terminated")(...args);
+    };
+
+    const result = await generatePiResponse("sys", {
+      model,
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn,
+      allowedTools: [],
+      skills: [],
+      mcpServers: {},
+      piStreamRetryMax: 0,
+    });
+
+    expect(calls).toBe(1);
+    expect(result.diagnostics.pi_stream_retries).toBeUndefined();
   });
 });

@@ -2,6 +2,7 @@ import { Agent } from "@earendil-works/pi-agent-core";
 import * as openAiCodexResponses from "@earendil-works/pi-ai/openai-codex-responses";
 import { randomUUID } from "node:crypto";
 import { estimateCost } from "../cost.js";
+import { PROVIDER_ABORT_RE } from "../failure.js";
 import { runtimeCapabilities } from "../runtime/capabilities.js";
 import { formatLiveInputGuidance } from "../live-input-prompt.js";
 import {
@@ -708,6 +709,65 @@ export async function generatePiResponse(systemPrompt, options = {}) {
 
     await agent.prompt(toAgentMessages(options.messages, runtime.model));
 
+    const streamRetryMax = Number.isFinite(Number(options.piStreamRetryMax))
+      ? Math.max(0, Math.min(5, Number(options.piStreamRetryMax)))
+      : 2;
+    const streamRetryBaseMs = Number.isFinite(Number(options.piStreamRetryBaseMs))
+      ? Math.max(0, Number(options.piStreamRetryBaseMs))
+      : 1000;
+    let streamRetryAttempts = 0;
+    const streamRetryEvents = [];
+    while (streamRetryAttempts < streamRetryMax) {
+      if (externalAbort || options.abortSignal?.aborted) break;
+      const msgs = agent.state?.messages || [];
+      let lastAssistant = null;
+      for (let i = msgs.length - 1; i >= 0; i -= 1) {
+        if (msgs[i]?.role === "assistant") { lastAssistant = msgs[i]; break; }
+      }
+      const lastStopReason = lastAssistant?.stopReason || null;
+      const lastErrorMessage = String(lastAssistant?.errorMessage || "");
+      if (lastStopReason !== "error") break;
+      if (!PROVIDER_ABORT_RE.test(lastErrorMessage)) break;
+      streamRetryAttempts += 1;
+      const attempt = streamRetryAttempts;
+      streamRetryEvents.push({ attempt, reason: lastErrorMessage });
+      runtimeWarnings.push({
+        warning_kind: "pi_stream_retry",
+        source: "pi",
+        reason: lastErrorMessage,
+        attempt,
+        message: `Retrying pi stream after ${lastErrorMessage} (attempt ${attempt}/${streamRetryMax}).`,
+      });
+      onEvent({
+        type: "runtime_warning",
+        warning_kind: "pi_stream_retry",
+        reason: lastErrorMessage,
+        attempt,
+      });
+      while (
+        agent.state.messages.length > 0
+        && agent.state.messages[agent.state.messages.length - 1]?.role === "assistant"
+      ) {
+        agent.state.messages.pop();
+      }
+      if (agent.state.messages.length === 0) break;
+      if (streamRetryBaseMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, streamRetryBaseMs * (2 ** (attempt - 1))));
+      }
+      if (externalAbort || options.abortSignal?.aborted) break;
+      try {
+        await agent.continue();
+      } catch (err) {
+        runtimeWarnings.push({
+          warning_kind: "pi_stream_retry_failed",
+          source: "pi",
+          attempt,
+          message: err?.message || String(err),
+        });
+        break;
+      }
+    }
+
     const captureState = () => {
       const transcript = agent.state.messages || [];
       const assistantMessages = transcript.filter((message) => message?.role === "assistant");
@@ -864,6 +924,9 @@ export async function generatePiResponse(systemPrompt, options = {}) {
         structuredOutputFinalizationRetryFailed,
       ),
       ...(hadPartialProgress ? { had_partial_progress: true, tool_results_seen: toolResultsSeen } : {}),
+      ...(streamRetryAttempts > 0
+        ? { pi_stream_retries: streamRetryAttempts, pi_stream_retry_events: streamRetryEvents }
+        : {}),
       ...(subagentResults.length ? {
         pi_subagents: {
           count: subagentResults.length,
