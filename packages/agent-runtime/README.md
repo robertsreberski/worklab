@@ -9,6 +9,9 @@ Generic agent runtime that supports four backends out of the box:
 
 Hosts wire in their own pricing, persistence, credential, and compaction-recording callbacks. The runtime returns raw text + raw structured output; hosts that want a domain-specific contract (e.g. `worklab_result`) parse it on their end.
 
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for the package boundary, runtime
+selection flow, lifecycle diagrams, and host responsibilities.
+
 ## Install
 
 ```bash

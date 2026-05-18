@@ -33,6 +33,7 @@
   "files": [
     "src/**/*.js",
     "!src/__tests__/**",
+    "ARCHITECTURE.md",
     "README.md",
     "LICENSE"
   ],
