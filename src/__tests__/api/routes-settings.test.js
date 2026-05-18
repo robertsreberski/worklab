@@ -44,7 +44,7 @@ describe("settings", () => {
     expect(res.body.settings.agent_budget_hard_turns).toBe(300);
     expect(res.body.settings.agent_compaction_trigger_ratio).toBe(0.85);
     expect(res.body.settings.agent_compaction_min_savings_tokens).toBe(20000);
-    expect(res.body.settings.agent_tool_payload_compaction_trigger_chars).toBe(0);
+    expect(res.body.settings.agent_tool_payload_compaction_trigger_chars).toBe(80000);
     expect(res.body.settings.agent_tool_prune_trigger_tokens).toBe(40000);
     expect(res.body.settings.agent_tool_text_limit_chars).toBe(64000);
     expect(res.body.settings.agent_bash_output_limit_chars).toBe(64000);

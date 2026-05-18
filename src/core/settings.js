@@ -44,7 +44,7 @@ export const DEFAULT_SETTINGS = {
   agent_compaction_keep_recent_tokens: 24000,
   agent_compaction_summary_max_tokens: 16000,
   agent_compaction_min_savings_tokens: 20000,
-  agent_tool_payload_compaction_trigger_chars: 0,
+  agent_tool_payload_compaction_trigger_chars: 80000,
   agent_tool_prune_trigger_tokens: 40000,
   // intelligence-ramp Phase 3: lifted from 16K/20K/12K to give the agent
   // room to actually read the files / output it just asked for. tool_bloat.js
