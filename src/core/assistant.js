@@ -418,6 +418,13 @@ Return only one JSON object with this exact schema:
       events.push(next);
       schedulePersist();
       this.broker?.broadcast?.(`assistant:${runId}`, next);
+      this.broker?.broadcast?.("global", {
+        type: "assistant_run_event",
+        thread_id: threadId,
+        run_id: runId,
+        event_seq: next._event_seq ?? raw._event_seq ?? events.length - 1,
+        event: next,
+      });
     };
 
     try {
@@ -579,7 +586,7 @@ Return only one JSON object with this exact schema:
       run,
     );
     this.broker?.broadcast?.(`assistant:${runId}`, { type: "done", run, message });
-    this.broker?.broadcast?.("global", { type: "assistant_run_ended", thread_id: threadId || run?.thread_id, run_id: runId, status });
+    this.broker?.broadcast?.("global", { type: "assistant_run_ended", thread_id: threadId || run?.thread_id, run_id: runId, status, run, message });
   }
 
   finishSucceeded({ runId, threadId, assistantMessageId, response, result, events, resultSource = "text", structuredResultSource = null }) {

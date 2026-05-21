@@ -203,6 +203,47 @@ describe("assistant routes", () => {
     expect(readFileSync(memoryPath, "utf8")).toContain("in-app assistant");
   });
 
+  it("broadcasts assistant progress and final payloads on the global stream", async () => {
+    const runAgent = vi.fn(async (_systemPrompt, options) => {
+      options.onEvent?.({ type: "assistant", message: { content: [{ type: "thinking", text: "Checking the current state." }] } });
+      return {
+        text: assistantJson({ reply_text: "Finished the check.", summary: "Checked the current state." }),
+        events: [],
+        usage: { input_tokens: 3, output_tokens: 2 },
+        durationMs: 8,
+        numTurns: 1,
+        model: "pi:openai:gpt-5.5",
+        effort: "high",
+      };
+    });
+    const { agent, assistant, broker } = setup({ runAgent });
+    const broadcast = vi.spyOn(broker, "broadcast");
+
+    const started = await agent.post("/api/assistant/messages").send({ body: "Check this." }).expect(202);
+    await assistant.waitIdle();
+
+    expect(broadcast).toHaveBeenCalledWith("global", expect.objectContaining({
+      type: "assistant_run_event",
+      thread_id: "personal",
+      run_id: started.body.run.id,
+      event_seq: expect.any(Number),
+      event: expect.objectContaining({ type: "assistant" }),
+    }));
+
+    expect(broadcast).toHaveBeenCalledWith("global", expect.objectContaining({
+      type: "assistant_run_ended",
+      thread_id: "personal",
+      run_id: started.body.run.id,
+      status: "succeeded",
+      run: expect.objectContaining({ id: started.body.run.id, status: "succeeded" }),
+      message: expect.objectContaining({
+        id: started.body.assistant_message.id,
+        body: "Finished the check.",
+        run: expect.objectContaining({ id: started.body.run.id, status: "succeeded" }),
+      }),
+    }));
+  });
+
   it("uses provider structuredResult when assistant text is empty", async () => {
     const structured = {
       schema: "worklab.assistant.v1",
