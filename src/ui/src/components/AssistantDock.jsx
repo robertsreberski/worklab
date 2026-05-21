@@ -8,8 +8,8 @@ import {
   visualViewportBottom,
 } from "../lib/assistantKeyboardLift.js";
 import { assistantViewContextFromLocation } from "../lib/assistantViewContext.js";
+import { useAssistantRunStream } from "../lib/useAssistantRunStream.js";
 import { mergeRunEvents } from "../lib/useRunStream.js";
-import { subscribeSharedEventSource } from "../lib/sharedEventSource.js";
 import { Icon } from "./Icon.jsx";
 import { Button } from "./primitives/Button.jsx";
 import { IconButton } from "./primitives/IconButton.jsx";
@@ -47,60 +47,6 @@ function uniqueMessages(messages) {
     seen.add(message.id);
     return true;
   });
-}
-
-function useAssistantRunStream(runId, { subscribe = true, hydrate = true, initialEventLimit = 100 } = {}) {
-  const [events, setEvents] = useState([]);
-  const [run, setRun] = useState(null);
-  const [done, setDone] = useState(false);
-  const [donePayload, setDonePayload] = useState(null);
-
-  useEffect(() => {
-    if (!runId || !hydrate) {
-      setEvents([]);
-      setRun(null);
-      setDone(false);
-      setDonePayload(null);
-      return undefined;
-    }
-    let cancelled = false;
-    const controller = new AbortController();
-    setEvents([]);
-    setRun(null);
-    setDone(false);
-    setDonePayload(null);
-
-    api.getAssistantRun(runId, { events: "tail", limit: String(initialEventLimit) }, { signal: controller.signal })
-      .then((data) => {
-        if (cancelled) return;
-        if (data?.run) {
-          setRun(data.run);
-          if (data.run.events?.length) setEvents((prev) => mergeRunEvents(prev, data.run.events));
-          if (data.run.status && data.run.status !== "running") setDone(true);
-        }
-      })
-      .catch(() => {});
-
-    if (!subscribe) return () => { cancelled = true; controller.abort(); };
-
-    const unsubscribe = subscribeSharedEventSource(`assistant:${runId}`, `/api/assistant/runs/${encodeURIComponent(runId)}/stream`, (payload) => {
-      if (payload.type === "done") {
-        if (payload.run) setRun(payload.run);
-        setDonePayload(payload);
-        setDone(true);
-        unsubscribe();
-        return;
-      }
-      setEvents((prev) => mergeRunEvents(prev, [payload]));
-    });
-    return () => {
-      cancelled = true;
-      controller.abort();
-      unsubscribe();
-    };
-  }, [runId, subscribe, hydrate, initialEventLimit]);
-
-  return { events, run, done, donePayload };
 }
 
 function AssistantRun({ run, active, onDone }) {
