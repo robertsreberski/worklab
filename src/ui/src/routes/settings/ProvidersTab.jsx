@@ -92,6 +92,13 @@ function providerIcon(value) {
   return "terminal";
 }
 
+function providerConnectionMeta(provider = {}) {
+  if (!provider.enabled) return { status: "disabled", label: "Disabled" };
+  if (provider.status?.ok === true) return { status: "enabled", label: "Reachable" };
+  if (provider.status?.ok === false) return { status: "error", label: "Unreachable" };
+  return { status: "disabled", label: "Unknown" };
+}
+
 function applyPreset(form, providerType) {
   const previous = PRESETS[form.provider_type] || PRESETS.openai_compat;
   const next = PRESETS[providerType] || PRESETS.openai_compat;
@@ -307,6 +314,11 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
     try {
       const result = await api.discoverProviderModels(id);
       if (!isCancelled()) {
+        if (result.provider) {
+          const next = { ...result.provider, api_key: "" };
+          setProvider(next);
+          setBaseline(next);
+        }
         setModels(result.models || []);
         setDiscoveryStatus({ kind: "discovered", count: (result.models || []).length });
       }
@@ -427,12 +439,13 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
   }
 
   const preset = PRESETS[provider.provider_type] || PRESETS.openai_compat;
+  const providerConnection = providerConnectionMeta(provider);
   const saveButtonVariant = isDirty || isNew ? "primary" : "secondary";
   const saveButtonLabel = isNew ? "Create" : "Save";
   const saveDisabled = !provider.name || !provider.base_url;
   const headerActions = (
     <>
-      {!isNew && <StatusPill status={provider.enabled ? "enabled" : "disabled"} />}
+      {!isNew && <StatusPill status={providerConnection.status} label={providerConnection.label} />}
       <Button variant="ghost" onClick={cancel}>Cancel</Button>
       {!isNew && (
         <Button
@@ -486,6 +499,15 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
       <div class="entity-editor-rail-content">
         <Card variant="spacious" title="Connection" class="entity-rail-card">
           <SectionStack class="task-context-list">
+            {!isNew && (
+              <div class="task-context-row">
+                <span class="task-context-icon"><Icon name={providerConnection.status === "error" ? "alert-triangle" : "check-circle"} size={13} /></span>
+                <span class="task-context-copy">
+                  <span class="task-context-label">Status</span>
+                  <span class="task-context-value">{providerConnection.label}</span>
+                </span>
+              </div>
+            )}
             <div class="task-context-row">
               <span class="task-context-icon"><Icon name={providerIcon(provider.provider_type)} size={13} /></span>
               <span class="task-context-copy">
@@ -606,6 +628,12 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
         meta={(
           <>
             <span class="pane-row-mono">{provider.provider_type || "provider"}</span>
+            {!isNew && provider.status_checked_at && (
+              <>
+                <span class="pane-row-dot">·</span>
+                <span>{providerConnection.label}</span>
+              </>
+            )}
             {provider.base_url && (
               <>
                 <span class="pane-row-dot">·</span>
@@ -631,6 +659,13 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
             variant={connectionStatus.result.ok ? "success" : "error"}
             title={connectionStatus.result.ok ? "Provider reachable" : "Provider unreachable"}
             detail={connectionStatus.result.ok ? `HTTP ${connectionStatus.result.status} in ${connectionStatus.result.duration_ms ?? 0}ms.` : (connectionStatus.result.error || "Connection failed.")}
+          />
+        )}
+        {!connectionStatus && !isNew && provider.status?.ok === false && (
+          <Banner
+            variant="error"
+            title="Provider unreachable"
+            detail={provider.status.error || `HTTP ${provider.status.status || 0}`}
           />
         )}
         {connectionStatus?.kind === "error" && (
@@ -902,6 +937,13 @@ export function ProvidersTab({ selectedId = null }) {
               trailing={(
                 <span class="pane-row-summary">
                   <StatusPill status={provider.enabled ? "enabled" : "disabled"} size="sm" />
+                  {providerConnectionMeta(provider).label !== "Unknown" && (
+                    <StatusPill
+                      status={providerConnectionMeta(provider).status}
+                      label={providerConnectionMeta(provider).label}
+                      size="sm"
+                    />
+                  )}
                   <span>{provider.model_count || 0} models</span>
                 </span>
               )}

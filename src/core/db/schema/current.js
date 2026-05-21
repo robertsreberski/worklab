@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 46;
+export const SCHEMA_VERSION = 47;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -398,6 +398,9 @@ CREATE TABLE IF NOT EXISTS custom_providers (
   api_key_encrypted TEXT,
   trust_public_url INTEGER NOT NULL DEFAULT 0,
   enabled INTEGER NOT NULL DEFAULT 1,
+  status_json TEXT NOT NULL DEFAULT '{}',
+  status_checked_at INTEGER,
+  last_discovered_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );

@@ -511,6 +511,84 @@ describe("provider routes", () => {
     });
   });
 
+  describe("POST /api/providers/:id/refresh", () => {
+    beforeEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("refreshes provider status and optionally rediscovers models", async () => {
+      const dataDir = tmpDataDir();
+      const { agent } = makeTestServer({ dataDir });
+      const createRes = await agent.post("/api/providers").send({
+        name: "refresh-compat",
+        provider_type: "openai_compat",
+        base_url: "http://localhost:14000",
+      }).expect(201);
+
+      const id = createRes.body.provider.id;
+      vi.stubGlobal("fetch", vi.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ data: [{ id: "qwen-local" }] }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ data: [{ id: "qwen-local" }] }),
+        }),
+      );
+
+      const res = await agent.post(`/api/providers/${id}/refresh`).send({ discover: true }).expect(200);
+      expect(res.body.status).toMatchObject({ ok: true, status: 200, discovered: true, model_count: 1 });
+      expect(res.body.provider).toMatchObject({
+        id,
+        status: { ok: true, status: 200 },
+      });
+      expect(res.body.models.map((model) => model.model_name)).toContain("qwen-local");
+    });
+  });
+
+  describe("GET /api/models/available provider freshness", () => {
+    beforeEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("marks stale unreachable local provider models unavailable", async () => {
+      const dataDir = tmpDataDir();
+      const { agent, db } = makeTestServer({ dataDir });
+      const createRes = await agent.post("/api/providers").send({
+        name: "local-ollama",
+        provider_type: "ollama",
+        base_url: "http://localhost:11434",
+      }).expect(201);
+      const id = createRes.body.provider.id;
+      upsertModel({
+        db,
+        providerId: id,
+        modelName: "qwen3.6:latest",
+        displayName: "qwen3.6:latest",
+        capabilities: { chat: true, tool_use: true },
+        enabled: true,
+      });
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
+
+      const res = await agent.get("/api/models/available").expect(200);
+      const group = res.body.groups.find((item) => item.id === id);
+      const model = res.body.models.find((item) => item.value === `pi:${id}:qwen3.6:latest`);
+      expect(group).toMatchObject({
+        available: false,
+        disabled: true,
+        unavailable_reason: "ECONNREFUSED",
+      });
+      expect(model).toMatchObject({
+        available: false,
+        disabled: true,
+        unavailable_reason: "ECONNREFUSED",
+      });
+    });
+  });
+
   describe("PATCH /api/providers/:id/models/:modelId", () => {
     it("discovers embedding-only models as enabled without adding them to the agent model catalogue", async () => {
       const dataDir = tmpDataDir();

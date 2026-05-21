@@ -13,6 +13,7 @@ import {
   isValidProviderType,
   isPrivateBaseUrl,
   listModels,
+  refreshProviderStatus,
   resolveReasoningCapabilities,
   resolveVercelModel,
   setModelEnabled,
@@ -173,6 +174,83 @@ describe("providers", () => {
       cache_write_per_million: 1.25,
       output_per_million: 5,
     });
+  });
+
+  it("persists failed provider status checks", async () => {
+    const provider = createProvider({
+      db,
+      dataDir,
+      name: "ollama",
+      provider_type: "ollama",
+      base_url: "http://localhost:11434",
+    });
+
+    const result = await refreshProviderStatus({
+      db,
+      dataDir,
+      providerId: provider.id,
+      fetchImpl: vi.fn().mockRejectedValue(new Error("ECONNREFUSED")),
+      timeoutMs: 25,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 0,
+      error: "ECONNREFUSED",
+    });
+    const saved = getProvider({ db, dataDir, id: provider.id });
+    expect(saved.status_checked_at).toEqual(expect.any(Number));
+    expect(saved.status).toMatchObject({
+      ok: false,
+      status: 0,
+      error: "ECONNREFUSED",
+    });
+  });
+
+  it("refreshes reachable providers and preserves enabled toggles and pricing during rediscovery", async () => {
+    const provider = createProvider({
+      db,
+      dataDir,
+      name: "compat",
+      provider_type: "openai_compat",
+      base_url: "http://localhost:8000",
+    });
+    await discoverModels({
+      db,
+      dataDir,
+      providerId: provider.id,
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ data: [{ id: "priced-model" }] }) }),
+    });
+    const existing = listModels({ db, providerId: provider.id })[0];
+    setModelEnabled({ db, id: existing.id, enabled: true });
+    upsertModel({
+      db,
+      providerId: provider.id,
+      modelName: existing.model_name,
+      pricing: { input_per_million: 1, output_per_million: 5 },
+    });
+
+    const result = await refreshProviderStatus({
+      db,
+      dataDir,
+      providerId: provider.id,
+      discover: true,
+      fetchImpl: vi.fn()
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ data: [{ id: "priced-model" }, { id: "new-model" }] }) })
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ data: [{ id: "priced-model" }, { id: "new-model" }] }) }),
+    });
+
+    expect(result).toMatchObject({ ok: true, status: 200, discovered: true, model_count: 2 });
+    const saved = getProvider({ db, dataDir, id: provider.id });
+    expect(saved.status).toMatchObject({ ok: true, status: 200 });
+    expect(saved.status_checked_at).toEqual(expect.any(Number));
+    expect(saved.last_discovered_at).toEqual(expect.any(Number));
+    const models = listModels({ db, providerId: provider.id });
+    expect(models.find((model) => model.model_name === "priced-model")).toMatchObject({
+      enabled: true,
+      pricing: { input_per_million: 1, output_per_million: 5 },
+    });
+    expect(models.find((model) => model.model_name === "new-model")).toBeTruthy();
   });
 
   it("keeps omitted pricing but clears explicitly empty pricing updates", () => {

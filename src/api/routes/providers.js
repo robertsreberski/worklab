@@ -8,8 +8,9 @@ import {
   isValidProviderType,
   listModels,
   listProviders,
+  recordProviderStatus,
+  refreshProviderStatus,
   setModelEnabled,
-  testProvider,
   updateProvider,
   upsertModel,
 } from "../../core/index.js";
@@ -91,20 +92,62 @@ export function registerProviderRoutes(app, { db, dataDir, broker }) {
     if (!getProvider({ db, dataDir, id: req.params.id, includeKey: false })) {
       return error(res, 404, "not_found", "provider not found");
     }
-    res.json(await testProvider({ db, dataDir, providerId: req.params.id }));
+    res.json(await refreshProviderStatus({ db, dataDir, providerId: req.params.id }));
   });
 
   app.post("/api/providers/:id/discover", async (req, res) => {
     if (!getProvider({ db, dataDir, id: req.params.id, includeKey: false })) {
       return error(res, 404, "not_found", "provider not found");
     }
+    const started = Date.now();
     try {
+      const discovered = await discoverModels({ db, dataDir, providerId: req.params.id });
+      const lastDiscoveredAt = Date.now();
+      const status = {
+        ok: true,
+        status: 200,
+        duration_ms: lastDiscoveredAt - started,
+        url: null,
+        discovered: true,
+        model_count: discovered.length,
+      };
+      recordProviderStatus({ db, id: req.params.id, status, checkedAt: lastDiscoveredAt, lastDiscoveredAt });
       const provider = getProvider({ db, dataDir, id: req.params.id, includeKey: false });
-      const models = await discoverModels({ db, dataDir, providerId: req.params.id });
+      const models = listModels({ db, providerId: req.params.id });
       broker.broadcast("global", { type: "provider_models_updated", id: req.params.id });
-      res.json({ models: models.map((model) => withCapabilities(provider, model)) });
+      res.json({
+        status: provider.status,
+        provider,
+        models: models.map((model) => withCapabilities(provider, model)),
+      });
     } catch (err) {
+      recordProviderStatus({
+        db,
+        id: req.params.id,
+        status: { ok: false, status: 0, duration_ms: Date.now() - started, url: null, error: err.message || String(err), discovery_failed: true },
+        checkedAt: Date.now(),
+      });
       error(res, 502, "discovery_failed", err.message);
+    }
+  });
+
+  app.post("/api/providers/:id/refresh", async (req, res) => {
+    if (!getProvider({ db, dataDir, id: req.params.id, includeKey: false })) {
+      return error(res, 404, "not_found", "provider not found");
+    }
+    try {
+      const status = await refreshProviderStatus({
+        db,
+        dataDir,
+        providerId: req.params.id,
+        discover: !!req.body?.discover,
+      });
+      const provider = getProvider({ db, dataDir, id: req.params.id, includeKey: false });
+      const models = listModels({ db, providerId: req.params.id }).map((model) => withCapabilities(provider, model));
+      if (req.body?.discover) broker.broadcast("global", { type: "provider_models_updated", id: req.params.id });
+      res.json({ status, provider, models });
+    } catch (err) {
+      error(res, 502, "refresh_failed", err.message);
     }
   });
 

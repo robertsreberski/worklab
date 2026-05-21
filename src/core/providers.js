@@ -48,6 +48,9 @@ const PRIVATE_V4_CIDRS = [
   ["127.0.0.0", 8],
 ];
 
+const DEFAULT_PROVIDER_TEST_TIMEOUT_MS = 5000;
+const LOCAL_PROVIDER_FRESHNESS_MS = 60000;
+
 function ipToLong(ip) {
   const parts = ip.split(".");
   if (parts.length !== 4) return null;
@@ -109,6 +112,17 @@ export function validateBaseUrl(url, { trustPublicUrl = false } = {}) {
   if (parsed.protocol !== "https:") throw new Error("public base_url must use https://");
 }
 
+function parseProviderStatus(value) {
+  try {
+    const parsed = value ? JSON.parse(value) : null;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) && Object.keys(parsed).length
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function rowToProvider(row, { includeKey = false, dataDir } = {}) {
   if (!row) return null;
   const out = {
@@ -119,6 +133,9 @@ function rowToProvider(row, { includeKey = false, dataDir } = {}) {
     trust_public_url: !!row.trust_public_url,
     enabled: row.enabled !== 0,
     has_api_key: !!row.api_key_encrypted,
+    status: parseProviderStatus(row.status_json),
+    status_checked_at: row.status_checked_at || null,
+    last_discovered_at: row.last_discovered_at || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -131,6 +148,62 @@ function rowToProvider(row, { includeKey = false, dataDir } = {}) {
     }
   }
   return out;
+}
+
+function fetchWithTimeout(fetchImpl, timeoutMs) {
+  const ms = Number(timeoutMs) || 0;
+  if (!ms || ms < 1) return fetchImpl;
+  return async (url, options = {}) => {
+    const controller = new AbortController();
+    let timeout;
+    const abort = () => controller.abort();
+    if (options.signal) {
+      if (options.signal.aborted) abort();
+      else options.signal.addEventListener("abort", abort, { once: true });
+    }
+    try {
+      timeout = setTimeout(abort, ms);
+      return await fetchImpl(url, { ...options, signal: controller.signal });
+    } catch (err) {
+      if (err?.name === "AbortError") throw new Error(`timed out after ${ms}ms`);
+      throw err;
+    } finally {
+      clearTimeout(timeout);
+      if (options.signal) options.signal.removeEventListener?.("abort", abort);
+    }
+  };
+}
+
+function sanitizeProviderStatus(status = {}) {
+  return {
+    ok: !!status.ok,
+    status: Number.isFinite(Number(status.status)) ? Number(status.status) : 0,
+    duration_ms: Number.isFinite(Number(status.duration_ms)) ? Number(status.duration_ms) : null,
+    url: status.url || null,
+    ...(status.error ? { error: String(status.error) } : {}),
+    ...(status.discovered ? { discovered: true } : {}),
+    ...(Number.isFinite(Number(status.model_count)) ? { model_count: Number(status.model_count) } : {}),
+    ...(status.discovery_failed ? { discovery_failed: true } : {}),
+  };
+}
+
+export function recordProviderStatus({ db, id, status, checkedAt = Date.now(), lastDiscoveredAt = undefined }) {
+  const next = sanitizeProviderStatus(status);
+  const fields = ["status_json = ?", "status_checked_at = ?", "updated_at = ?"];
+  const values = [JSON.stringify(next), checkedAt, Date.now()];
+  if (lastDiscoveredAt !== undefined) {
+    fields.push("last_discovered_at = ?");
+    values.push(lastDiscoveredAt);
+  }
+  values.push(id);
+  db.prepare(`UPDATE custom_providers SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+  return getProvider({ db, id });
+}
+
+export function providerStatusIsFresh(provider, ttlMs = LOCAL_PROVIDER_FRESHNESS_MS) {
+  const checkedAt = Number(provider?.status_checked_at || 0);
+  if (!checkedAt) return false;
+  return Date.now() - checkedAt < ttlMs;
 }
 
 function rowToModel(row) {
@@ -494,17 +567,18 @@ function inferOpenAICompatCapabilities(model) {
   };
 }
 
-export async function discoverModels({ db, dataDir, providerId, fetchImpl = fetch }) {
+export async function discoverModels({ db, dataDir, providerId, fetchImpl = fetch, timeoutMs = 0 }) {
   const provider = getProvider({ db, id: providerId, includeKey: true, dataDir });
   if (!provider) throw new Error("provider not found");
+  const providerFetch = fetchWithTimeout(fetchImpl, timeoutMs);
   const discovered = [];
 
   if (provider.provider_type === "ollama") {
-    const resp = await fetchImpl(`${rootUrl(provider.base_url)}/api/tags`, { headers: authHeaders(provider) });
+    const resp = await providerFetch(`${rootUrl(provider.base_url)}/api/tags`, { headers: authHeaders(provider) });
     if (!resp.ok) throw new Error(`ollama /api/tags returned ${resp.status}`);
     const data = await resp.json();
     for (const model of Array.isArray(data.models) ? data.models : []) {
-      const show = await fetchOllamaShow(provider, model.name, fetchImpl);
+      const show = await fetchOllamaShow(provider, model.name, providerFetch);
       discovered.push({
         modelName: model.name,
         displayName: model.name,
@@ -512,7 +586,7 @@ export async function discoverModels({ db, dataDir, providerId, fetchImpl = fetc
       });
     }
   } else if (isOpenAICompatibleProviderType(provider.provider_type)) {
-    const resp = await fetchImpl(modelsUrl(provider.base_url), { headers: authHeaders(provider) });
+    const resp = await providerFetch(modelsUrl(provider.base_url), { headers: authHeaders(provider) });
     if (!resp.ok) throw new Error(`/v1/models returned ${resp.status}`);
     const data = await resp.json();
     for (const model of Array.isArray(data.data) ? data.data : Array.isArray(data) ? data : []) {
@@ -528,7 +602,7 @@ export async function discoverModels({ db, dataDir, providerId, fetchImpl = fetc
     throw unsupportedProviderTypeError(provider);
   }
 
-  return discovered.map((model) => upsertModel({
+  const models = discovered.map((model) => upsertModel({
     db,
     providerId: provider.id,
     modelName: model.modelName,
@@ -540,13 +614,17 @@ export async function discoverModels({ db, dataDir, providerId, fetchImpl = fetc
       ? true
       : undefined,
   }));
+  db.prepare("UPDATE custom_providers SET last_discovered_at = ?, updated_at = ? WHERE id = ?")
+    .run(Date.now(), Date.now(), provider.id);
+  return models;
 }
 
-export async function testProvider({ db, dataDir, providerId, fetchImpl = fetch }) {
+export async function testProvider({ db, dataDir, providerId, fetchImpl = fetch, timeoutMs = DEFAULT_PROVIDER_TEST_TIMEOUT_MS }) {
   const provider = getProvider({ db, id: providerId, includeKey: true, dataDir });
   if (!provider) throw new Error("provider not found");
   let url = null;
   const start = Date.now();
+  const providerFetch = fetchWithTimeout(fetchImpl, timeoutMs);
   try {
     if (provider.provider_type === "ollama") {
       url = `${rootUrl(provider.base_url)}/api/tags`;
@@ -555,10 +633,52 @@ export async function testProvider({ db, dataDir, providerId, fetchImpl = fetch 
     } else {
       throw unsupportedProviderTypeError(provider);
     }
-    const resp = await fetchImpl(url, { headers: authHeaders(provider) });
+    const resp = await providerFetch(url, { headers: authHeaders(provider) });
     return { ok: resp.ok, status: resp.status, duration_ms: Date.now() - start, url };
   } catch (err) {
     return { ok: false, status: 0, duration_ms: Date.now() - start, url, error: err.message };
+  }
+}
+
+export async function refreshProviderStatus({
+  db,
+  dataDir,
+  providerId,
+  discover = false,
+  fetchImpl = fetch,
+  timeoutMs = DEFAULT_PROVIDER_TEST_TIMEOUT_MS,
+} = {}) {
+  const status = await testProvider({ db, dataDir, providerId, fetchImpl, timeoutMs });
+  let checkedAt = Date.now();
+  recordProviderStatus({ db, id: providerId, status, checkedAt });
+  if (!status.ok || !discover) return status;
+
+  try {
+    const models = await discoverModels({ db, dataDir, providerId, fetchImpl, timeoutMs });
+    const lastDiscoveredAt = Date.now();
+    const nextStatus = {
+      ...status,
+      discovered: true,
+      model_count: models.length,
+    };
+    checkedAt = Date.now();
+    recordProviderStatus({
+      db,
+      id: providerId,
+      status: nextStatus,
+      checkedAt,
+      lastDiscoveredAt,
+    });
+    return nextStatus;
+  } catch (err) {
+    const failed = {
+      ...status,
+      ok: false,
+      error: err.message || String(err),
+      discovery_failed: true,
+    };
+    recordProviderStatus({ db, id: providerId, status: failed, checkedAt: Date.now() });
+    throw Object.assign(new Error(failed.error), { statusResult: failed });
   }
 }
 
