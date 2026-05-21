@@ -494,11 +494,7 @@ Return only one JSON object with this exact schema:
           throw Object.assign(err, { failureKind: "invalid_result" });
         }
         result = fallbackAssistantResult(response.text, err);
-        recordEvent({
-          type: "runtime_warning",
-          warning_kind: "assistant_result_parse",
-          message: result.parse_error,
-        });
+        resultSource = "text_fallback";
       }
 
       this.applyResult({ agentName, runId, threadId, userMessageId, assistantMessageId, input, result });
@@ -594,6 +590,7 @@ Return only one JSON object with this exact schema:
       effort: response.effort || null,
       result_source: resultSource,
       ...(structuredResultSource ? { structured_result_source: structuredResultSource } : {}),
+      ...(result?.parse_error ? { parse_error: result.parse_error } : {}),
       warning_count: warnings.length,
     };
     const updated = this.db.prepare(`

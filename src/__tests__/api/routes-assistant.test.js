@@ -296,6 +296,34 @@ describe("assistant routes", () => {
     expect(thread.body.messages.at(-1).body).not.toContain("Fallback should not be used.");
   });
 
+  it("records non-empty plain text assistant fallback as informational diagnostics", async () => {
+    const runAgent = vi.fn(async () => ({
+      text: "Ollama returned a useful plain-text answer.",
+      events: [],
+      usage: {},
+      durationMs: 1,
+      numTurns: 1,
+      model: "pi:local:qwen3.6:latest",
+      effort: "high",
+    }));
+    const { agent, assistant } = setup({ runAgent });
+
+    const started = await agent.post("/api/assistant/messages").send({ body: "Use the local model." }).expect(202);
+    await assistant.waitIdle();
+
+    const run = await agent.get(`/api/assistant/runs/${started.body.run.id}`).expect(200);
+    expect(run.body.run.status).toBe("succeeded");
+    expect(run.body.run.final).toMatchObject({
+      reply_text: "Ollama returned a useful plain-text answer.",
+      parse_error: "Assistant did not return a JSON object",
+    });
+    expect(run.body.run.warnings).toEqual([]);
+    expect(run.body.run.diagnostics).toMatchObject({
+      result_source: "text_fallback",
+      parse_error: "Assistant did not return a JSON object",
+    });
+  });
+
   it("includes trusted current task view context in the assistant prompt", async () => {
     let capturedPrompt = "";
     const runAgent = vi.fn(async (systemPrompt) => {

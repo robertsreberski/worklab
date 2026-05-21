@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   mcpAvailabilitySummary,
+  mcpRowsFromServers,
   mcpServerFromRow,
   minutesToMs,
   minutesValue,
@@ -433,6 +434,26 @@ describe("settings UI duration conversions", () => {
       builtin: 0,
       user: 0,
       unavailable: 0,
+    });
+  });
+
+  it("keeps disabled MCP servers editable without counting them as unavailable", () => {
+    const rows = mcpRowsFromServers({
+      apple: { type: "http", url: "http://127.0.0.1:7501/mcp", enabled: false },
+    });
+
+    expect(rows[0].enabled).toBe(false);
+    expect(mcpServerFromRow(rows[0])).toEqual({
+      name: "apple",
+      config: { type: "http", url: "http://127.0.0.1:7501/mcp", enabled: false },
+    });
+    expect(mcpAvailabilitySummary({
+      servers: [{ source: "user", available: false, disabled: true }],
+    }, rows)).toMatchObject({
+      status: "enabled",
+      label: "Available",
+      unavailable: 0,
+      disabled: 1,
     });
   });
 

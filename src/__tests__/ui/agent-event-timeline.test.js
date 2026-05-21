@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { groupAgentTimelineEvents, isActiveStreamingTimelineItem, normaliseAgentTimelineEvents } from "../../ui/src/components/AgentEventTimeline.jsx";
+import {
+  groupAgentTimelineEvents,
+  isActiveStreamingTimelineItem,
+  normaliseAgentTimelineEvents,
+  providerRequestTargetLabel,
+  runtimeWarningText,
+} from "../../ui/src/components/AgentEventTimeline.jsx";
 import { fileEditSummary } from "../../ui/src/components/ToolCallBlock.jsx";
 import { normalizeWorklabEvents } from "../../ui/src/components/EventTimeline.jsx";
 
@@ -73,6 +79,22 @@ describe("agent event timeline normalization", () => {
     expect(isActiveStreamingTimelineItem({ streaming: true, index: 1, length: 3 })).toBe(false);
     expect(isActiveStreamingTimelineItem({ streaming: true, index: 2, length: 3 })).toBe(true);
     expect(isActiveStreamingTimelineItem({ streaming: false, index: 2, length: 3 })).toBe(false);
+  });
+
+  it("does not duplicate the SDK prefix for full provider runtime refs", () => {
+    expect(providerRequestTargetLabel({
+      sdk: "pi",
+      model: "pi:JmPScFlw8qog:qwen3.6:latest",
+    })).toBe("pi:JmPScFlw8qog:qwen3.6:latest");
+    expect(providerRequestTargetLabel({ sdk: "claude", model: "claude-sonnet-4-6" })).toBe("claude/claude-sonnet-4-6");
+  });
+
+  it("renders MCP init warnings with the server name", () => {
+    expect(runtimeWarningText({
+      warning_kind: "mcp_init_failed",
+      server: "apple-mcp",
+      message: "fetch failed",
+    })).toBe("MCP apple-mcp unavailable: fetch failed");
   });
 
   it("flattens assistant message envelopes and normalizes tool ids", () => {

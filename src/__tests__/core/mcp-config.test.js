@@ -8,6 +8,7 @@ import {
   getAvailableMcpServers,
   getBuiltinMcpServers,
   getMcpServerHealth,
+  getMcpServerStatuses,
   loadMcpConfig,
   pickMcpServers,
 } from "../../core/mcp-config.js";
@@ -64,6 +65,20 @@ describe("loadMcpConfig", () => {
   it("loads http server with allowed URL (localhost)", () => {
     const d = mk({ mcpServers: { s: { type: "http", url: "http://localhost:8000" } } });
     expect(loadMcpConfig(d).s.url).toBe("http://localhost:8000");
+  });
+
+  it("preserves disabled user servers without offering them to runs", () => {
+    const d = mk({ mcpServers: { s: { type: "http", url: "http://localhost:8000", enabled: false } } });
+    expect(loadMcpConfig(d).s).toMatchObject({ type: "http", url: "http://localhost:8000", enabled: false });
+
+    const status = getMcpServerStatuses(d, { repoRoot: process.cwd() });
+    expect(status.servers.find((server) => server.name === "s")).toMatchObject({
+      source: "user",
+      available: false,
+      disabled: true,
+      unavailable_reason: "disabled",
+    });
+    expect(getAvailableMcpServers(d, { repoRoot: process.cwd() }).s).toBeUndefined();
   });
 
   it("rejects http server with public URL", () => {

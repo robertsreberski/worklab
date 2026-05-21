@@ -236,6 +236,23 @@ export function isActiveStreamingTimelineItem({ streaming, index, length }) {
   return Boolean(streaming && length > 0 && index === length - 1);
 }
 
+export function providerRequestTargetLabel(event = {}) {
+  const model = String(event.model || "").trim();
+  const sdk = String(event.sdk || "").trim();
+  if (model && sdk && model.startsWith(`${sdk}:`)) return model;
+  if (sdk && model) return `${sdk}/${model}`;
+  return model || sdk || "?";
+}
+
+export function runtimeWarningText(event = {}) {
+  if (event.warning_kind === "mcp_init_failed") {
+    const server = event.server || event.name || "server";
+    const message = event.message || "unavailable";
+    return `MCP ${server} unavailable: ${message}`;
+  }
+  return event.message || event.warning_kind || "Runtime warning";
+}
+
 function CollapsibleBlock({ title, text, value, expanded, onToggle, borderColor, muted }) {
   const payload = value !== undefined ? value : (text || "");
   const previewText = structuredPreview(payload) || "";
@@ -472,7 +489,7 @@ function TimelineEvent({ event, isLast, streaming }) {
     railIcon = <RailIcon name="alert-triangle" tone="error" />;
     content = (
       <StructuredContent
-        content={event.message || event.warning_kind || "Runtime warning"}
+        content={runtimeWarningText(event)}
         className="agentlog-event-warn doc-content"
         maxHeight={5000}
       />
@@ -557,7 +574,7 @@ function TimelineEvent({ event, isLast, streaming }) {
       : "";
     content = (
       <div class="agentlog-final-meta">
-        {verb} provider request: {event.sdk || "?"}/{event.model || "?"}{latency}
+        {verb} provider request: {providerRequestTargetLabel(event)}{latency}
       </div>
     );
   } else if (type === "provider_failover_started" || type === "provider_failover_completed") {
