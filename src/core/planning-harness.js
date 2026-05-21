@@ -148,6 +148,7 @@ function planJsonContract() {
   "details": "Complete implementation plan.",
   "final_text": "Short human-facing plan status.",
   "artifacts": {},
+  "artifact_entries": [],
   "blocking_issues": [],
   "pending_actions": [],
   "questions": [],
@@ -185,6 +186,8 @@ Return a structured Worklab result as JSON when you finish:
 ${planJsonContract()}
 
 Do not emit this JSON object for interim planning progress or status updates. Use normal progress text, journal notes, todos, or tool calls until the final result is ready.
+
+If you mention a named artifact like \`artifacts.plan\` or \`artifacts.audit_notes\`, include that deliverable in \`artifact_entries\` with the matching \`key\`. Do not claim an artifact exists unless the final JSON provides it.
 
 Put the complete implementation plan directly in \`details\`. Do not write references like "see above", "the message above", or "mirrored in details" as a substitute for the actual plan text.
 

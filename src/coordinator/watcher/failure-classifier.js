@@ -74,7 +74,7 @@ export function compactRecoveryRunSummary({ runId, res, reason, providerInfo }) 
   const intro = reason === "usage_limit"
     ? `Previous run \`${runId}\` hit the model context limit.`
     : reason === "schema_correction"
-      ? `Previous run \`${runId}\` returned malformed Worklab result JSON.`
+      ? `Previous run \`${runId}\` returned an invalid Worklab result.`
     : reason === "finalisation"
       ? `Previous run \`${runId}\` completed the work (last tool: ${diagnostics?.error_details?.last_tool_name || "journal_summary"}) but dropped before emitting the worklab.v2 envelope.`
     : reason === "coordinator_resume"

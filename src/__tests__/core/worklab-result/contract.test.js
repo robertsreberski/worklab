@@ -42,6 +42,29 @@ describe("worklab_result contract", () => {
     expect(parsed.result.final_text).toBe("Final comment.");
   });
 
+  it("normalizes structured artifact entries into the artifacts map", () => {
+    const parsed = normalizeWorklabResult({
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Audit complete.",
+      details: "See artifacts.audit_notes.",
+      artifact_entries: [{
+        key: "audit_notes",
+        content: "File-by-file audit notes.",
+        description: "Read-only audit deliverable",
+        media_type: "text/markdown",
+      }],
+    });
+
+    expect(parsed.ok).toBe(true);
+    expect(parsed.result.artifacts.audit_notes).toBe("File-by-file audit notes.");
+    expect(parsed.result.artifact_entries[0]).toMatchObject({
+      key: "audit_notes",
+      content: "File-by-file audit notes.",
+    });
+  });
+
   it("normalizes string subtask acceptance criteria into an array", () => {
     const text = JSON.stringify({
       schema: "worklab.v2",
@@ -365,6 +388,57 @@ describe("worklab_result contract", () => {
     expect(validateWorklabResultSemantics({ ...base, decision: "delegate", subtasks: [{ title: "child" }] }).ok).toBe(true);
   });
 
+  it("rejects results that claim a named artifact without delivering it", () => {
+    const base = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Structured notes are in artifacts.audit_notes.",
+      details: "",
+      final_text: "See artifacts.audit_notes for the file-by-file notes.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+
+    expect(validateWorklabResultSemantics(base)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("artifacts.audit_notes"),
+    });
+    expect(validateWorklabResultSemantics({
+      ...base,
+      artifacts: { audit_notes: "Notes." },
+    }).ok).toBe(true);
+    expect(validateWorklabResultSemantics({
+      ...base,
+      artifact_entries: [{ key: "audit_notes", content: "Notes.", description: "", media_type: "text/markdown" }],
+    }).ok).toBe(true);
+  });
+
+  it("rejects completed todos that require a missing named artifact", () => {
+    const result = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Done.",
+      details: "",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+
+    expect(validateWorklabResultSemantics(result, {
+      todoState: {
+        todos: [{ content: "Return structured file-by-file audit notes in artifacts.audit_notes", status: "completed" }],
+      },
+    })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("artifacts.audit_notes"),
+    });
+  });
+
   it("validates planning questions only for plan-stage pauses", () => {
     const base = {
       schema: "worklab.v2",
@@ -418,6 +492,7 @@ describe("worklab_result contract", () => {
       type: ["string", "null"],
     });
     expect(WORKLAB_RESULT_JSON_SCHEMA.properties.memory_candidates.type).toBe("array");
+    expect(WORKLAB_RESULT_JSON_SCHEMA.properties.artifact_entries.type).toBe("array");
     expect(WORKLAB_RESULT_JSON_SCHEMA.properties.schema).toEqual({
       type: "string",
       enum: ["worklab.v2"],
@@ -442,6 +517,11 @@ describe("worklab_result contract", () => {
       additionalProperties: false,
       properties: {},
       required: [],
+    });
+    expect(WORKLAB_RESULT_JSON_SCHEMA.properties.artifact_entries.items).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["key", "content", "description", "media_type"],
     });
 
     const subtask = WORKLAB_RESULT_JSON_SCHEMA.properties.subtasks.items;

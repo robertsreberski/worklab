@@ -1539,6 +1539,49 @@ describe("task-watcher", () => {
     expect(comment.body).toContain("Do NOT redo the work");
   });
 
+  it("starts schema correction when a final result claims a missing named artifact", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: resolvers.length, done, cancel: vi.fn() };
+    });
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    const { runId } = await watcher.handleRunRequested(taskId);
+
+    const message = "result claims artifacts.audit_notes but result.artifacts.audit_notes is missing";
+    resolvers[0]({
+      exitCode: 1,
+      status: "error",
+      processStatus: "failed",
+      failureKind: "invalid_result",
+      error: message,
+      resultError: message,
+      diagnostics: { result_validation_error: message },
+      warnings: [{ kind: "worklab_result_validation", message }],
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn.mock.calls[1][0].diagnosticsSeed).toMatchObject({
+      continuation_of_run_id: runId,
+      continuation_reason: "schema_correction",
+    });
+    const task = db.prepare("SELECT stage, stage_reason, error_text, last_failure_kind FROM tasks WHERE id = ?").get(taskId);
+    expect(task).toMatchObject({
+      stage: "execute",
+      stage_reason: "continuing after schema_correction",
+      error_text: null,
+      last_failure_kind: "invalid_result",
+    });
+    const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Automatic schema-correction%'").get(taskId);
+    expect(comment.body).toContain("artifacts.audit_notes");
+  });
+
   it("continues usage-limit failures up to the configured continuation limit", async () => {
     const db = makeTestDb();
     writeSettings(db, { agent_recovery_continuation_limit: 2, max_failure_streak: 10 });

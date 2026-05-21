@@ -20,6 +20,7 @@ import { evaluateRunTurnBudget, loadRunTurnBudget } from "../core/run-turn-budge
 import { readSettings } from "../core/settings.js";
 import { aggregateRunArtifacts, artifactPaths, extractRunArtifacts, runArtifactSummary } from "../core/run-artifacts.js";
 import { runTodoStateSummary } from "../core/run-todos.js";
+import { validateWorklabResultSemantics } from "../core/worklab-result/contract.js";
 import {
   captureGitArtifactState,
   collectGitDiffArtifacts,
@@ -52,6 +53,8 @@ import {
   truncateDisplayEvent,
 } from "./spawn-worker/log-events.js";
 
+const FINALISATION_COMPLETION_TOOL_NAMES = new Set(["journal_summary", "worktree_sync", "todo_write"]);
+
 function canSignalProcessGroup() {
   return process.platform !== "win32";
 }
@@ -66,6 +69,19 @@ function readSettingsSafe(db) {
   } catch {
     return null;
   }
+}
+
+function toolBaseName(name) {
+  const raw = String(name || "");
+  if (!raw) return "";
+  const parts = raw.split("__").filter(Boolean);
+  return parts[parts.length - 1] || raw;
+}
+
+function isFinalisationCompletionTool(name) {
+  const raw = String(name || "");
+  return FINALISATION_COMPLETION_TOOL_NAMES.has(raw)
+    || FINALISATION_COMPLETION_TOOL_NAMES.has(toolBaseName(raw));
 }
 
 
@@ -138,6 +154,8 @@ export function spawnWorker({
   let timeoutTimer = null;
   let idleTimer = null;
   let timedOut = false;
+  let finalisationIdleFailed = false;
+  let finalisationIdleLastTool = null;
   const logId = newAgentLogId();
   let rawLogPath = null;
   const toolUseNames = new Map();
@@ -428,6 +446,49 @@ export function spawnWorker({
     };
   }
 
+  function lastToolSignal() {
+    for (let i = rawEvents.length - 1; i >= 0; i -= 1) {
+      const ev = rawEvents[i];
+      const target = ev?.type === "sdk_event" && ev.event ? ev.event : ev;
+      const blocks = Array.isArray(target?.message?.content) ? target.message.content
+        : Array.isArray(target?.content) ? target.content : [];
+      for (let j = blocks.length - 1; j >= 0; j -= 1) {
+        const block = blocks[j];
+        if (block?.type === "tool_result") {
+          return {
+            name: toolUseNames.get(block.tool_use_id) || block.raw_result?.details?.tool || null,
+            completed: true,
+            isError: !!block.is_error,
+          };
+        }
+        if (block?.type === "tool_use") {
+          return { name: block.name || null, completed: false, isError: false };
+        }
+      }
+    }
+    return { name: null, completed: false, isError: false };
+  }
+
+  function currentTodoStateJson() {
+    try {
+      return getRunTodoStateRow(db, runId)?.todo_state_json || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function completedRunTodo(summary) {
+    return summary.update_count > 0
+      && summary.total > 0
+      && summary.completed >= summary.total
+      && Math.max(0, summary.total - summary.completed) === 0;
+  }
+
+  function hasFinalisationCompletionSignal(toolSignal, todoSummary) {
+    if (toolSignal?.completed && !toolSignal.isError && isFinalisationCompletionTool(toolSignal.name)) return true;
+    return completedRunTodo(todoSummary);
+  }
+
   function resetIdleTimer() {
     if (!runIdleWarningMs || runIdleWarningMs < 1 || finalized) return;
     if (idleTimer) clearTimeout(idleTimer);
@@ -437,19 +498,9 @@ export function spawnWorker({
       // is genuinely stuck or just waiting on a long-running tool call (e.g.,
       // playwright snapshot). The reviewer's QA flow legitimately sits at
       // browser_snapshot for 90+ s sometimes.
-      const lastTool = (() => {
-        for (let i = rawEvents.length - 1; i >= 0; i -= 1) {
-          const ev = rawEvents[i];
-          const target = ev?.type === "sdk_event" && ev.event ? ev.event : ev;
-          const blocks = Array.isArray(target?.message?.content) ? target.message.content
-            : Array.isArray(target?.content) ? target.content : [];
-          for (let j = blocks.length - 1; j >= 0; j -= 1) {
-            const block = blocks[j];
-            if (block?.type === "tool_use") return block.name || null;
-          }
-        }
-        return null;
-      })();
+      const toolSignal = lastToolSignal();
+      const lastTool = toolSignal.name;
+      const todoSummary = runTodoStateSummary(currentTodoStateJson());
       emitEvent({
         type: "runtime_warning",
         warning_kind: "idle",
@@ -459,6 +510,28 @@ export function spawnWorker({
         last_tool_name: lastTool,
         ts: Date.now(),
       });
+      if (
+        !finalPayload
+        && !structuredOutputResult
+        && !resultError
+        && hasFinalisationCompletionSignal(toolSignal, todoSummary)
+      ) {
+        finalisationIdleFailed = true;
+        finalisationIdleLastTool = lastTool;
+        resultError = "missing final output after finalisation signal";
+        explicitFailureKind = "invalid_result";
+        emitEvent({
+          type: "error",
+          message: resultError,
+          failureKind: "invalid_result",
+          diagnostics: {
+            finalisation_idle_failed: true,
+            last_tool_name: lastTool,
+          },
+          ts: Date.now(),
+        });
+        terminateChild();
+      }
     }, runIdleWarningMs);
     idleTimer.unref?.();
   }
@@ -741,8 +814,23 @@ export function spawnWorker({
       cleanupWorkerProcessTree();
       const durationMs = Date.now() - startedAt;
       const endedAt = Date.now();
+      const recoveredStructuredResult = !finalPayload?.worklab_result ? structuredOutputResult : null;
+      let result = finalPayload?.worklab_result || recoveredStructuredResult || null;
+      const leadCycleResult = finalPayload?.lead_cycle_result || null;
+      const recoveredFinalText = recoveredStructuredResult ? finalTextFromWorklabResult(recoveredStructuredResult) : null;
+      const finalWarnings = Array.isArray(finalPayload?.warnings) ? finalPayload.warnings : [];
+      const allWarnings = [...warnings, ...finalWarnings];
+      const todoStateJson = currentTodoStateJson();
+      if (result && !resultError) {
+        const validation = validateWorklabResultSemantics(result, { todoState: todoStateJson });
+        if (!validation.ok) {
+          resultError = validation.error || "invalid worklab_result";
+          explicitFailureKind = "invalid_result";
+          result = null;
+        }
+      }
       let processStatus = "succeeded";
-      if (timedOut) processStatus = "failed";
+      if (timedOut || finalisationIdleFailed) processStatus = "failed";
       else if (cancelRequested || drainRequested || isCancellationExit(code, signal)) processStatus = "cancelled";
       else if (signal === "SIGKILL" && !code) processStatus = "abandoned";
       else if (code !== 0 || resultError) processStatus = "failed";
@@ -763,12 +851,6 @@ export function spawnWorker({
             resultParseError: !!resultError,
             hint: explicitFailureKind,
           }) || "spawn");
-      const recoveredStructuredResult = !finalPayload?.worklab_result ? structuredOutputResult : null;
-      const result = finalPayload?.worklab_result || recoveredStructuredResult || null;
-      const leadCycleResult = finalPayload?.lead_cycle_result || null;
-      const recoveredFinalText = recoveredStructuredResult ? finalTextFromWorklabResult(recoveredStructuredResult) : null;
-      const finalWarnings = Array.isArray(finalPayload?.warnings) ? finalPayload.warnings : [];
-      const allWarnings = [...warnings, ...finalWarnings];
       const providerSessionId = finalPayload?.provider_session_id
         || finalPayload?.providerSessionId
         || workerDiagnostics?.provider_session_id
@@ -828,7 +910,7 @@ export function spawnWorker({
       const resultRecoveredViaLenient = allWarnings.some((w) => w.kind === "result_recovered_via_lenient");
       const todoSummary = (() => {
         try {
-          return runTodoStateSummary(getRunTodoStateRow(db, runId)?.todo_state_json);
+          return runTodoStateSummary(todoStateJson);
         } catch {
           return runTodoStateSummary(null);
         }
@@ -857,6 +939,8 @@ export function spawnWorker({
           open: Math.max(0, todoSummary.total - todoSummary.completed),
         },
         warning_count: allWarnings.length,
+        ...(resultError && explicitFailureKind === "invalid_result" ? { result_validation_error: resultError } : {}),
+        ...(finalisationIdleFailed ? { finalisation_idle_failed: true, last_tool_name: finalisationIdleLastTool } : {}),
         ...(toolPayloadTruncatedCount > 0 ? { tool_results_truncated: toolPayloadTruncatedCount } : {}),
         ...(toolOutputsPrunedCount > 0 ? { tool_outputs_pruned: toolOutputsPrunedCount } : {}),
         ...(resultRecoveredViaLenient ? { result_recovered_via: "lenient" } : {}),
