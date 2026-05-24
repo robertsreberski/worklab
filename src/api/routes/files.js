@@ -1,5 +1,11 @@
+import fs from "node:fs";
+import path from "node:path";
+
 import { resolveProjectRow, resolveTaskRow, suggestLocalPaths } from "../../core/index.js";
 import { enrichTask, rowToTask } from "./tasks/serialization.js";
+
+const MAX_READ_BYTES = 256 * 1024;
+const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
 function sendRouteError(res, error) {
   res.status(error.status || 500).json({
@@ -24,6 +30,28 @@ function baseWorkdirForRequest(db, config, query = {}) {
   return config?.workspace || config?.repoRoot || process.cwd();
 }
 
+function realpathSafe(target) {
+  try {
+    return fs.realpathSync(target);
+  } catch {
+    return null;
+  }
+}
+
+function isInside(child, parent) {
+  if (!child || !parent) return false;
+  const rel = path.relative(parent, child);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+function detectBinary(buffer) {
+  const len = Math.min(buffer.length, 8000);
+  for (let i = 0; i < len; i++) {
+    if (buffer[i] === 0) return true;
+  }
+  return false;
+}
+
 export function registerFileRoutes(app, { db, config }) {
   app.get("/api/files/suggest", (req, res) => {
     try {
@@ -35,6 +63,78 @@ export function registerFileRoutes(app, { db, config }) {
         limit: req.query.limit,
       });
       res.json({ results, base_workdir: baseWorkdir });
+    } catch (error) {
+      sendRouteError(res, error);
+    }
+  });
+
+  app.get("/api/files/read", (req, res) => {
+    try {
+      const rawPath = String(req.query.path || "").trim();
+      if (!rawPath) {
+        return sendRouteError(res, { status: 400, code: "invalid_path", message: "path is required" });
+      }
+      const baseWorkdir = baseWorkdirForRequest(db, config, req.query);
+      if (!baseWorkdir) {
+        return sendRouteError(res, { status: 400, code: "no_workdir", message: "workdir could not be resolved" });
+      }
+      const baseReal = realpathSafe(baseWorkdir) || path.resolve(baseWorkdir);
+      const candidate = path.isAbsolute(rawPath) ? rawPath : path.resolve(baseReal, rawPath);
+      const resolved = realpathSafe(candidate) || path.resolve(candidate);
+      if (!isInside(resolved, baseReal)) {
+        return sendRouteError(res, { status: 403, code: "outside_workdir", message: "path is outside the workdir" });
+      }
+      let stat;
+      try {
+        stat = fs.statSync(resolved);
+      } catch (err) {
+        if (err?.code === "ENOENT") {
+          return sendRouteError(res, { status: 404, code: "not_found", message: "file not found" });
+        }
+        throw err;
+      }
+      if (!stat.isFile()) {
+        return sendRouteError(res, { status: 400, code: "not_a_file", message: "path is not a regular file" });
+      }
+      if (stat.size > MAX_FILE_BYTES) {
+        return res.json({
+          path: rawPath,
+          abs_path: resolved,
+          size: stat.size,
+          encoding: "too_large",
+          truncated: true,
+          content: "",
+          max_bytes: MAX_FILE_BYTES,
+        });
+      }
+      const fd = fs.openSync(resolved, "r");
+      try {
+        const readLen = Math.min(stat.size, MAX_READ_BYTES);
+        const buffer = Buffer.alloc(readLen);
+        if (readLen > 0) fs.readSync(fd, buffer, 0, readLen, 0);
+        if (detectBinary(buffer)) {
+          return res.json({
+            path: rawPath,
+            abs_path: resolved,
+            size: stat.size,
+            encoding: "binary",
+            truncated: stat.size > readLen,
+            content: "",
+            max_bytes: MAX_READ_BYTES,
+          });
+        }
+        return res.json({
+          path: rawPath,
+          abs_path: resolved,
+          size: stat.size,
+          encoding: "utf8",
+          truncated: stat.size > readLen,
+          content: buffer.toString("utf8"),
+          max_bytes: MAX_READ_BYTES,
+        });
+      } finally {
+        fs.closeSync(fd);
+      }
     } catch (error) {
       sendRouteError(res, error);
     }
