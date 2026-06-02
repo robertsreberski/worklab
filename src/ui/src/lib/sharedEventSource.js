@@ -62,9 +62,22 @@ export function createSharedEventSourceRuntime({
   }
 
   function canShare() {
-    return typeof env?.BroadcastChannel === "function"
-      && typeof env?.EventSource === "function"
-      && env?.localStorage;
+    if (
+      typeof env?.BroadcastChannel !== "function"
+      || typeof env?.EventSource !== "function"
+      || !env?.localStorage
+    ) {
+      return false;
+    }
+    const probeKey = `${LEASE_PREFIX}probe.${tabId}`;
+    try {
+      env.localStorage.setItem(probeKey, tabId);
+      const ok = env.localStorage.getItem(probeKey) === tabId;
+      env.localStorage.removeItem(probeKey);
+      return ok;
+    } catch {
+      return false;
+    }
   }
 
   function leaseKey(key) {
