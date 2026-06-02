@@ -14,7 +14,7 @@ export { Kbd } from "./Kbd.jsx";
 export { Link } from "./Link.jsx";
 export { StatusPill, statusMeta } from "./StatusPill.jsx";
 export { StatusDot } from "./StatusDot.jsx";
-export { StageToken, taskStageMeta, TASK_STAGE_META } from "./StageToken.jsx";
+export { StageToken, taskStageMeta } from "./StageToken.jsx";
 export { LivePulse } from "./LivePulse.jsx";
 export { RadioGroup } from "./RadioGroup.jsx";
 export { SearchField } from "./SearchField.jsx";

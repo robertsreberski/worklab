@@ -1,6 +1,6 @@
 import { Icon } from "../Icon.jsx";
 
-export const TASK_STAGE_META = {
+const TASK_STAGE_META = {
   plan: { label: "Plan", tone: "var(--accent)", icon: "circle-dot" },
   execute: { label: "Execute", tone: "var(--status-progress)", icon: "circle" },
   running: { label: "Running", tone: "var(--status-progress)", icon: "zap" },
