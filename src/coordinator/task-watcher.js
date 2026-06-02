@@ -67,6 +67,10 @@ import { createRecoveryContinuation } from "./watcher/recovery-continuation.js";
 import { buildDelegationContextBlock } from "./watcher/delegation-context.js";
 import { planBodySideEffect } from "./watcher/plan-body.js";
 import {
+  latestPriorExecuteRunId,
+  reviewSubjectRunIdFor,
+} from "./watcher/review-subject.js";
+import {
   appendRunWarning,
   postAgentFinalComment,
   updateRunResult,
@@ -229,25 +233,6 @@ export function createTaskWatcher({
     return findOpenBlocker(db, taskId);
   }
 
-  function latestPriorExecuteRunId(taskId) {
-    return db.prepare(`
-      SELECT id
-      FROM task_runs
-      WHERE task_id = ?
-        AND mode = 'execute'
-      ORDER BY ended_at DESC, started_at DESC, rowid DESC
-      LIMIT 1
-    `).get(taskId)?.id || null;
-  }
-
-  function reviewSubjectRunIdFor(run, taskId) {
-    if (run?.parent_run_id) {
-      const parent = db.prepare("SELECT id, mode FROM task_runs WHERE id = ?").get(run.parent_run_id);
-      if (parent?.mode === "execute") return parent.id;
-    }
-    return latestPriorExecuteRunId(taskId);
-  }
-
   function spawnRun(options) {
     return spawnTaskRun({
       db,
@@ -306,7 +291,7 @@ export function createTaskWatcher({
     postSystemComment,
     patchRunDiagnostics,
     applySideEffects,
-    reviewSubjectRunIdFor,
+    reviewSubjectRunIdFor: (run, taskId) => reviewSubjectRunIdFor(db, run, taskId),
   });
 
   async function handleRunRequested(taskId, options = {}) {
@@ -326,7 +311,7 @@ export function createTaskWatcher({
     const errorSideEffect = result.sideEffects.find((sideEffect) => sideEffect.type === "error");
     if (errorSideEffect) throw new Error(errorSideEffect.message);
 
-    const parentRunId = options.parentRunId || (mode === "review" ? latestPriorExecuteRunId(taskId) : null);
+    const parentRunId = options.parentRunId || (mode === "review" ? latestPriorExecuteRunId(db, taskId) : null);
     if (mode === "review" && !parentRunId) throw new Error("no execute run to review");
 
     if (mode === "review") {
@@ -1123,7 +1108,7 @@ export function createTaskWatcher({
     const run = getRunById(db, runId);
     if (!run) return null;
     const lineage = recovery.continuationLineage(run);
-    const reviewSubjectRunId = continuationMode === "review" ? reviewSubjectRunIdFor(run, taskId) : null;
+    const reviewSubjectRunId = continuationMode === "review" ? reviewSubjectRunIdFor(db, run, taskId) : null;
     if (continuationMode === "review" && !reviewSubjectRunId) {
       patchRunDiagnostics(runId, {
         continuation_skipped: true,
