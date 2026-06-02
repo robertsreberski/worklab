@@ -388,6 +388,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   const [skills, setSkills] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
   const [modelGroups, setModelGroups] = useState([]);
+  const [opencodeGroups, setOpencodeGroups] = useState([]);
   const [memoryState, setMemoryState] = useState(null);
   const [memoryError, setMemoryError] = useState(null);
   const [learningMemories, setLearningMemories] = useState([]);
@@ -399,7 +400,10 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   const [notice, setNotice] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const allModels = flattenModels(modelGroups);
+  // OpenCode models are discovered separately (the endpoint boots a transient
+  // opencode server) and appended so they flow through the same picker + gating.
+  const mergedGroups = opencodeGroups.length ? [...modelGroups, ...opencodeGroups] : modelGroups;
+  const allModels = flattenModels(mergedGroups);
   const selectedModel = allModels.find((m) => m.value === agent?.model) || null;
   const reasoningMode = getReasoningMode(selectedModel);
   const reasoningLevels = getReasoningLevels(selectedModel);
@@ -449,6 +453,9 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
     api.listSkills().then(r => setSkills(r.skills)).catch(() => setSkills([]));
     api.getMcpStatus().then(r => setMcpServers(r.servers || [])).catch(() => setMcpServers([]));
     api.listAvailableModels().then(r => setModelGroups(r.groups || [])).catch(() => setModelGroups([]));
+    api.listOpencodeModels()
+      .then(r => setOpencodeGroups(r?.available ? (r.groups || []) : []))
+      .catch(() => setOpencodeGroups([]));
   }, []);
 
   useEffect(() => {
@@ -543,7 +550,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
 
   const executionMode = agent.execution_mode === "sdk" ? "sdk" : "cli";
   const modelOptions = [
-    ...modelGroups.map((group) => ({
+    ...mergedGroups.map((group) => ({
       label: modelGroupLabel(group),
       options: (group.models || []).map((m) => {
         const baseDisabled = group.available === false || m.available === false || m.disabled === true;

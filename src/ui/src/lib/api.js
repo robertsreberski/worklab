@@ -195,6 +195,7 @@ export const api = {
   listProviderModels: (id) => request("GET", `/providers/${pathSegment(id)}/models`),
   patchProviderModel: (providerId, modelId, patch) => request("PATCH", `/providers/${pathSegment(providerId)}/models/${pathSegment(modelId)}`, patch),
   listAvailableModels: () => request("GET", "/models/available"),
+  listOpencodeModels: () => request("GET", "/models/opencode"),
   listEmbeddingModels: () => request("GET", "/models/embeddings"),
   listVerificationAdjudicatorModels: () => request("GET", "/models/verification-adjudicators"),
   // automations
