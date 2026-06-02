@@ -81,7 +81,7 @@ export const PARENT_REVIEW_POLICIES = ["default", "skip_when_qa_child", "always_
 
 // Resolve the effective review behaviour for a parent task on execute-advance.
 // Returns true when the state machine should skip review and auto-approve.
-export function shouldSkipParentReview({ parentReviewPolicy, hasQaChild } = {}) {
+function shouldSkipParentReview({ parentReviewPolicy, hasQaChild } = {}) {
   if (parentReviewPolicy === "always_skip") return true;
   if (parentReviewPolicy === "skip_when_qa_child" && hasQaChild) return true;
   return false;
