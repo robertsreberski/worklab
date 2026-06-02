@@ -10,7 +10,7 @@ const INSERT_SQL = `
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `;
 
-export function recordRunCompaction(db, record) {
+function recordRunCompaction(db, record) {
   if (!db || !record?.id || !record?.task_run_id) return;
   db.prepare(INSERT_SQL).run(
     record.id,
