@@ -14,11 +14,6 @@ import { getAgentConsolidationHash, upsertAgentConsolidation } from "../core/db/
 
 const TICK_MS = 60_000;
 
-function hashFile(path) {
-  if (!existsSync(path)) return null;
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
-}
-
 function localHourAndDate(date, timezone) {
   const local = timezone
     ? new Date(date.toLocaleString("en-US", { timeZone: timezone }))
@@ -69,7 +64,9 @@ export function createConsolidationManager({
     if (!agent) throw new Error(`enabled agent not found: ${agentName}`);
     if (active.has(agentName)) throw new Error(`consolidation already running for ${agentName}`);
     const journalPath = agentJournalPath(dataDir, agentName);
-    const journalHash = hashFile(journalPath);
+    const journalHash = existsSync(journalPath)
+      ? createHash("sha256").update(readFileSync(journalPath)).digest("hex")
+      : null;
     if (!journalHash) throw new Error(`agent ${agentName} has no journal entries`);
     const previous = getAgentConsolidationHash(db, agentName);
     if (!force && previous?.last_journal_hash === journalHash) return { skipped: true, reason: "journal unchanged" };
