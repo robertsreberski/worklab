@@ -12,7 +12,7 @@ import { useLayoutEffect, useRef, useState } from "preact/hooks";
 
 const DEFAULT_GAP = 4;
 export const DEFAULT_MIN_SPACE = 120;
-export const DEFAULT_MARGIN = 8;
+const DEFAULT_MARGIN = 8;
 
 export function decidePlacement({
   anchorRect,
