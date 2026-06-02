@@ -2,6 +2,7 @@ import {
   buildModelCapabilities,
   getBuiltinModelGroups,
   getBuiltinProviderAvailability,
+  getOpencodeModelCatalogue,
   isPrivateBaseUrl,
   isValidProviderType,
   providerStatusIsFresh,
@@ -122,6 +123,15 @@ export function registerModelRoutes(app, { db, dataDir }) {
     }
 
     res.json({ groups, models: groups.flatMap((group) => group.models) });
+  });
+
+  // Lazy, cached discovery of OpenCode's own providers/models (boots a transient
+  // opencode server). Kept off the hot /api/models/available path; the agent editor
+  // fetches it only when needed. ?refresh=true forces a rediscovery.
+  app.get("/api/models/opencode", async (req, res) => {
+    const refresh = req.query.refresh === "true" || req.query.refresh === "1";
+    const catalogue = await getOpencodeModelCatalogue({ refresh });
+    res.json(catalogue);
   });
 
   app.get("/api/models/embeddings", (_req, res) => {
