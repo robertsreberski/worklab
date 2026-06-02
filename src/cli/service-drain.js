@@ -9,10 +9,6 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function coordinatorPidFile(config = {}) {
-  return config?.dataDir ? join(config.dataDir, ".coordinator.pid") : null;
-}
-
 export function gracefulStopTimeoutMs(config = {}) {
   const drainTimeoutMs = Number(config?.drainTimeoutMs);
   const base = Number.isFinite(drainTimeoutMs) && drainTimeoutMs >= 0 ? drainTimeoutMs : 60_000;
@@ -80,7 +76,7 @@ export async function gracefulStopCoordinator({
   pollMs = DEFAULT_POLL_MS,
   signal = "SIGTERM",
 } = {}) {
-  const pidFile = coordinatorPidFile(config);
+  const pidFile = config?.dataDir ? join(config.dataDir, ".coordinator.pid") : null;
   const current = readPid(pidFile);
   if (current.status !== "running") return current;
   if (!processAlive(current.pid)) {
