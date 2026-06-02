@@ -42,7 +42,7 @@ export function encodePath(path, input) {
   });
 }
 
-export function clampLimit(value, fallback, max) {
+function clampLimit(value, fallback, max) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return fallback;
   return Math.min(Math.floor(n), max);
