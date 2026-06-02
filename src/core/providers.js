@@ -605,6 +605,13 @@ export function inferOpenCodeZenCapabilities(model) {
   return inferOpenAICompatCapabilities(model);
 }
 
+// Zen serves Anthropic/Claude models on a separate /v1/messages endpoint that the
+// OpenAI-completions runtime path (createVercelClient / resolveCustomPiModel) cannot
+// reach, so a discovered claude-* model would fail at runtime. Never expose them.
+function isZenUnsupportedModel(modelName) {
+  return /claude|anthropic/i.test(String(modelName || ""));
+}
+
 export async function discoverModels({ db, dataDir, providerId, fetchImpl = fetch, timeoutMs = 0 }) {
   const provider = getProvider({ db, id: providerId, includeKey: true, dataDir });
   if (!provider) throw new Error("provider not found");
@@ -627,14 +634,17 @@ export async function discoverModels({ db, dataDir, providerId, fetchImpl = fetc
     const zen = provider.provider_type === "opencode-zen";
     const inferCapabilities = zen ? inferOpenCodeZenCapabilities : inferOpenAICompatCapabilities;
     const resp = await providerFetch(modelsUrl(provider.base_url), { headers: authHeaders(provider) });
-    // The Zen gateway may not advertise /v1/models yet (sst/opencode#2901); fall
-    // back to a curated seed list instead of failing the whole discovery.
-    if (!resp.ok && !zen) throw new Error(`/v1/models returned ${resp.status}`);
+    // The Zen gateway may not expose /v1/models yet (sst/opencode#2901); fall back
+    // to a curated seed list only for that missing/empty case. Auth and server
+    // errors must still surface as discovery failures rather than seeding success.
+    const zenDiscoveryMissing = zen && resp.status === 404;
+    if (!resp.ok && !zenDiscoveryMissing) throw new Error(`/v1/models returned ${resp.status}`);
     if (resp.ok) {
       const data = await resp.json();
       for (const model of Array.isArray(data.data) ? data.data : Array.isArray(data) ? data : []) {
         const modelName = model.id || model.name;
         if (!modelName) continue;
+        if (zen && isZenUnsupportedModel(modelName)) continue;
         discovered.push({
           modelName,
           displayName: model.name || model.id,

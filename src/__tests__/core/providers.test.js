@@ -415,7 +415,7 @@ describe("providers", () => {
     expect(models[0].capabilities).toMatchObject({ reasoning: true, reasoning_mode: "effort" });
   });
 
-  it("seeds curated OpenCode Zen models when discovery returns none", async () => {
+  it("seeds curated OpenCode Zen models when discovery returns an empty list", async () => {
     const provider = createProvider({
       db,
       dataDir,
@@ -433,5 +433,64 @@ describe("providers", () => {
     expect(models.length).toBe(ZEN_SEED_MODELS.length);
     expect(models.length).toBeGreaterThan(0);
     expect(models.some((model) => model.model_name.startsWith("gpt-5"))).toBe(true);
+  });
+
+  it("seeds curated OpenCode Zen models when the discovery endpoint is missing (404)", async () => {
+    const provider = createProvider({
+      db,
+      dataDir,
+      name: "zen",
+      provider_type: "opencode-zen",
+      base_url: "https://opencode.ai/zen/v1",
+      trust_public_url: true,
+    });
+    const models = await discoverModels({
+      db,
+      dataDir,
+      providerId: provider.id,
+      fetchImpl: async () => ({ ok: false, status: 404, json: async () => ({}) }),
+    });
+    expect(models.length).toBe(ZEN_SEED_MODELS.length);
+  });
+
+  it("treats OpenCode Zen auth failures as discovery errors instead of seeding", async () => {
+    const provider = createProvider({
+      db,
+      dataDir,
+      name: "zen",
+      provider_type: "opencode-zen",
+      base_url: "https://opencode.ai/zen/v1",
+      trust_public_url: true,
+    });
+    await expect(discoverModels({
+      db,
+      dataDir,
+      providerId: provider.id,
+      fetchImpl: async () => ({ ok: false, status: 401, json: async () => ({}) }),
+    })).rejects.toThrow(/401/);
+    expect(listModels({ db, providerId: provider.id })).toHaveLength(0);
+  });
+
+  it("drops Anthropic models from OpenCode Zen discovery the runtime cannot call", async () => {
+    const provider = createProvider({
+      db,
+      dataDir,
+      name: "zen",
+      provider_type: "opencode-zen",
+      base_url: "https://opencode.ai/zen/v1",
+      trust_public_url: true,
+    });
+    const models = await discoverModels({
+      db,
+      dataDir,
+      providerId: provider.id,
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({ data: [{ id: "gpt-5.1" }, { id: "claude-opus-4" }] }),
+      }),
+    });
+    const names = models.map((model) => model.model_name);
+    expect(names).toContain("gpt-5.1");
+    expect(names).not.toContain("claude-opus-4");
   });
 });
