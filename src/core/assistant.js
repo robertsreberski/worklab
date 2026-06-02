@@ -34,7 +34,7 @@ import { renderAssistantViewContext } from "./assistant/view-context.js";
 import { expandMentionsForLlm } from "./mentions/index.js";
 
 export const DEFAULT_ASSISTANT_THREAD_ID = "personal";
-export const ASSISTANT_HISTORY_PAGE_SIZE = 5;
+const ASSISTANT_HISTORY_PAGE_SIZE = 5;
 const ASSISTANT_THREAD_LIMIT = 100;
 const ASSISTANT_HISTORY_MAX_PAGE_SIZE = 50;
 
