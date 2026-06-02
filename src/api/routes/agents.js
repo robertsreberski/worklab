@@ -249,10 +249,6 @@ function normalizeBooleanField(key, value, fallback = false) {
   return value ? 1 : 0;
 }
 
-function existingAllowlist(row, key) {
-  return parseStoredAllowlist(row?.[key]);
-}
-
 function validateSkillAllowlist({ dataDir, allowlist }) {
   const list = normalizeList(allowlist);
   if (!list.length || !dataDir) return list;
@@ -331,7 +327,7 @@ function patchAllowlist({ body, existing, listKey, dataDir, model }) {
   const hasMode = modeKey in body;
   if (!hasList && !hasMode) return null;
 
-  const existingList = existingAllowlist(existing, listKey);
+  const existingList = parseStoredAllowlist(existing?.[listKey]);
   const existingMode = existingAllowlistMode(existing, listKey);
   const rawList = hasList ? body[listKey] : existingList;
   const mode = hasMode
