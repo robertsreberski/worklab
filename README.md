@@ -93,6 +93,24 @@ OpenAI embeddings use `openai:text-embedding-3-small` by default. Local
 embeddings use Ollama `nomic-embed-text` or an embedding-capable LM Studio
 model when available.
 
+OpenCode Zen / Go subscription:
+
+OpenCode Zen is a hosted OpenAI-compatible gateway. The **OpenCode Go** tier
+($5/mo) covers its open-source models; **Zen** is pay-as-you-go for the curated
+set — both share one API key. Add it as a custom provider, not via auth env vars:
+
+1. Sign in at <https://opencode.ai/zen>, add billing, and copy your API key.
+2. In the UI open **Providers → Add provider**, pick **OpenCode Zen** (base URL
+   `https://opencode.ai/zen/v1` is prefilled), paste the key, and save.
+3. Click **Test**, then **Discover** to populate models (a curated seed list is
+   used if the gateway has not yet exposed model discovery), and enable the ones
+   you want. They then appear in the **Agents** model picker as
+   `pi:<providerId>:<model>`.
+
+Only Zen's OpenAI-compatible models (open-source, GPT, Gemini) are reachable
+this way; Anthropic/Claude models on Zen use a separate endpoint and are not
+covered.
+
 ## First Setup
 
 Start in the UI, not in config files:

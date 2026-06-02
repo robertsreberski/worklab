@@ -45,6 +45,7 @@ const PROVIDER_TYPE_OPTIONS = [
   { value: "together", label: "Together AI" },
   { value: "fireworks", label: "Fireworks AI" },
   { value: "deepseek", label: "DeepSeek" },
+  { value: "opencode-zen", label: "OpenCode Zen" },
 ];
 
 const PRESETS = {
@@ -57,6 +58,7 @@ const PRESETS = {
   together: { name: "Together AI", base_url: "https://api.together.xyz", trust_public_url: true, api_key_hint: "API key required." },
   fireworks: { name: "Fireworks AI", base_url: "https://api.fireworks.ai/inference", trust_public_url: true, api_key_hint: "API key required." },
   deepseek: { name: "DeepSeek", base_url: "https://api.deepseek.com", trust_public_url: true, api_key_hint: "API key required." },
+  "opencode-zen": { name: "OpenCode Zen", base_url: "https://opencode.ai/zen/v1", trust_public_url: true, api_key_hint: "API key from opencode.ai/zen — covers OpenCode Go ($5/mo open-source models)." },
 };
 
 const EMPTY_FORM = {
@@ -89,6 +91,7 @@ function providerTypeLabel(value) {
 function providerIcon(value) {
   if (value === "ollama" || value === "lmstudio" || value === "vllm") return "database";
   if (value === "groq" || value === "fireworks" || value === "together") return "zap";
+  if (value === "opencode-zen") return "sparkles";
   return "terminal";
 }
 
