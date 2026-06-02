@@ -16,12 +16,6 @@ function toolBlocksFromRunEvents(events = []) {
   return blocks;
 }
 
-function diagnosticText(value) {
-  if (value === undefined || value === null || value === "") return "";
-  if (typeof value === "boolean") return value ? "true" : "false";
-  return String(value);
-}
-
 export function compactRecoveryRunSummary({ runId, res, reason, providerInfo }) {
   const diagnostics = res?.diagnostics || {};
   const providerDetails = diagnostics?.error_details && typeof diagnostics.error_details === "object"
@@ -64,7 +58,11 @@ export function compactRecoveryRunSummary({ runId, res, reason, providerInfo }) 
     ["partial_progress", providerDiagnostics.partial_progress],
     ["context", providerDiagnostics.context_risk],
   ]
-    .map(([label, value]) => [label, diagnosticText(value)])
+    .map(([label, value]) => {
+      if (value === undefined || value === null || value === "") return [label, ""];
+      if (typeof value === "boolean") return [label, value ? "true" : "false"];
+      return [label, String(value)];
+    })
     .filter(([, value]) => value)
     .map(([label, value]) => `${label}=${value}`);
   const intro = reason === "usage_limit"
