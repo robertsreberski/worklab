@@ -16,13 +16,6 @@ function toolBlocksFromRunEvents(events = []) {
   return blocks;
 }
 
-function mergedProviderDiagnostics(diagnostics = {}) {
-  const details = diagnostics?.error_details && typeof diagnostics.error_details === "object"
-    ? diagnostics.error_details
-    : {};
-  return { ...details, ...diagnostics };
-}
-
 function diagnosticText(value) {
   if (value === undefined || value === null || value === "") return "";
   if (typeof value === "boolean") return value ? "true" : "false";
@@ -31,7 +24,10 @@ function diagnosticText(value) {
 
 export function compactRecoveryRunSummary({ runId, res, reason, providerInfo }) {
   const diagnostics = res?.diagnostics || {};
-  const providerDiagnostics = mergedProviderDiagnostics(diagnostics);
+  const providerDetails = diagnostics?.error_details && typeof diagnostics.error_details === "object"
+    ? diagnostics.error_details
+    : {};
+  const providerDiagnostics = { ...providerDetails, ...diagnostics };
   const blocks = toolBlocksFromRunEvents(res?.events);
   const changedFiles = [];
   const actions = [];
