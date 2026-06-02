@@ -76,7 +76,7 @@ function queryContext(query) {
   return out;
 }
 
-export function normalizeAssistantViewContext(input) {
+function normalizeAssistantViewContext(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   const resourceType = oneLine(input.resource_type, 80);
   return {
