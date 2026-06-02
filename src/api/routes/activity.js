@@ -37,10 +37,6 @@ function startOfUtcDay(value) {
   return date.getTime();
 }
 
-function isoDay(value) {
-  return new Date(value).toISOString().slice(0, 10);
-}
-
 function costChartRange(from, to) {
   if (from == null && to == null) {
     const end = startOfUtcDay(Date.now());
@@ -65,7 +61,7 @@ function normalizeCostByDay(rows, range) {
   const byDate = new Map(normalized.map((row) => [row.date, row]));
   const days = [];
   for (let day = range.start; day <= range.end; day += DAY_MS) {
-    const date = isoDay(day);
+    const date = new Date(day).toISOString().slice(0, 10);
     days.push(byDate.get(date) || { date, total_cost_usd: 0, costed_run_count: 0 });
   }
   return days;
