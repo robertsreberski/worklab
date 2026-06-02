@@ -7,7 +7,7 @@ import { shortHash } from "./context-cache.js";
 // separate is a deliberate choice some projects make (different audiences
 // for the two files), so silently concatenating would surprise users.
 const REPOSITORY_INSTRUCTION_FILES = ["CLAUDE.md", "AGENTS.md"];
-export const REPOSITORY_INSTRUCTIONS_MAX_CHARS = 64_000;
+const REPOSITORY_INSTRUCTIONS_MAX_CHARS = 64_000;
 const REPOSITORY_INSTRUCTIONS_PROMPT_SECTION = "Repository instructions";
 
 function truncationMarker(rawLength, capChars) {
