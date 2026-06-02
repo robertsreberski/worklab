@@ -22,19 +22,15 @@ function teamSpendSince(db, teamId, sinceMs) {
   return Number(row?.total || 0);
 }
 
-function workspaceSpendSince(db, sinceMs) {
-  const row = db.prepare(`
-    SELECT COALESCE(SUM(cost_usd), 0) AS total
-    FROM task_runs
-    WHERE started_at >= ? AND cost_usd IS NOT NULL
-  `).get(sinceMs);
-  return Number(row?.total || 0);
-}
-
 export function checkBudget({ db, agentName, teamId = null }) {
   const settings = readSettings(db);
   const since = startOfTodayUtcMs();
-  const workspaceSpend = workspaceSpendSince(db, since);
+  const workspaceSpendRow = db.prepare(`
+    SELECT COALESCE(SUM(cost_usd), 0) AS total
+    FROM task_runs
+    WHERE started_at >= ? AND cost_usd IS NOT NULL
+  `).get(since);
+  const workspaceSpend = Number(workspaceSpendRow?.total || 0);
   const workspaceBudget = Number(settings.daily_budget_usd || 0);
   if (workspaceBudget > 0 && workspaceSpend >= workspaceBudget) {
     return {
