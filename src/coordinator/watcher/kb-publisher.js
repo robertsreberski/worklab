@@ -47,14 +47,6 @@ function slugFromToolPayload(value) {
   return KB_SLUG_RE.test(slug) ? slug : null;
 }
 
-function eventContentBlocks(wrapper) {
-  const event = wrapper?.type === "sdk_event" && wrapper.event ? wrapper.event : wrapper;
-  if (event?.type === "tool_result") return [event];
-  const content = event?.message?.content;
-  if (Array.isArray(content)) return content;
-  return [];
-}
-
 function toolResultSucceeded(block) {
   if (block?.is_error || block?.isError) return false;
   const parsed = parseMaybeJson(block?.content ?? block?.output ?? block?.result);
@@ -67,7 +59,13 @@ function toolResultSucceeded(block) {
 export function successfulKbWriteFromEvents(events = []) {
   const calls = new Map();
   for (const wrapper of Array.isArray(events) ? events : []) {
-    for (const block of eventContentBlocks(wrapper)) {
+    const event = wrapper?.type === "sdk_event" && wrapper.event ? wrapper.event : wrapper;
+    const blocks = event?.type === "tool_result"
+      ? [event]
+      : Array.isArray(event?.message?.content)
+        ? event.message.content
+        : [];
+    for (const block of blocks) {
       if (
         block?.type === "tool_use"
         && (
