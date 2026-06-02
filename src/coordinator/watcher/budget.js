@@ -13,15 +13,6 @@ function startOfTodayUtcMs() {
   return d.getTime();
 }
 
-function teamSpendSince(db, teamId, sinceMs) {
-  const row = db.prepare(`
-    SELECT COALESCE(SUM(cost_usd), 0) AS total
-    FROM task_runs
-    WHERE team_id = ? AND started_at >= ? AND cost_usd IS NOT NULL
-  `).get(teamId, sinceMs);
-  return Number(row?.total || 0);
-}
-
 export function checkBudget({ db, agentName, teamId = null }) {
   const settings = readSettings(db);
   const since = startOfTodayUtcMs();
@@ -45,7 +36,12 @@ export function checkBudget({ db, agentName, teamId = null }) {
     const team = getTeamById(db, teamId);
     const cap = Number(team?.daily_budget_usd || 0);
     if (cap > 0) {
-      const spend = teamSpendSince(db, teamId, since);
+      const teamSpendRow = db.prepare(`
+        SELECT COALESCE(SUM(cost_usd), 0) AS total
+        FROM task_runs
+        WHERE team_id = ? AND started_at >= ? AND cost_usd IS NOT NULL
+      `).get(teamId, since);
+      const spend = Number(teamSpendRow?.total || 0);
       if (spend >= cap) {
         const label = team?.name || teamId;
         return {
