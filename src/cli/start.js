@@ -20,10 +20,6 @@ function buildUi(config = loadConfig()) {
   });
 }
 
-function hasBundledUi(config) {
-  return existsSync(join(config.repoRoot, "src", "ui", "dist", "index.html"));
-}
-
 export function ensureUiReady(
   config = loadConfig(),
   { skipBuild = false, build = buildUi, log = console.log } = {},
@@ -39,7 +35,7 @@ export function ensureUiReady(
     build(config);
     return { action: "build", reason: "source-ui" };
   }
-  if (hasBundledUi(config)) {
+  if (existsSync(join(config.repoRoot, "src", "ui", "dist", "index.html"))) {
     log("build: skipped (using bundled UI)");
     return { action: "skip", reason: "bundled-ui" };
   }
