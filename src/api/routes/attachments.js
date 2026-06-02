@@ -21,22 +21,20 @@ function sendError(res, error) {
   });
 }
 
-function uploadFilename(req) {
-  const raw = req.get("X-Attachment-Filename") || req.query.filename || "clipboard-image.png";
-  try {
-    return decodeURIComponent(String(raw));
-  } catch {
-    return String(raw);
-  }
-}
-
 export function registerAttachmentRoutes(app, { db, dataDir }) {
   app.post("/api/attachments/uploads", express.raw({ type: "image/*", limit: "10mb" }), (req, res) => {
     try {
+      const rawFilename = req.get("X-Attachment-Filename") || req.query.filename || "clipboard-image.png";
+      let filename;
+      try {
+        filename = decodeURIComponent(String(rawFilename));
+      } catch {
+        filename = String(rawFilename);
+      }
       const upload = createAttachmentUpload({
         dataDir,
         buffer: req.body,
-        filename: uploadFilename(req),
+        filename,
         mimeType: String(req.get("content-type") || "").split(";")[0],
       });
       res.status(201).json({ upload });
