@@ -3,8 +3,8 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { dirname, join, resolve, sep } from "node:path";
 import semver from "semver";
 
-export const DEFAULT_UPDATE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-export const DEFAULT_REGISTRY_URL = "https://registry.npmjs.org";
+const DEFAULT_UPDATE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const DEFAULT_REGISTRY_URL = "https://registry.npmjs.org";
 
 function nowMs(now = Date.now) {
   const value = typeof now === "function" ? now() : now;
