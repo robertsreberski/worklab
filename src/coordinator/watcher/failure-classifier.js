@@ -3,9 +3,14 @@
 // can post as a system comment so the next run starts with context about
 // the previous attempt's tool actions, changed files, and error text.
 
-function toolBlocksFromRunEvents(events = []) {
+export function compactRecoveryRunSummary({ runId, res, reason, providerInfo }) {
+  const diagnostics = res?.diagnostics || {};
+  const providerDetails = diagnostics?.error_details && typeof diagnostics.error_details === "object"
+    ? diagnostics.error_details
+    : {};
+  const providerDiagnostics = { ...providerDetails, ...diagnostics };
   const blocks = [];
-  for (const wrapper of Array.isArray(events) ? events : []) {
+  for (const wrapper of Array.isArray(res?.events) ? res.events : []) {
     const event = wrapper?.type === "sdk_event" && wrapper.event ? wrapper.event : wrapper;
     const content = event?.message?.content;
     if (!Array.isArray(content)) continue;
@@ -13,16 +18,6 @@ function toolBlocksFromRunEvents(events = []) {
       if (block?.type === "tool_use" || block?.type === "tool_result") blocks.push(block);
     }
   }
-  return blocks;
-}
-
-export function compactRecoveryRunSummary({ runId, res, reason, providerInfo }) {
-  const diagnostics = res?.diagnostics || {};
-  const providerDetails = diagnostics?.error_details && typeof diagnostics.error_details === "object"
-    ? diagnostics.error_details
-    : {};
-  const providerDiagnostics = { ...providerDetails, ...diagnostics };
-  const blocks = toolBlocksFromRunEvents(res?.events);
   const changedFiles = [];
   const actions = [];
   const failures = [];
