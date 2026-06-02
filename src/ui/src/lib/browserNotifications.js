@@ -26,11 +26,11 @@ function notificationApi(env = getGlobal()) {
   return env.Notification || null;
 }
 
-export function browserNotificationsSupported(env = getGlobal()) {
+function browserNotificationsSupported(env = getGlobal()) {
   return typeof notificationApi(env) === "function";
 }
 
-export function browserNotificationPermission(env = getGlobal()) {
+function browserNotificationPermission(env = getGlobal()) {
   const api = notificationApi(env);
   if (!api) return "unsupported";
   return api.permission || "default";
@@ -51,7 +51,7 @@ export function getPwaNotificationsEnabled(env = getGlobal()) {
   return safeStorage(env)?.getItem(PWA_NOTIFICATIONS_KEY) === "true";
 }
 
-export function setPwaNotificationsEnabled(enabled, env = getGlobal()) {
+function setPwaNotificationsEnabled(enabled, env = getGlobal()) {
   const storage = safeStorage(env);
   if (!storage) return false;
   storage.setItem(PWA_NOTIFICATIONS_KEY, enabled ? "true" : "false");
@@ -75,7 +75,7 @@ function isMobileClient(env = getGlobal()) {
   return touchPoints > 1 && (!width || width <= 1024);
 }
 
-export function notificationDiagnostics(env = getGlobal()) {
+function notificationDiagnostics(env = getGlobal()) {
   const mobile = isMobileClient(env);
   const standalone = isStandalonePwa(env);
   return {
@@ -119,7 +119,7 @@ export function browserNotificationSettings(env = getGlobal()) {
   };
 }
 
-export function pwaNotificationSettings(env = getGlobal()) {
+function pwaNotificationSettings(env = getGlobal()) {
   const diagnostics = notificationDiagnostics(env);
   const blockingReason = pwaBlockingReason(diagnostics);
   const supported = pwaNotificationsSupported(env);
