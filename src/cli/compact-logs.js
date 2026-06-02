@@ -147,14 +147,6 @@ function compactRow(db, row, events, options) {
   return compacted;
 }
 
-function databaseSize(dbPath) {
-  try {
-    return statSync(dbPath).size;
-  } catch {
-    return 0;
-  }
-}
-
 function eventBlobStats(db) {
   return db.prepare(`
     SELECT
@@ -252,10 +244,16 @@ export function compactLogs({
     db.close();
   }
 
+  let databaseSizeBytes = 0;
+  try {
+    databaseSizeBytes = statSync(dbPath).size;
+  } catch {
+    databaseSizeBytes = 0;
+  }
   return {
     dry_run: !apply,
     database: dbPath,
-    database_size_bytes: databaseSize(dbPath),
+    database_size_bytes: databaseSizeBytes,
     strategy,
     compaction_version: strategy === SQLITE_LOG_COMPACTION_STRATEGY ? SQLITE_LOG_COMPACTION_VERSION : 1,
     recompact,
