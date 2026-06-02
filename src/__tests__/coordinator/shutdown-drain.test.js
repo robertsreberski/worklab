@@ -31,6 +31,15 @@ function seedTaskAndRun(db, { mode = "execute" } = {}) {
   return { taskId, runId };
 }
 
+async function waitFor(predicate, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("timed out waiting for drain test condition");
+}
+
 describe("coordinator drain — clean drain within timeout", () => {
   it("worker emits drained, exits 0; row marked cancelled_shutdown with transcript_tail snapshot", async () => {
     const db = makeTestDb();
@@ -72,8 +81,10 @@ describe("coordinator drain — clean drain within timeout", () => {
       persistDebounceMs: 5,
     });
 
-    // Let some events flow before draining.
-    await new Promise((r) => setTimeout(r, 100));
+    // Let the transcript-worthy provider events flow before draining.
+    await waitFor(() => broker.broadcasts
+      .filter(({ ch, p }) => ch === runId && p?.type === "sdk_event")
+      .length >= 2);
     await handle.drain({ timeoutMs: 2000 });
     const result = await handle.done;
 
