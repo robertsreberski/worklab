@@ -30,13 +30,11 @@ import { registerAdminMcpRoutes } from "../mcp/admin/server.js";
 
 const DEFAULT_SLOW_API_MS = 250;
 
-function slowApiThresholdMs() {
-  const value = Number(process.env.WORKLAB_SLOW_API_MS || DEFAULT_SLOW_API_MS);
-  return Number.isFinite(value) && value >= 0 ? value : DEFAULT_SLOW_API_MS;
-}
-
 function apiTimingMiddleware(logger) {
-  const threshold = slowApiThresholdMs();
+  const thresholdValue = Number(process.env.WORKLAB_SLOW_API_MS || DEFAULT_SLOW_API_MS);
+  const threshold = Number.isFinite(thresholdValue) && thresholdValue >= 0
+    ? thresholdValue
+    : DEFAULT_SLOW_API_MS;
   return (req, res, next) => {
     if (!logger || threshold === 0 || req.path.endsWith("/stream")) {
       next();
