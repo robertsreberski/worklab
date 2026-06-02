@@ -137,7 +137,7 @@ function DailyCostChip() {
   );
 }
 
-export const STAGE_GROUPS = [
+const STAGE_GROUPS = [
   { key: "plan",            label: "Plan",        color: "var(--accent)",          icon: "◉" },
   { key: "execute",         label: "Execute",     color: "var(--status-progress)", icon: "○" },
   { key: "review",          label: "Review",      color: "var(--status-review)",   icon: "◆" },
