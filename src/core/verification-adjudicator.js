@@ -74,7 +74,7 @@ function targetFromProvider({ provider, modelName, modelRow = null }) {
   };
 }
 
-export function resolveVerificationAdjudicatorTarget({ db, dataDir, modelRef }) {
+function resolveVerificationAdjudicatorTarget({ db, dataDir, modelRef }) {
   if (!db) throw new Error("verification adjudicator database is unavailable");
   const parsed = parseVerificationAdjudicatorModelReference(modelRef);
   if (parsed.kind === "vercel") {
