@@ -39,13 +39,6 @@ function runtimeModelMetadata(model, group, availability) {
   };
 }
 
-function providerUnavailableReason(status) {
-  if (!status || status.ok !== false) return null;
-  if (status.error) return status.error;
-  if (status.status) return `HTTP ${status.status}`;
-  return "Provider unavailable";
-}
-
 export function registerModelRoutes(app, { db, dataDir }) {
   app.get("/api/models/available", async (_req, res) => {
     const groups = getBuiltinModelGroups().filter((group) => group.id !== "pi:openai");
@@ -78,7 +71,9 @@ export function registerModelRoutes(app, { db, dataDir }) {
           provider = listProviders({ db, dataDir, enabledOnly: true }).find((item) => item.id === provider.id) || provider;
         }
       }
-      const unavailableReason = providerUnavailableReason(provider.status);
+      const unavailableReason = provider.status?.ok === false
+        ? (provider.status.error || (provider.status.status ? `HTTP ${provider.status.status}` : "Provider unavailable"))
+        : null;
       const providerAvailable = !unavailableReason;
       const models = listModels({ db, providerId: provider.id, enabledOnly: true }).flatMap((model) => {
         const capabilities = buildModelCapabilities(provider.provider_type, model.model_name, model.capabilities);
