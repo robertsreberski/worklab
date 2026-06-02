@@ -19,7 +19,7 @@ export { LivePulse } from "./LivePulse.jsx";
 export { RadioGroup } from "./RadioGroup.jsx";
 export { SearchField } from "./SearchField.jsx";
 export { Select } from "./Select.jsx";
-export { ScheduleBuilder, defaultScheduleRunAt, normalizeScheduleTrigger, scheduleTimeValue, triggerWithTime } from "./ScheduleBuilder.jsx";
+export { ScheduleBuilder, normalizeScheduleTrigger, scheduleTimeValue, triggerWithTime } from "./ScheduleBuilder.jsx";
 export { ShimmerBar } from "./ShimmerBar.jsx";
 export { Switch } from "./Switch.jsx";
 export { Tabs } from "./Tabs.jsx";

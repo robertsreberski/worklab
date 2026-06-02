@@ -21,7 +21,7 @@ const WEEKDAYS = [
   { value: 6, short: "Sat", label: "Saturday" },
 ];
 
-export function defaultScheduleRunAt(now = Date.now()) {
+function defaultScheduleRunAt(now = Date.now()) {
   const date = new Date(now + 3_600_000);
   date.setSeconds(0, 0);
   return date.getTime();
