@@ -744,19 +744,6 @@ export function ensureTeamRootTask(db, { teamId, projectId, now = Date.now() } =
   return root;
 }
 
-// Ensure roots for every project this team is currently assigned to. Called
-// after team creation/update or after a project is reassigned.
-export function ensureAllTeamRootTasks(db, teamId, now = Date.now()) {
-  const projects = listProjectsForTeam(db, teamId);
-  const out = [];
-  for (const p of projects) {
-    if (p.archived) continue;
-    const root = ensureTeamRootTask(db, { teamId, projectId: p.id, now });
-    if (root) out.push(root);
-  }
-  return out;
-}
-
 // Schedule a lead-cycle run for (team, project). Caller is responsible for
 // gating on hasInFlightLeadCycle when debouncing event triggers.
 //

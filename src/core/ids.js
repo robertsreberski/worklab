@@ -21,7 +21,6 @@ export const newAutomationTriggerId = () => nid21();
 export const newSlackInboundEventId = () => nid21();
 export const newSlackDeliveryId = () => nid21();
 export const newAssistantMessageId = () => nid21();
-export const newAssistantThreadId = () => nid12();
 export const newPushSubscriptionId = () => nid21();
 export const newTeamId = () => nid12();
 export const newGoalId = () => nid21();
