@@ -47,7 +47,7 @@ function cleanText(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-export function decisionTone(decision) {
+function decisionTone(decision) {
   if (decision === "advance" || decision === "approve") return "ok";
   if (decision === "reject" || decision === "block" || decision === "failed" || decision === "error" || decision === "abandoned") return "error";
   return "";
