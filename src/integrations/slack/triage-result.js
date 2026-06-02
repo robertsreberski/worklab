@@ -29,7 +29,7 @@ export const TRIAGE_RESULT_JSON_SCHEMA = {
   ],
 };
 
-export const triageResultSchema = z.object({
+const triageResultSchema = z.object({
   schema: z.literal("worklab.slack.triage.v1"),
   importance: z.enum(["low", "normal", "high", "urgent"]).default("normal"),
   summary: z.string().min(1),
