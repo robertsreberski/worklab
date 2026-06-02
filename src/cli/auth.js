@@ -30,7 +30,7 @@ function authPositionals(args = []) {
   return positionals;
 }
 
-export function parseAuthArgs(args = []) {
+function parseAuthArgs(args = []) {
   const positionals = authPositionals(args);
   if (positionals.length !== 2 || positionals[0] !== "pi" || positionals[1] !== "openai-codex") {
     throw new Error("usage: worklab auth pi openai-codex [options]");
