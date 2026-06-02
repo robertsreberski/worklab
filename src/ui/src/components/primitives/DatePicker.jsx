@@ -8,7 +8,7 @@ import { PopoverPortal } from "./PopoverPortal.jsx";
 const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const MONTH_FORMATTER = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
 
-export function pad2(value) {
+function pad2(value) {
   return String(value).padStart(2, "0");
 }
 
@@ -24,7 +24,7 @@ export function localTimeValue(date = new Date()) {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-export function parseDateValue(value) {
+function parseDateValue(value) {
   const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return null;
   const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
