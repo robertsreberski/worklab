@@ -125,7 +125,7 @@ export function serviceFilePath(p = platform()) {
   return null;
 }
 
-export function renderServiceFile(config = loadConfig()) {
+function renderServiceFile(config = loadConfig()) {
   const params = serviceParams(config);
   const p = platform();
   if (p === "darwin") return launchdPlist(params);
