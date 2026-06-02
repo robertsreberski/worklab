@@ -47,14 +47,6 @@ function slugFromToolPayload(value) {
   return KB_SLUG_RE.test(slug) ? slug : null;
 }
 
-function isWorklabKbWriteTool(name) {
-  return name === "kb_create"
-    || name === "kb_update"
-    || name === "worklab_kb_create"
-    || name === "worklab_kb_update"
-    || /^mcp__worklab__kb_(create|update)$/.test(String(name || ""));
-}
-
 function eventContentBlocks(wrapper) {
   const event = wrapper?.type === "sdk_event" && wrapper.event ? wrapper.event : wrapper;
   if (event?.type === "tool_result") return [event];
@@ -76,7 +68,16 @@ export function successfulKbWriteFromEvents(events = []) {
   const calls = new Map();
   for (const wrapper of Array.isArray(events) ? events : []) {
     for (const block of eventContentBlocks(wrapper)) {
-      if (block?.type === "tool_use" && isWorklabKbWriteTool(block.name)) {
+      if (
+        block?.type === "tool_use"
+        && (
+          block.name === "kb_create"
+          || block.name === "kb_update"
+          || block.name === "worklab_kb_create"
+          || block.name === "worklab_kb_update"
+          || /^mcp__worklab__kb_(create|update)$/.test(String(block.name || ""))
+        )
+      ) {
         const id = block.id || block.tool_use_id;
         if (id) calls.set(id, { slug: slugFromToolPayload(block.input || block.arguments) });
         continue;
