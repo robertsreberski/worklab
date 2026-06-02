@@ -54,7 +54,7 @@ function includesQuery(values, query) {
   return values.some((value) => String(value || "").toLowerCase().includes(q));
 }
 
-export function compactAllowlist(row, listKey, modeKey) {
+function compactAllowlist(row, listKey, modeKey) {
   const list = Array.isArray(row?.[listKey]) ? row[listKey] : [];
   return {
     mode: row?.[modeKey] || "all",
