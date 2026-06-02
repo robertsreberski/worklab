@@ -145,7 +145,7 @@ function slackMcpServers(config) {
   };
 }
 
-export function createThrottledSlackLogger(logger, { throttleMs = 30_000, now = Date.now } = {}) {
+function createThrottledSlackLogger(logger, { throttleMs = 30_000, now = Date.now } = {}) {
   if (!logger) return undefined;
   const lastByKey = new Map();
   const write = (level, args) => {
@@ -172,7 +172,7 @@ export function createThrottledSlackLogger(logger, { throttleMs = 30_000, now = 
   };
 }
 
-export function createSlackApp({ config, logger }) {
+function createSlackApp({ config, logger }) {
   return new App({
     token: config.slackBotToken,
     appToken: config.slackAppToken,
@@ -199,7 +199,7 @@ function withTimeout(promise, timeoutMs, reason) {
   });
 }
 
-export class WorklabSlackService {
+class WorklabSlackService {
   constructor({
     db,
     config,
