@@ -20,14 +20,6 @@ export function hasFlag(args = [], name) {
   return args.includes(name);
 }
 
-function normalizePort(value, name = "--port") {
-  const port = Number(value);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error(`${name} must be an integer from 1 to 65535`);
-  }
-  return String(port);
-}
-
 function requireNonEmpty(value, name) {
   if (!String(value || "").trim()) throw new Error(`${name} requires a value`);
   return value;
@@ -43,7 +35,13 @@ function normalizeDrainTimeout(value, name = "--drain-timeout-ms") {
 
 export function applyConfigArgs(args = [], env = process.env) {
   const port = argValue(args, "--port");
-  if (port !== undefined) env.WORKLAB_PORT = normalizePort(port);
+  if (port !== undefined) {
+    const normalizedPort = Number(port);
+    if (!Number.isInteger(normalizedPort) || normalizedPort < 1 || normalizedPort > 65535) {
+      throw new Error("--port must be an integer from 1 to 65535");
+    }
+    env.WORKLAB_PORT = String(normalizedPort);
+  }
 
   const host = argValue(args, "--host");
   if (host !== undefined) env.WORKLAB_HOST = requireNonEmpty(host, "--host");
