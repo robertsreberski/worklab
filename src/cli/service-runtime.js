@@ -36,11 +36,6 @@ export function configuredNodeFromServiceFile(content, p = platform()) {
   return null;
 }
 
-function readServiceNode(file, p) {
-  if (!file || !existsSync(file)) return null;
-  return configuredNodeFromServiceFile(readFileSync(file, "utf8"), p);
-}
-
 function nodeInfo(nodePath) {
   if (!nodePath) return { ok: false, error: "service node is not configured" };
   try {
@@ -74,7 +69,9 @@ export function inspectServiceRuntime(config) {
   const p = platform();
   const params = serviceParams(config);
   const file = serviceFilePath(p);
-  const configuredNode = readServiceNode(file, p);
+  const configuredNode = file && existsSync(file)
+    ? configuredNodeFromServiceFile(readFileSync(file, "utf8"), p)
+    : null;
   return {
     platform: p,
     file,
