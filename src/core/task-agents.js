@@ -1,4 +1,4 @@
-export function runnableStageForAgent(stage) {
+function runnableStageForAgent(stage) {
   return stage === "done" ? "execute" : stage;
 }
 
