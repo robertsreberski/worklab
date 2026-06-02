@@ -277,7 +277,7 @@ export function applyTeamGoalRefinement(db, {
   return audit;
 }
 
-export function initialTeamGoalContract(team, now = Date.now()) {
+function initialTeamGoalContract(team, now = Date.now()) {
   return normalizeTeamGoalContract({}, { teamGoal: team?.goal || "", now });
 }
 
@@ -314,7 +314,7 @@ export function compactTeam(row) {
   };
 }
 
-export function normalizeTeamSlug(value) {
+function normalizeTeamSlug(value) {
   if (value === undefined || value === null || value === "") return null;
   const slug = String(value).trim().toLowerCase();
   if (!isValidSlug(slug)) {
