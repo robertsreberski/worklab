@@ -13,15 +13,6 @@ export function listTaskInstructionAttachments(db, taskId) {
   `).all(taskId);
 }
 
-export function listTaskAttachments(db, taskId) {
-  return db.prepare(`
-    SELECT *
-    FROM task_attachments
-    WHERE task_id = ?
-    ORDER BY created_at, id
-  `).all(taskId);
-}
-
 export function listAttachmentsByCommentIds(db, commentIds) {
   const ids = [...new Set((commentIds || []).filter(Boolean))];
   if (!ids.length) return [];

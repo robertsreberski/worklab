@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir, platform, userInfo } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../core/index.js";
-import { applyConfigArgs } from "./args.js";
+import { applyConfigArgs, hasFlag } from "./args.js";
 import { gracefulStopCoordinator, gracefulStopTimeoutMs } from "./service-drain.js";
 
 const LAUNCHD_LABEL = "ai.worklab";
@@ -119,10 +119,6 @@ WantedBy=default.target
 `;
 }
 
-function dryRun(args) {
-  return args.includes("--dry-run");
-}
-
 export function serviceFilePath(p = platform()) {
   if (p === "darwin") return launchdFilePath();
   if (p === "linux") return join(homedir(), ".config", "systemd", "user", "worklab.service");
@@ -233,7 +229,7 @@ export async function stopUserService({ config = loadConfig() } = {}) {
 export async function installService(args = []) {
   applyConfigArgs(args);
   const config = loadConfig();
-  if (dryRun(args)) {
+  if (hasFlag(args, "--dry-run")) {
     console.log(renderServiceFile(config));
     return;
   }

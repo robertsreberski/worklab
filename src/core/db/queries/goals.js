@@ -8,26 +8,6 @@ export function getGoalByTeamProject(db, { teamId, projectId } = {}) {
   return db.prepare("SELECT * FROM goals WHERE team_id = ? AND project_id = ?").get(teamId, projectId);
 }
 
-export function listGoalsForTeam(db, teamId, { includeArchived = true } = {}) {
-  if (!teamId) return [];
-  return db.prepare(`
-    SELECT g.*
-    FROM goals g
-    JOIN projects p ON p.id = g.project_id
-    WHERE g.team_id = ?
-      ${includeArchived ? "" : "AND p.archived = 0"}
-    ORDER BY
-      CASE g.status
-        WHEN 'in_progress' THEN 0
-        WHEN 'blocked' THEN 1
-        WHEN 'complete' THEN 2
-        ELSE 3
-      END,
-      COALESCE(g.last_lead_at, g.updated_at) DESC,
-      p.name COLLATE NOCASE ASC
-  `).all(teamId);
-}
-
 export function listGoals(db, { includeArchived = true, limit = 500 } = {}) {
   return db.prepare(`
     SELECT g.*
@@ -48,35 +28,6 @@ export function listGoals(db, { includeArchived = true, limit = 500 } = {}) {
       p.name COLLATE NOCASE ASC
     LIMIT ?
   `).all(limit);
-}
-
-export function searchGoalsForMention(db, query, limit) {
-  const q = String(query || "").trim();
-  if (!q) return [];
-  const like = `%${q}%`;
-  return db.prepare(`
-    SELECT
-      g.id,
-      g.status,
-      g.project_id,
-      g.team_id,
-      g.root_task_id,
-      p.name AS project_name,
-      p.slug AS project_slug,
-      t.name AS team_name,
-      t.slug AS team_slug
-    FROM goals g
-    LEFT JOIN projects p ON p.id = g.project_id
-    LEFT JOIN teams t ON t.id = g.team_id
-    WHERE g.id LIKE ?
-       OR g.root_task_id LIKE ?
-       OR p.name LIKE ?
-       OR p.slug LIKE ?
-       OR t.name LIKE ?
-       OR t.slug LIKE ?
-    ORDER BY COALESCE(g.last_lead_at, g.updated_at) DESC
-    LIMIT ?
-  `).all(like, like, like, like, like, like, limit);
 }
 
 export function upsertGoal(db, {
@@ -198,18 +149,6 @@ export function listLeadCyclesByGoal(db, goalId, { limit = 50 } = {}) {
     ORDER BY COALESCE(started_at, created_at) DESC, rowid DESC
     LIMIT ?
   `).all(goalId, limit);
-}
-
-export function listLeadCyclesByTeam(db, teamId, { limit = 50 } = {}) {
-  if (!teamId) return [];
-  return db.prepare(`
-    SELECT lc.*, t.title AS task_title
-    FROM lead_cycles lc
-    LEFT JOIN tasks t ON t.id = lc.task_id
-    WHERE lc.team_id = ?
-    ORDER BY COALESCE(lc.started_at, lc.created_at) DESC, lc.rowid DESC
-    LIMIT ?
-  `).all(teamId, limit);
 }
 
 export function listDueLeadCycleFollowups(db, { now = Date.now(), limit = 20 } = {}) {

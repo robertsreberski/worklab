@@ -20,7 +20,3 @@ export function slackMessageFilterReason(event, config = {}) {
   if (allowed.size > 0 && !allowed.has(event.channel)) return "channel_not_allowlisted";
   return null;
 }
-
-export function shouldProcessSlackMessage(event, config = {}) {
-  return slackMessageFilterReason(event, config) === null;
-}

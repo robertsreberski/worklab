@@ -1,52 +1,10 @@
-// KB-publisher helpers. Two responsibilities:
-//
-//   1. Build the canonical Worklab-KB entry that mirrors a run's rich final
-//      answer (slug / tags / title / body / link helpers).
-//   2. Detect whether the run already wrote a KB entry through Worklab's
-//      kb_create / kb_update tools, so the watcher can avoid double-writing.
-//
-// Pure functions; no DB access. The watcher's outer loop calls these and
-// then dispatches kbCreate / kbUpdate via core/kb.js.
+// KB-publisher helpers detect whether a run already wrote a KB entry through
+// Worklab's kb_create / kb_update tools, so the watcher can avoid double-writing.
 
-import { slugify } from "../../core/slugs.js";
 import { safeParseJson } from "./run-handler.js";
 
 const KB_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const KNOWLEDGE_LINK_RE = /#\/knowledge\/([a-z0-9]+(?:-[a-z0-9]+)*)/g;
-
-export function runResultKbSlug(runId) {
-  return slugify(`run-${runId}`, "run-result");
-}
-
-export function runResultKbTags({ task, stage, agentName }) {
-  const taskRef = task?.task_key || task?.id || "task";
-  return [
-    "run-result",
-    `task-${slugify(taskRef, "task")}`,
-    slugify(stage || "run", "run"),
-    `agent-${slugify(agentName || "agent", "agent")}`,
-  ];
-}
-
-export function runResultKbTitle({ task, agentName }) {
-  const taskRef = task?.task_key || task?.title || "Task";
-  return `${taskRef} final answer${agentName ? ` from ${agentName}` : ""}`;
-}
-
-export function runResultKbBody({ task, runId, stage, agentName, richText }) {
-  const taskRef = task?.task_key || task?.id || "task";
-  const taskTitle = task?.title ? ` - ${task.title}` : "";
-  return [
-    `Source task: [${taskRef}${taskTitle}](#/tasks/${encodeURIComponent(taskRef)})`,
-    `Source run: [${runId}](/api/runs/${encodeURIComponent(runId)}/raw-log)`,
-    `Stage: ${stage || "execute"}`,
-    `Agent: ${agentName || "agent"}`,
-    "",
-    "---",
-    "",
-    richText,
-  ].join("\n");
-}
 
 export function appendKbLink(body, slug) {
   const clean = String(body || "").trim();

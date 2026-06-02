@@ -20,27 +20,6 @@ export function listEnabledAgentNames(db) {
   return db.prepare("SELECT name FROM agents WHERE enabled = 1 ORDER BY name").all().map((row) => row.name);
 }
 
-export function listAgentsByNamePrefix(db, query, limit) {
-  const q = String(query || "").trim();
-  if (!q) return [];
-  const like = `${q.replace(/[%_]/g, "\\$&")}%`;
-  const contains = `%${q.replace(/[%_]/g, "\\$&")}%`;
-  return db.prepare(`
-    SELECT name, display_name, description, enabled
-    FROM agents
-    WHERE name LIKE ? ESCAPE '\\'
-       OR display_name LIKE ? ESCAPE '\\'
-    ORDER BY
-      CASE WHEN name = ? THEN 0
-           WHEN name LIKE ? ESCAPE '\\' THEN 1
-           WHEN display_name LIKE ? ESCAPE '\\' THEN 2
-           ELSE 3 END,
-      enabled DESC,
-      name
-    LIMIT ?
-  `).all(contains, contains, q, like, like, limit);
-}
-
 export function getAgentSelfReviewFlag(db, name) {
   return db.prepare("SELECT allow_self_review FROM agents WHERE name = ?").get(name);
 }

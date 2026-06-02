@@ -107,7 +107,3 @@ export function createSdkEventCoalescer(emit, {
     flush,
   };
 }
-
-export const __eventCoalescerTest = {
-  mergeStreamingText,
-};

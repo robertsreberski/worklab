@@ -153,10 +153,6 @@ function compactRow(db, row, events, options) {
   return compacted;
 }
 
-function compactedEvents(events, options) {
-  return compactEvents(events, options);
-}
-
 function databaseSize(dbPath) {
   try {
     return statSync(dbPath).size;
@@ -236,7 +232,7 @@ export function compactLogs({
       const before = Number(row.bytes || 0);
       const compacted = apply
         ? compactRow(db, row, decision.events, { strategy, keepEvents, maxEventBytes, maxLogBytes, now })
-        : compactedEvents(decision.events, { strategy, keepEvents, maxEventBytes, maxLogBytes, now });
+        : compactEvents(decision.events, { strategy, keepEvents, maxEventBytes, maxLogBytes, now });
       bytesBefore += before;
       bytesAfter += compacted.bytes;
       compactedCount += apply ? 1 : 0;

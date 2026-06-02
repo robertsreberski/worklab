@@ -2,16 +2,13 @@ import { execFileSync } from "node:child_process";
 import { existsSync, unlinkSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
-
-function dryRun(args) {
-  return args.includes("--dry-run");
-}
+import { hasFlag } from "./args.js";
 
 export async function uninstallService(args = []) {
   const p = platform();
   if (p === "darwin") {
     const file = join(homedir(), "Library", "LaunchAgents", "ai.worklab.plist");
-    if (dryRun(args)) {
+    if (hasFlag(args, "--dry-run")) {
       console.log(`launchctl unload -w ${file}`);
       console.log(`rm -f ${file}`);
       return;
@@ -26,7 +23,7 @@ export async function uninstallService(args = []) {
 
   if (p === "linux") {
     const file = join(homedir(), ".config", "systemd", "user", "worklab.service");
-    if (dryRun(args)) {
+    if (hasFlag(args, "--dry-run")) {
       console.log("systemctl --user disable --now worklab");
       console.log(`rm -f ${file}`);
       console.log("systemctl --user daemon-reload");

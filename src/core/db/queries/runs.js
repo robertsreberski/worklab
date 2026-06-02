@@ -21,31 +21,6 @@ export function getRunCoreFields(db, runId) {
     .get(runId);
 }
 
-export function searchRunsForMention(db, query, limit) {
-  const q = String(query || "").trim();
-  if (!q) return [];
-  const like = `%${q}%`;
-  return db.prepare(`
-    SELECT
-      r.id,
-      r.task_id,
-      r.mode,
-      r.stage,
-      r.status,
-      r.process_status,
-      r.started_at,
-      t.task_key,
-      t.title AS task_title
-    FROM task_runs r
-    LEFT JOIN tasks t ON t.id = r.task_id
-    WHERE r.id LIKE ?
-       OR t.task_key LIKE ?
-       OR t.title LIKE ?
-    ORDER BY r.started_at DESC, r.rowid DESC
-    LIMIT ?
-  `).all(like, like, like, limit);
-}
-
 export function getRunDiagnostics(db, runId) {
   return db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId);
 }
@@ -130,14 +105,6 @@ export function setRunRuntimeTelemetry(db, runId, { capabilitiesUsed, failoverHi
   if (!set.length) return;
   params.push(runId);
   db.prepare(`UPDATE task_runs SET ${set.join(", ")} WHERE id = ?`).run(...params);
-}
-
-export function getRunRuntimeTelemetry(db, runId) {
-  return db
-    .prepare(
-      "SELECT capabilities_used_json, failover_history_json, tool_usage_summary_json FROM task_runs WHERE id = ?",
-    )
-    .get(runId);
 }
 
 export function deleteRunById(db, runId) {
