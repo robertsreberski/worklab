@@ -84,11 +84,11 @@ export function comparePackageVersions(currentVersion, latestVersion) {
   return { status: "current", update_available: false };
 }
 
-export function registryLatestUrl(packageName, registryUrl = DEFAULT_REGISTRY_URL) {
+function registryLatestUrl(packageName, registryUrl = DEFAULT_REGISTRY_URL) {
   return `${registryUrl.replace(/\/+$/, "")}/${String(packageName).replace("/", "%2F")}/latest`;
 }
 
-export async function fetchLatestPackage({ packageName, fetchImpl = fetch, registryUrl = DEFAULT_REGISTRY_URL } = {}) {
+async function fetchLatestPackage({ packageName, fetchImpl = fetch, registryUrl = DEFAULT_REGISTRY_URL } = {}) {
   const url = registryLatestUrl(packageName, registryUrl);
   const res = await fetchImpl(url, { headers: { Accept: "application/json" } });
   if (!res?.ok) {
@@ -104,7 +104,7 @@ export async function fetchLatestPackage({ packageName, fetchImpl = fetch, regis
   };
 }
 
-export function resolveNpmCliPath(nodePath = process.execPath) {
+function resolveNpmCliPath(nodePath = process.execPath) {
   const prefix = resolve(dirname(nodePath), "..");
   const candidates = [
     join(prefix, "lib", "node_modules", "npm", "bin", "npm-cli.js"),
