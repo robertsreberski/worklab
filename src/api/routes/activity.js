@@ -18,19 +18,6 @@ function parseTimeFilter(value, { endOfDay = false } = {}) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function emptySummary() {
-  return {
-    run_count: 0,
-    costed_run_count: 0,
-    unpriced_run_count: 0,
-    total_cost_usd: 0,
-    average_cost_usd: null,
-    running_count: 0,
-    error_count: 0,
-    cost_by_day: [],
-  };
-}
-
 function startOfUtcDay(value) {
   const date = new Date(value);
   date.setUTCHours(0, 0, 0, 0);
@@ -118,16 +105,16 @@ export function registerActivityRoutes(app, { db }) {
     );
     const costedRunCount = Number(row?.costed_run_count || 0);
     const totalCostUsd = Number(row?.total_cost_usd || 0);
-    const summary = row ? {
-      run_count: Number(row.run_count || 0),
+    const summary = {
+      run_count: Number(row?.run_count || 0),
       costed_run_count: costedRunCount,
-      unpriced_run_count: Number(row.unpriced_run_count || 0),
+      unpriced_run_count: Number(row?.unpriced_run_count || 0),
       total_cost_usd: totalCostUsd,
       average_cost_usd: costedRunCount > 0 ? totalCostUsd / costedRunCount : null,
-      running_count: Number(row.running_count || 0),
-      error_count: Number(row.error_count || 0),
-      cost_by_day: costByDay,
-    } : emptySummary();
+      running_count: Number(row?.running_count || 0),
+      error_count: Number(row?.error_count || 0),
+      cost_by_day: row ? costByDay : [],
+    };
 
     res.json({ items, nextCursor, summary });
   });
