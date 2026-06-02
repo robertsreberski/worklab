@@ -53,12 +53,12 @@ const TOOL_POLICY_VALUES = new Set(PLANNING_TOOL_POLICY_OPTIONS.map((option) => 
 const READ_ONLY_TOOLS = ["Read", "Glob", "Grep", "WebFetch", "WebSearch"];
 const READ_ONLY_SHELL_TOOLS = [...READ_ONLY_TOOLS, "Bash"];
 
-export function normalizePlanningHarness(value) {
+function normalizePlanningHarness(value) {
   const text = String(value || "").trim();
   return HARNESS_VALUES.has(text) ? text : DEFAULT_PLANNING_HARNESS;
 }
 
-export function normalizePlanningToolPolicy(value) {
+function normalizePlanningToolPolicy(value) {
   const text = String(value || "").trim();
   return TOOL_POLICY_VALUES.has(text) ? text : DEFAULT_PLANNING_TOOL_POLICY;
 }
