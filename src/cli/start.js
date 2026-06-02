@@ -20,11 +20,6 @@ function buildUi(config = loadConfig()) {
   });
 }
 
-function hasUiBuildInputs(config) {
-  return existsSync(join(config.repoRoot, "src", "ui", "src"))
-    && existsSync(join(config.repoRoot, "src", "ui", "vite.config.js"));
-}
-
 function hasBundledUi(config) {
   return existsSync(join(config.repoRoot, "src", "ui", "dist", "index.html"));
 }
@@ -37,7 +32,10 @@ export function ensureUiReady(
     log("build: skipped");
     return { action: "skip", reason: "flag" };
   }
-  if (hasUiBuildInputs(config)) {
+  if (
+    existsSync(join(config.repoRoot, "src", "ui", "src"))
+    && existsSync(join(config.repoRoot, "src", "ui", "vite.config.js"))
+  ) {
     build(config);
     return { action: "build", reason: "source-ui" };
   }
