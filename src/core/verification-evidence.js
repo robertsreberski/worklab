@@ -237,7 +237,7 @@ function readRawLogEvents(db, runId) {
   }
 }
 
-export function collectToolSignals(db, runIds) {
+function collectToolSignals(db, runIds) {
   const signals = [];
   for (const runId of runIds.filter(Boolean)) {
     const rawEvents = readRawLogEvents(db, runId);
