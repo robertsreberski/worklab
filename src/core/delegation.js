@@ -27,7 +27,7 @@ export function delegationDepth(db, task) {
   return depth;
 }
 
-export function enabledDelegationAgents(db) {
+function enabledDelegationAgents(db) {
   return db.prepare(`
     SELECT name, display_name, description, sdk, model, effort
     FROM agents
