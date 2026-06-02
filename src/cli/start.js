@@ -7,7 +7,7 @@ import { assertServiceRuntimeReady, serviceErrorLogTail } from "./service-runtim
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-export function buildUi(config = loadConfig()) {
+function buildUi(config = loadConfig()) {
   execFileSync("npm", ["run", "build:ui"], {
     cwd: config.repoRoot,
     stdio: "inherit",
