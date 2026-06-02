@@ -544,7 +544,7 @@ function collectTextJsonCandidates(text) {
   return candidates;
 }
 
-export function parseWorklabResultsFromText(text, fallback = {}) {
+function parseWorklabResultsFromText(text, fallback = {}) {
   return parseWorklabResultCandidates(text, fallback).results;
 }
 
