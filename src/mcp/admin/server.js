@@ -13,7 +13,7 @@ function bearer(req) {
   return match ? match[1].trim() : "";
 }
 
-export function createAdminMcpServer(context) {
+function createAdminMcpServer(context) {
   const handlers = createAdminToolHandlers(context);
   const server = new Server(
     { name: "worklab-admin", version: "0.1.0" },
