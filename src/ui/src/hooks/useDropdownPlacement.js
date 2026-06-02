@@ -10,7 +10,7 @@
 
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
 
-export const DEFAULT_GAP = 4;
+const DEFAULT_GAP = 4;
 export const DEFAULT_MIN_SPACE = 120;
 export const DEFAULT_MARGIN = 8;
 
