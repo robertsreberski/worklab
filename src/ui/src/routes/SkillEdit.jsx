@@ -35,7 +35,7 @@ const SKILL_EDIT_SECTIONS = [
   { id: "skill-edit-body", num: "02", label: "Body", meta: "Playbook" },
 ];
 
-export function SkillFileTree({ files = [] }) {
+function SkillFileTree({ files = [] }) {
   return <FileTree files={files} ariaLabel="Skill files" emptyText="No files found." highlightSkillFile />;
 }
 
