@@ -639,10 +639,3 @@ export async function onboard(args = process.argv.slice(3), deps = {}) {
     }
   }
 }
-
-export const _private = {
-  commandPath,
-  configArgs,
-  createPrompts,
-  providerRoot,
-};

@@ -86,17 +86,6 @@ export function computeViewportState({
   };
 }
 
-export function currentViewportHeight(env = globalThis) {
-  const win = windowForEnv(env);
-  const doc = documentForEnv(env);
-  return computeViewportState({
-    innerHeight: win?.innerHeight,
-    clientHeight: doc?.documentElement?.clientHeight,
-    visualViewport: win?.visualViewport,
-    activeElement: doc?.activeElement,
-  }).appHeight;
-}
-
 function forceLayoutAfterKeyboardDismiss(env) {
   // Force a full document reflow. Reflowing only .app-body misses
   // position-fixed overlays like .assistant-dock that draw on top of it.

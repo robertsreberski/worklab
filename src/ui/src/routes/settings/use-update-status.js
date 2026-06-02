@@ -8,10 +8,6 @@ export function latestUpdateVersion(status) {
   return status?.package?.latest_version || "";
 }
 
-export function currentUpdateVersion(status) {
-  return status?.package?.current_version || "";
-}
-
 export function updateStateForBadge(status, { busy = false, error = null } = {}) {
   if (error) return "error";
   if (busy && !status) return "checking";

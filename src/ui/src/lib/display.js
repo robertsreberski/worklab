@@ -1,41 +1,3 @@
-export const TASK_STATUS_LABELS = {
-  plan: "Plan",
-  execute: "Execute",
-  review: "Review",
-  awaiting_children: "Waiting",
-  awaiting_user: "Needs input",
-  blocked: "Blocked",
-  done: "Done",
-  running: "Running",
-  queued: "Queued",
-  succeeded: "Succeeded",
-  complete: "Complete",
-  failed: "Failed",
-  error: "Error",
-  cancelled: "Cancelled",
-  abandoned: "Abandoned",
-};
-
-export const STATUS_TONES = {
-  plan: "blue",
-  execute: "teal",
-  review: "blue",
-  awaiting_children: "yellow",
-  awaiting_user: "red",
-  blocked: "red",
-  done: "green",
-  running: "yellow",
-  queued: "muted",
-  succeeded: "green",
-  complete: "green",
-  error: "red",
-  failed: "red",
-  abandoned: "red",
-  cancelled: "muted",
-  disabled: "muted",
-  enabled: "green",
-};
-
 export function humanizeSlug(value) {
   return String(value || "")
     .split("-")
@@ -132,11 +94,6 @@ export function modelOptionDescription(model = {}, group = {}) {
   const provider = model.provider_name || model.provider || model.provider_type || group.provider || group.provider_type;
   if (provider && !includesPart(parts, provider)) parts.push(provider);
   return parts.join(" / ") || undefined;
-}
-
-export function shortDate(value) {
-  if (!value) return "-";
-  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 export function taskDisplayKey(taskOrId) {

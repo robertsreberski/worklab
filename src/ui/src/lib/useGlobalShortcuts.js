@@ -2,7 +2,7 @@
 // Text-entry surfaces win over list shortcuts; global shortcuts disable while
 // a modal or menu owns focus, except Esc.
 
-import { useEffect, useState, useRef } from "preact/hooks";
+import { useEffect, useRef } from "preact/hooks";
 
 function isTextTarget(target) {
   if (!target) return false;
@@ -61,15 +61,4 @@ export function useGlobalShortcuts(map = {}) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-}
-
-// Quick hook for the keyboard-help drawer: returns { open, setOpen } and
-// registers ? to open it. Consumers render <KeyboardHelpDrawer open={open} …/>.
-export function useKeyboardHelp() {
-  const [open, setOpen] = useState(false);
-  useGlobalShortcuts({
-    "?": () => setOpen(true),
-    Escape: () => setOpen(false),
-  });
-  return { open, setOpen };
 }
