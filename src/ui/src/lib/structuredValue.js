@@ -1,4 +1,4 @@
-export function safeParseJson(value) {
+function safeParseJson(value) {
   if (typeof value !== "string") return { ok: false, value: null };
   const raw = value.trim();
   if (!raw) return { ok: false, value: null };
