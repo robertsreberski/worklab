@@ -25,14 +25,6 @@ function requireNonEmpty(value, name) {
   return value;
 }
 
-function normalizeDrainTimeout(value, name = "--drain-timeout-ms") {
-  const ms = Number(value);
-  if (!Number.isFinite(ms) || ms < 0 || ms > 600_000) {
-    throw new Error(`${name} must be an integer between 0 and 600000`);
-  }
-  return String(Math.floor(ms));
-}
-
 export function applyConfigArgs(args = [], env = process.env) {
   const port = argValue(args, "--port");
   if (port !== undefined) {
@@ -57,7 +49,13 @@ export function applyConfigArgs(args = [], env = process.env) {
   // coordinator process spawned by the host service manager. The value is
   // capped at 10 minutes (600000ms) to bound shutdown latency.
   const drainTimeoutMs = argValue(args, "--drain-timeout-ms");
-  if (drainTimeoutMs !== undefined) env.WORKLAB_DRAIN_TIMEOUT_MS = normalizeDrainTimeout(drainTimeoutMs);
+  if (drainTimeoutMs !== undefined) {
+    const normalizedDrainTimeoutMs = Number(drainTimeoutMs);
+    if (!Number.isFinite(normalizedDrainTimeoutMs) || normalizedDrainTimeoutMs < 0 || normalizedDrainTimeoutMs > 600_000) {
+      throw new Error("--drain-timeout-ms must be an integer between 0 and 600000");
+    }
+    env.WORKLAB_DRAIN_TIMEOUT_MS = String(Math.floor(normalizedDrainTimeoutMs));
+  }
 
   return env;
 }
