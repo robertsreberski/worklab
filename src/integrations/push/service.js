@@ -17,7 +17,7 @@ function permanentPushFailure(error) {
   }
 }
 
-export class WorklabPushNotificationService {
+class WorklabPushNotificationService {
   constructor({
     db,
     dataDir,
