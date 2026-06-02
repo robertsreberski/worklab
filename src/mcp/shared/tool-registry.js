@@ -34,7 +34,7 @@ export async function apiRequest({ baseUrl, fetchImpl = fetch }, method, path, {
 // admin domain modules use small spec tuples (verb, path, queryKeys,
 // bodyKind) to register their straightforward wrappers; this helper turns
 // the bodyKind tag into the JSON body.
-export function bodyFor(kind, input) {
+function bodyFor(kind, input) {
   if (!kind) return undefined;
   if (kind === "input") return input;
   if (kind === "patch") return input.patch || {};
@@ -52,7 +52,7 @@ export function bodyFor(kind, input) {
 // Builds a handler for one [name, method, path, queryKeys, bodyKind] spec
 // tuple. The per-domain admin tool modules use this to declare simple
 // wrappers without each repeating the apiRequest plumbing.
-export function buildSpecHandler(client, spec) {
+function buildSpecHandler(client, spec) {
   const [, method, path, queryKeys = [], bodyKind] = spec;
   return async (input = {}) => apiRequest(client, method, encodePath(path, input), {
     query: Object.fromEntries(queryKeys.map((key) => [key, input[key]])),

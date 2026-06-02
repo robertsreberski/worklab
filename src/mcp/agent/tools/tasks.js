@@ -6,8 +6,8 @@ import { safeParse, withDb } from "./shared.js";
 import { getTaskById } from "../../../core/db/queries/tasks.js";
 import { isSubtaskEdge } from "../../../core/db/queries/task-edges.js";
 
-export const listChildrenSchema = z.object({ task_id: z.string().optional() });
-export const getChildResultSchema = z.object({
+const listChildrenSchema = z.object({ task_id: z.string().optional() });
+const getChildResultSchema = z.object({
   child_task_id: z.string().min(1, "child_task_id is required"),
 });
 

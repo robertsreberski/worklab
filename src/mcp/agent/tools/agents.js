@@ -33,7 +33,7 @@ const executionModeSchema = z.enum(["cli", "sdk"]).optional();
 const subagentModeSchema = z.enum(["disabled", "advisory", "workspace"]).optional();
 const contextWindowSchema = z.enum(["default", "1m"]).optional();
 
-export const agentCreateSchema = z.object({
+const agentCreateSchema = z.object({
   name: z.string().optional(),
   display_name: z.string().min(1, "display_name is required"),
   model: z.string().min(1, "model is required"),

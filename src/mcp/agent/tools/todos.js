@@ -20,8 +20,8 @@ const todoItemSchema = z.object({
   active_form: z.string().min(1).max(RUN_TODO_MAX_ACTIVE_FORM_LENGTH).optional(),
 });
 
-export const todoReadSchema = z.object({});
-export const todoWriteSchema = z.object({
+const todoReadSchema = z.object({});
+const todoWriteSchema = z.object({
   todos: z.array(todoItemSchema).max(RUN_TODO_MAX_ITEMS),
 });
 

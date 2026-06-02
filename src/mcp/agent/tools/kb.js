@@ -17,7 +17,7 @@ import {
   search,
 } from "../../../core/index.js";
 
-export const kbCreateSchema = z.object({
+const kbCreateSchema = z.object({
   slug: z.string().min(1, "slug is required"),
   title: z.string().min(1, "title is required"),
   body: z.string(),
@@ -37,7 +37,7 @@ export const kbCreateSchema = z.object({
 });
 
 // Only these 5 keys may appear in a patch — .strict() rejects any unknown keys.
-export const kbPatchSchema = z
+const kbPatchSchema = z
   .object({
     title: z.string().optional(),
     body: z.string().optional(),
@@ -57,20 +57,20 @@ export const kbPatchSchema = z
   })
   .strict();
 
-export const kbUpdateSchema = z.object({
+const kbUpdateSchema = z.object({
   slug: z.string().min(1, "slug is required"),
   patch: kbPatchSchema,
 });
 
-export const kbDeleteSchema = z.object({
+const kbDeleteSchema = z.object({
   slug: z.string().min(1, "slug is required"),
 });
 
-export const kbReadSchema = z.object({
+const kbReadSchema = z.object({
   slug: z.string().min(1, "slug is required"),
 });
 
-export const kbListSchema = z.object({
+const kbListSchema = z.object({
   tag: z.string().optional(),
   category: z.string().optional(),
   subcategory: z.string().optional(),
@@ -79,7 +79,7 @@ export const kbListSchema = z.object({
   sort: z.enum(KB_SORT_MODES).optional(),
 });
 
-export const kbSearchSchema = z.object({
+const kbSearchSchema = z.object({
   query: z.string().min(1, "query is required"),
   limit: z.number().int().min(1).max(50).optional(),
   tag: z.string().optional(),

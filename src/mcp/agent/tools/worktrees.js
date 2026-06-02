@@ -6,7 +6,7 @@ import { z } from "zod";
 import { inspectRunWorktree, syncRunWorktreeFromSource } from "../../../core/index.js";
 import { safeParse, withDb } from "./shared.js";
 
-export const worktreeSyncSchema = z.object({
+const worktreeSyncSchema = z.object({
   action: z.enum(["status", "merge_source"]).default("status"),
 });
 

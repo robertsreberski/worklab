@@ -12,10 +12,10 @@ import {
   searchAgentMemories,
 } from "../../../core/index.js";
 
-export const journalAppendSchema = z.object({ bullet: z.string().min(1, "bullet is required") });
-export const journalSummarySchema = z.object({ text: z.string().min(1, "text is required") });
-export const memoryReadSchema = z.object({});
-export const runLogReadSchema = z.object({
+const journalAppendSchema = z.object({ bullet: z.string().min(1, "bullet is required") });
+const journalSummarySchema = z.object({ text: z.string().min(1, "text is required") });
+const memoryReadSchema = z.object({});
+const runLogReadSchema = z.object({
   run_id: z.string().min(1, "run_id is required"),
   mode: z.enum(["summary", "tail", "full"]).optional(),
   limit_bytes: z.number().int().min(1000).max(5 * 1024 * 1024).optional(),
@@ -26,8 +26,8 @@ const searchSchema = z.object({
   limit: z.number().int().min(1).max(50).optional(),
 });
 
-export const journalSearchSchema = searchSchema.extend({ agent: z.string().optional() });
-export const memorySearchSchema = searchSchema.extend({ agent: z.string().optional() });
+const journalSearchSchema = searchSchema.extend({ agent: z.string().optional() });
+const memorySearchSchema = searchSchema.extend({ agent: z.string().optional() });
 
 export const definitions = [
   {
