@@ -21,14 +21,9 @@ export function sanitizeAgentText(text) {
   return collapseDuplicateParagraphs(stripWorklabResultJson(text));
 }
 
-function structuredFinalText(result) {
-  const value = result?.worklab_result || result;
-  if (!value || value.schema !== "worklab.v2") return "";
-  return sanitizeAgentText(value.final_text || "");
-}
-
 export function agentCommentBody(result, finalText) {
-  const structured = structuredFinalText(result);
+  const value = result?.worklab_result || result;
+  const structured = value?.schema === "worklab.v2" ? sanitizeAgentText(value.final_text || "") : "";
   if (structured) return structured;
   const delivered = sanitizeAgentText(finalText);
   if (delivered) return delivered;
