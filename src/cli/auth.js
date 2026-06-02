@@ -30,18 +30,6 @@ function authPositionals(args = []) {
   return positionals;
 }
 
-function parseAuthArgs(args = []) {
-  const positionals = authPositionals(args);
-  if (positionals.length !== 2 || positionals[0] !== "pi" || positionals[1] !== "openai-codex") {
-    throw new Error("usage: worklab auth pi openai-codex [options]");
-  }
-  return {
-    provider: "pi",
-    providerId: "openai-codex",
-    dryRun: hasFlag(args, "--dry-run"),
-  };
-}
-
 function prompt(rl, question) {
   return new Promise((resolve) => rl.question(question, resolve));
 }
@@ -94,13 +82,16 @@ export async function loginPiOAuth({
 export async function authCli(args = process.argv.slice(3), deps = {}) {
   const env = deps.env || process.env;
   applyConfigArgs(args, env);
-  const parsed = parseAuthArgs(args);
+  const positionals = authPositionals(args);
+  if (positionals.length !== 2 || positionals[0] !== "pi" || positionals[1] !== "openai-codex") {
+    throw new Error("usage: worklab auth pi openai-codex [options]");
+  }
   const config = loadConfig(env);
   mkdirSync(config.dataDir, { recursive: true });
   return loginPiOAuth({
-    providerId: parsed.providerId,
+    providerId: "openai-codex",
     dataDir: config.dataDir,
-    dryRun: parsed.dryRun,
+    dryRun: hasFlag(args, "--dry-run"),
     stdout: deps.stdout || console.log,
     input: deps.input || process.stdin,
     output: deps.output || process.stdout,
