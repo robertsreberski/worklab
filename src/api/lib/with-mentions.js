@@ -44,8 +44,13 @@ function walk(value, tokens, entityLinks) {
     if (value.includes("@")) {
       for (const m of parseMentions(value)) tokens.add(m.token);
     }
-    for (const link of parseEntityLinks(value)) {
-      if (!entityLinks.has(link.href)) entityLinks.set(link.href, link);
+    if (value.includes("](")) {
+      const re = /\[[^\]]*\]\(([^)]+)\)/g;
+      let match;
+      while ((match = re.exec(value)) !== null) {
+        const link = entityLinkFromHref(match[1]);
+        if (link && !entityLinks.has(link.href)) entityLinks.set(link.href, link);
+      }
     }
     return;
   }
@@ -56,18 +61,6 @@ function walk(value, tokens, entityLinks) {
   if (typeof value === "object") {
     for (const child of Object.values(value)) walk(child, tokens, entityLinks);
   }
-}
-
-function parseEntityLinks(text) {
-  const out = [];
-  if (typeof text !== "string" || !text.includes("](")) return out;
-  const re = /\[[^\]]*\]\(([^)]+)\)/g;
-  let match;
-  while ((match = re.exec(text)) !== null) {
-    const link = entityLinkFromHref(match[1]);
-    if (link) out.push(link);
-  }
-  return out;
 }
 
 function entityLinkFromHref(href) {
