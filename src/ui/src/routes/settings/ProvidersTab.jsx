@@ -6,7 +6,7 @@ import { PaneLayout } from "../../components/PaneLayout.jsx";
 import { PaneRow } from "../../components/PaneRow.jsx";
 import { Button } from "../../components/primitives/Button.jsx";
 import { Input } from "../../components/primitives/Input.jsx";
-import { PathOrUrlInput, SecretInput } from "../../components/primitives/index.js";
+import { PathOrUrlInput, SearchField, SecretInput } from "../../components/primitives/index.js";
 import { Switch } from "../../components/primitives/Switch.jsx";
 import { Select } from "../../components/primitives/Select.jsx";
 import { Tabs } from "../../components/primitives/Tabs.jsx";
@@ -221,6 +221,32 @@ function modelPricingVariant(state) {
   return "ghost";
 }
 
+function searchTokens(query) {
+  return String(query || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+function modelSearchText(provider, model) {
+  const pricingState = modelPricingState(provider, model);
+  return [
+    model.display_name,
+    model.model_name,
+    model.enabled ? "enabled" : "disabled",
+    ...modelCapabilityTags(model).map((tag) => tag.label),
+    modelPurpose(model),
+    modelPricingLabel(pricingState),
+    pricingState,
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+export function filterProviderModels(provider = {}, models = [], query = "") {
+  const tokens = searchTokens(query);
+  if (!tokens.length) return models;
+  return (models || []).filter((model) => {
+    const text = modelSearchText(provider, model);
+    return tokens.every((token) => text.includes(token));
+  });
+}
+
 function PricingInput({ model, field, onSave }) {
   const savedValue = formatPricingDraft(model.pricing?.[field.key]);
   const [draft, setDraft] = useState(savedValue);
@@ -268,6 +294,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
   const [provider, setProvider] = useState(isNew ? EMPTY_FORM : null);
   const [baseline, setBaseline] = useState(isNew ? EMPTY_FORM : null);
   const [models, setModels] = useState([]);
+  const [modelQuery, setModelQuery] = useState("");
   const modelsRef = useRef([]);
   const [connectionStatus, setConnectionStatus] = useState(null);
   const [discoveryStatus, setDiscoveryStatus] = useState(null);
@@ -361,6 +388,10 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
     () => (baseline ? JSON.stringify(provider) !== JSON.stringify(baseline) : true),
     [baseline, provider],
   );
+  const visibleModels = useMemo(
+    () => filterProviderModels(provider || {}, models || [], modelQuery),
+    [provider, models, modelQuery],
+  );
   useAppResume(() => {
     if (isNew) return;
     loadModels(providerId).catch(() => setModels([]));
@@ -440,6 +471,9 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
 
   const preset = PRESETS[provider.provider_type] || PRESETS.openai_compat;
   const providerConnection = providerConnectionMeta(provider);
+  const apiKeyReplacementPlaceholder = !isNew && provider.has_api_key
+    ? "Enter a new key to replace the stored key"
+    : undefined;
   const saveButtonVariant = isDirty || isNew ? "primary" : "secondary";
   const saveButtonLabel = isNew ? "Create" : "Save";
   const saveDisabled = !provider.name || !provider.base_url;
@@ -708,7 +742,18 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
                   <PathOrUrlInput kind="url" value={provider.base_url} onInput={(event) => setProvider({ ...provider, base_url: event.target.value })} placeholder={preset.base_url || "https://..."} />
                 </FormField>
                 <FormField label="API key" hint={preset.api_key_hint} class="span-2">
-                  <SecretInput autocomplete="new-password" value={provider.api_key || ""} onInput={(event) => setProvider({ ...provider, api_key: event.target.value })} />
+                  <SecretInput
+                    autocomplete="new-password"
+                    value={provider.api_key || ""}
+                    placeholder={apiKeyReplacementPlaceholder}
+                    onInput={(event) => setProvider({ ...provider, api_key: event.target.value })}
+                  />
+                  {!isNew && provider.has_api_key && !provider.api_key && (
+                    <div class="provider-api-key-status">
+                      <Icon name="check-circle" size={13} />
+                      <span>Stored API key configured</span>
+                    </div>
+                  )}
                 </FormField>
                 <FormField switchInside>
                   <Switch
@@ -736,52 +781,74 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
                   {(models || []).length === 0 ? (
                     <div class="field-hint">No models yet. Discovery runs automatically when the provider opens; use Discover above to retry.</div>
                   ) : (
-                    <PanelGrid class="provider-model-grid">
-                      {models.map((model) => {
-                        const capabilities = model.capabilities || {};
-                        const embeddingOnly = isEmbeddingOnlyModel(capabilities);
-                        return (
-                          <div key={model.id} class={`card card-inset provider-model-card ${embeddingOnly ? "is-embedding" : ""}`.trim()}>
-                            <div class="provider-model-row">
-                              <div class="provider-model-info">
-                                <strong class="provider-model-name">{model.display_name || model.model_name}</strong>
-                                <div class="mono muted provider-model-id">{model.model_name}</div>
-                                <div class="provider-model-caps">
-                                  {modelCapabilityTags(model).map((tag) => (
-                                    <Chip key={tag.label} variant={tag.variant}>{tag.label}</Chip>
-                                  ))}
+                    <>
+                      <div class="provider-model-toolbar">
+                        <SearchField
+                          value={modelQuery}
+                          onInput={(event) => setModelQuery(event.target.value)}
+                          onClear={() => setModelQuery("")}
+                          placeholder="Search models..."
+                          ariaLabel="Search discovered models"
+                          class="provider-model-search"
+                        />
+                        <span class="provider-model-count">{visibleModels.length} of {models.length} shown</span>
+                      </div>
+                      {visibleModels.length === 0 ? (
+                        <EmptyStateFiltered
+                          body="No discovered models match."
+                          onClearFilters={() => setModelQuery("")}
+                          clearLabel="Clear model search"
+                          class="provider-model-empty"
+                        />
+                      ) : (
+                        <PanelGrid class="provider-model-grid">
+                          {visibleModels.map((model) => {
+                            const capabilities = model.capabilities || {};
+                            const embeddingOnly = isEmbeddingOnlyModel(capabilities);
+                            return (
+                              <div key={model.id} class={`card card-inset provider-model-card ${embeddingOnly ? "is-embedding" : ""}`.trim()}>
+                                <div class="provider-model-row">
+                                  <div class="provider-model-info">
+                                    <strong class="provider-model-name">{model.display_name || model.model_name}</strong>
+                                    <div class="mono muted provider-model-id">{model.model_name}</div>
+                                    <div class="provider-model-caps">
+                                      {modelCapabilityTags(model).map((tag) => (
+                                        <Chip key={tag.label} variant={tag.variant}>{tag.label}</Chip>
+                                      ))}
+                                    </div>
+                                    <div class="provider-model-purpose">{modelPurpose(model)}</div>
+                                  </div>
+                                  <Switch
+                                    checked={!!model.enabled}
+                                    onChange={() => {
+                                      api.patchProviderModel(providerId, model.id, { enabled: !model.enabled })
+                                        .then(() => loadModels(providerId))
+                                        .catch((error) => pushToast(`Model update failed: ${error.message}`, { variant: "error" }));
+                                    }}
+                                    label={modelSwitchLabel(model)}
+                                  />
                                 </div>
-                                <div class="provider-model-purpose">{modelPurpose(model)}</div>
+                                <div class="provider-model-pricing">
+                                  <InlineHead class="provider-model-pricing-head">
+                                    <span>Pricing per 1M tokens</span>
+                                    <Chip variant={modelPricingVariant(modelPricingState(provider, model))}>
+                                      {modelPricingLabel(modelPricingState(provider, model))}
+                                    </Chip>
+                                  </InlineHead>
+                                  <FormGrid columns={3} class="provider-model-pricing-grid">
+                                    {MODEL_PRICING_FIELDS.map((field) => (
+                                      <FormField label={field.label} class="provider-model-price-field" key={field.key}>
+                                        <PricingInput model={model} field={field} onSave={saveModelPricing} />
+                                      </FormField>
+                                    ))}
+                                  </FormGrid>
+                                </div>
                               </div>
-                              <Switch
-                                checked={!!model.enabled}
-                                onChange={() => {
-                                  api.patchProviderModel(providerId, model.id, { enabled: !model.enabled })
-                                    .then(() => loadModels(providerId))
-                                    .catch((error) => pushToast(`Model update failed: ${error.message}`, { variant: "error" }));
-                                }}
-                                label={modelSwitchLabel(model)}
-                              />
-                            </div>
-                            <div class="provider-model-pricing">
-                              <InlineHead class="provider-model-pricing-head">
-                                <span>Pricing per 1M tokens</span>
-                                <Chip variant={modelPricingVariant(modelPricingState(provider, model))}>
-                                  {modelPricingLabel(modelPricingState(provider, model))}
-                                </Chip>
-                              </InlineHead>
-                              <FormGrid columns={3} class="provider-model-pricing-grid">
-                                {MODEL_PRICING_FIELDS.map((field) => (
-                                  <FormField label={field.label} class="provider-model-price-field" key={field.key}>
-                                    <PricingInput model={model} field={field} onSave={saveModelPricing} />
-                                  </FormField>
-                                ))}
-                              </FormGrid>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </PanelGrid>
+                            );
+                          })}
+                        </PanelGrid>
+                      )}
+                    </>
                   )}
                 </FormSection>
               </>
@@ -936,7 +1003,6 @@ export function ProvidersTab({ selectedId = null }) {
               )}
               trailing={(
                 <span class="pane-row-summary">
-                  <StatusPill status={provider.enabled ? "enabled" : "disabled"} size="sm" />
                   {providerConnectionMeta(provider).label !== "Unknown" && (
                     <StatusPill
                       status={providerConnectionMeta(provider).status}

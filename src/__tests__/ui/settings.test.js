@@ -151,6 +151,37 @@ describe("settings UI duration conversions", () => {
     expect(providerToolbarRule).not.toContain("background: color-mix(in srgb, var(--surface) 42%, transparent)");
   });
 
+  it("shows stored provider API keys without returning the secret", () => {
+    const source = readFileSync(providersSourcePath, "utf8");
+    const styles = readFileSync(settingsStylesPath, "utf8");
+    const statusRule = cssRule(styles, ".provider-api-key-status");
+
+    expect(source).toContain("provider.has_api_key");
+    expect(source).toContain("provider-api-key-status");
+    expect(source).toContain("Stored API key configured");
+    expect(source).toContain("Enter a new key to replace the stored key");
+    expect(source).toContain("api_key: provider.api_key || undefined");
+    expect(statusRule).toContain("display: inline-flex");
+    expect(statusRule).toContain("border");
+  });
+
+  it("keeps provider list rows readable when the list pane is narrow", () => {
+    const styles = readFileSync(settingsStylesPath, "utf8");
+    const rowRule = cssRule(styles, ".provider-pane-row");
+    const titleRule = cssRule(styles, ".provider-pane-row .pane-row-title");
+    const metaRule = cssRule(styles, ".provider-pane-row .pane-row-meta");
+    const summaryRule = cssRule(styles, ".provider-pane-row .pane-row-summary");
+    const chipRule = cssRule(styles, ".provider-pane-row .resource-row-chip");
+
+    expect(rowRule).toContain("grid-template-columns");
+    expect(rowRule).toContain("minmax(0, 1fr)");
+    expect(rowRule).toContain("minmax(0, 96px)");
+    expect(titleRule).toContain("-webkit-line-clamp: 2");
+    expect(metaRule).toContain("min-width: 0");
+    expect(summaryRule).toContain("font-size: var(--text-xs)");
+    expect(chipRule).toContain("max-width");
+  });
+
   it("presents About as a polished visual surface with a project-local generated asset", () => {
     const source = readFileSync(settingsShellSourcePath, "utf8");
     const styles = readFileSync(settingsStylesPath, "utf8");
