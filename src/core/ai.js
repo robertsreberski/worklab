@@ -54,7 +54,7 @@ function piModelIds(provider, fallback) {
 export const BUILTIN_OPENAI_MODELS = piModelIds("openai", FALLBACK_OPENAI_MODELS);
 export const BUILTIN_CODEX_MODELS = piModelIds("openai-codex", FALLBACK_CODEX_MODELS);
 
-export const VALID_MODEL_SDKS = ["claude", "pi", "codex"];
+export const VALID_MODEL_SDKS = ["claude", "pi", "codex", "opencode"];
 export { WORKLAB_BUILTIN_TOOLS };
 
 const EXTRA_PI_PROVIDER_IDS = [

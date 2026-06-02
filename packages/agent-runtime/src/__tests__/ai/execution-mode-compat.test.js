@@ -2,7 +2,32 @@ import { describe, expect, it } from "vitest";
 import {
   executionModeIncompatibilityReason,
   isModelCompatibleWithExecutionMode,
+  parseRuntimeModelReference,
 } from "../../ai/runtime/model-refs.js";
+
+describe("parseRuntimeModelReference (opencode)", () => {
+  it("parses opencode:<providerID>:<modelID> into sdk/provider/model", () => {
+    expect(parseRuntimeModelReference("opencode:github-copilot:gpt-5.1")).toEqual({
+      sdk: "opencode",
+      provider: "github-copilot",
+      model: "gpt-5.1",
+      reference: "opencode:github-copilot:gpt-5.1",
+    });
+  });
+
+  it("keeps slashes in the model id (only the first colon separates provider/model)", () => {
+    expect(parseRuntimeModelReference("opencode:openrouter:anthropic/claude-3.5-sonnet")).toEqual({
+      sdk: "opencode",
+      provider: "openrouter",
+      model: "anthropic/claude-3.5-sonnet",
+      reference: "opencode:openrouter:anthropic/claude-3.5-sonnet",
+    });
+  });
+
+  it("rejects an opencode reference missing the model id", () => {
+    expect(() => parseRuntimeModelReference("opencode:github-copilot")).toThrow(/opencode model reference/i);
+  });
+});
 
 describe("executionModeIncompatibilityReason", () => {
   it("returns null for sdk execution mode (no restriction)", () => {
@@ -22,6 +47,12 @@ describe("executionModeIncompatibilityReason", () => {
   it("returns null for codex models under cli", () => {
     expect(executionModeIncompatibilityReason("codex:gpt-5.5", "cli")).toBeNull();
     expect(executionModeIncompatibilityReason("codex:gpt-5.4-mini", "cli")).toBeNull();
+  });
+
+  it("treats opencode as CLI-only", () => {
+    expect(executionModeIncompatibilityReason("opencode:github-copilot:gpt-5.1", "cli")).toBeNull();
+    expect(executionModeIncompatibilityReason("opencode:github-copilot:gpt-5.1", "sdk"))
+      .toMatch(/OpenCode.*requires CLI/i);
   });
 
   it("rejects pi:openai-codex models under cli because they are SDK-only", () => {
