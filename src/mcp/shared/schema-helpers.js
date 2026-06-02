@@ -48,7 +48,7 @@ function clampLimit(value, fallback, max) {
   return Math.min(Math.floor(n), max);
 }
 
-export function includesQuery(values, query) {
+function includesQuery(values, query) {
   const q = String(query || "").trim().toLowerCase();
   if (!q) return true;
   return values.some((value) => String(value || "").toLowerCase().includes(q));
