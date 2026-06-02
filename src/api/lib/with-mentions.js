@@ -21,8 +21,10 @@ import {
 } from "../../core/index.js";
 
 export function withMentions({ db, dataDir }, payload, textSources) {
-  const { tokens, entityLinks } = collectReferences(textSources);
-  if (tokens.length === 0 && entityLinks.size === 0) {
+  const tokens = new Set();
+  const entityLinks = new Map();
+  walk(textSources, tokens, entityLinks);
+  if (tokens.size === 0 && entityLinks.size === 0) {
     return { ...payload, mentions: {} };
   }
   const linkTokens = [...new Set([...entityLinks.values()].map((entry) => entry.token))];
@@ -34,13 +36,6 @@ export function withMentions({ db, dataDir }, payload, textSources) {
     mentions[href] = { ...meta, href };
   }
   return { ...payload, mentions };
-}
-
-function collectReferences(sources) {
-  const tokens = new Set();
-  const entityLinks = new Map();
-  walk(sources, tokens, entityLinks);
-  return { tokens: Array.from(tokens), entityLinks };
 }
 
 function walk(value, tokens, entityLinks) {
