@@ -196,12 +196,6 @@ function optionBlock(title, rows = []) {
   ].join("\n");
 }
 
-function commandRows() {
-  const visible = COMMANDS.filter((command) => !command.name.includes(" "));
-  const width = Math.max(...visible.map((command) => command.name.length));
-  return visible.map((command) => `  ${command.name.padEnd(width)}  ${command.summary}`).join("\n");
-}
-
 export function commandNames() {
   return COMMANDS
     .filter((command) => !command.name.includes(" "))
@@ -213,6 +207,11 @@ export function hasCommandHelp(topic) {
 }
 
 export function formatGeneralHelp() {
+  const visibleCommands = COMMANDS.filter((command) => !command.name.includes(" "));
+  const commandNameWidth = Math.max(...visibleCommands.map((command) => command.name.length));
+  const commandRows = visibleCommands
+    .map((command) => `  ${command.name.padEnd(commandNameWidth)}  ${command.summary}`)
+    .join("\n");
   return [
     "Worklab",
     "",
@@ -221,7 +220,7 @@ export function formatGeneralHelp() {
     "Usage: worklab <command> [options]",
     "",
     "Commands:",
-    commandRows(),
+    commandRows,
     "",
     "Nested commands:",
     "  doctor performance  Measure endpoint timings, payload sizes, and database/blob growth.",
