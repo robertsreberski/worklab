@@ -706,7 +706,7 @@ function hasEmbeddedStructuredParameters(value) {
   return Object.values(value).some((item) => typeof item === "string" && /<parameter\s+name=/i.test(item));
 }
 
-export function recoverStructuredWorklabResult(value, fallback = {}) {
+function recoverStructuredWorklabResult(value, fallback = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value) || value.schema !== "worklab.v2") return null;
   if (!hasEmbeddedStructuredParameters(value)) return null;
   const recovered = { ...value };
@@ -747,7 +747,7 @@ export function formatWorklabResultText(result) {
   return details || summary;
 }
 
-export function parseStandaloneWorklabResultText(text) {
+function parseStandaloneWorklabResultText(text) {
   const raw = String(text || "").trim();
   if (!raw) return null;
   try {
