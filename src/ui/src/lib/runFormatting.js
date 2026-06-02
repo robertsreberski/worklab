@@ -24,7 +24,7 @@ export function formatCost(v) {
   return `$${value.toFixed(4)}`;
 }
 
-export function runDuration(run) {
+function runDuration(run) {
   if (run?.log?.duration_ms != null) return run.log.duration_ms;
   if (run?.ended_at && run?.started_at) return run.ended_at - run.started_at;
   return null;
@@ -155,7 +155,7 @@ export function runResultPreview(run = {}, { continuationLimit = 3 } = {}) {
   };
 }
 
-export function runTokenTotal(log = {}) {
+function runTokenTotal(log = {}) {
   const input = Number(log.input_tokens);
   const output = Number(log.output_tokens);
   const total = (Number.isFinite(input) ? input : 0) + (Number.isFinite(output) ? output : 0);

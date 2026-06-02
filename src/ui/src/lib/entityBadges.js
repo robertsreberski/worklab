@@ -1,4 +1,4 @@
-export const ENTITY_BADGE_META = {
+const ENTITY_BADGE_META = {
   task: { label: "Task", glyph: "T" },
   project: { label: "Project", glyph: "P" },
   kb: { label: "Knowledge", icon: "book" },

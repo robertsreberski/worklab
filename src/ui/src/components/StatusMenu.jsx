@@ -21,7 +21,7 @@ const TRANSITIONS = [
   { from: "done",              to: "execute",     label: "Reopen" },
 ];
 
-export function allowedTransitions(status) {
+function allowedTransitions(status) {
   return TRANSITIONS.filter((t) => t.from === status);
 }
 
