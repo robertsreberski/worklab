@@ -40,12 +40,12 @@ const RUN_PROGRESS_PREVIEW_LIMIT = 12;
 const COMMANDER_TASK_LIST_CACHE_LIMIT = 4;
 const COMMANDER_TASK_LIST_STORAGE_PREFIX = "worklab:commander-task-list:";
 const COMMANDER_TASK_LIST_STORAGE_VERSION = 1;
-export const COMMANDER_COST_SUMMARY_INITIAL_DELAY_MS = 1200;
-export const COMMANDER_COST_SUMMARY_POLL_MS = 60_000;
+const COMMANDER_COST_SUMMARY_INITIAL_DELAY_MS = 1200;
+const COMMANDER_COST_SUMMARY_POLL_MS = 60_000;
 // SSE bursts on busy runs can fire dozens of task_updated events per second.
 // Coalescing reloads into one fetch per ~half second keeps the list responsive
 // while skipping the redundant intermediate fetches the user would never see.
-export const COMMANDER_RELOAD_THROTTLE_MS = 500;
+const COMMANDER_RELOAD_THROTTLE_MS = 500;
 const commanderTaskListCache = new Map();
 
 export function formatCommanderCost(value) {
