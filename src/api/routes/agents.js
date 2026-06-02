@@ -239,10 +239,6 @@ function normalizeAgentEffort({ db, dataDir, model, resolved, effort }) {
   );
 }
 
-function sameList(left, right) {
-  return JSON.stringify(normalizeList(left)) === JSON.stringify(normalizeList(right));
-}
-
 function normalizeBooleanField(key, value, fallback = false) {
   if (value === undefined) return fallback ? 1 : 0;
   if (typeof value !== "boolean") throw new Error(`${key} must be a boolean`);
@@ -330,7 +326,8 @@ function patchAllowlist({ body, existing, listKey, dataDir, model }) {
     ? normalizeAllowlistMode(body[modeKey])
     : inferAllowlistMode({ list: rawList, fallback: existingMode });
   const normalizedList = normalizeList(rawList);
-  const changed = mode !== existingMode || !sameList(normalizedList, existingList);
+  const changed = mode !== existingMode
+    || JSON.stringify(normalizedList) !== JSON.stringify(normalizeList(existingList));
   return {
     mode,
     list: changed
