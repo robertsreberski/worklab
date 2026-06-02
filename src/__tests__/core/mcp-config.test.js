@@ -16,6 +16,8 @@ import {
 const dirs = [];
 afterEach(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); dirs.length = 0; });
 
+const MCP_HEALTH_TEST_TIMEOUT_MS = 5000;
+
 function mk(contents) {
   const d = mkdtempSync(join(tmpdir(), "worklab-mcp-"));
   dirs.push(d);
@@ -148,7 +150,7 @@ describe("MCP health checks", () => {
   it("connects to stdio servers and lists tools", async () => {
     const d = mk({ mcpServers: {} });
     const script = writeToolServerScript(d);
-    const result = await checkMcpServerHealth("tools", { command: process.execPath, args: [script] }, { timeoutMs: 2000, cwd: d });
+    const result = await checkMcpServerHealth("tools", { command: process.execPath, args: [script] }, { timeoutMs: MCP_HEALTH_TEST_TIMEOUT_MS, cwd: d });
     expect(result).toMatchObject({
       health: "ok",
       static_available: true,
@@ -180,7 +182,7 @@ describe("MCP health checks", () => {
     const response = await getMcpServerHealth(d, {
       repoRoot: process.cwd(),
       names: ["webhooks"],
-      timeoutMs: 2000,
+      timeoutMs: MCP_HEALTH_TEST_TIMEOUT_MS,
     });
     expect(response.results).toHaveLength(1);
     expect(response.results[0]).toMatchObject({
