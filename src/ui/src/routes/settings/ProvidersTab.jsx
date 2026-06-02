@@ -75,7 +75,7 @@ const PROVIDER_EDIT_SECTIONS = [
   { id: "provider-edit-models", num: "02", label: "Models", meta: "Discovery" },
 ];
 
-export const MODEL_PRICING_FIELDS = [
+const MODEL_PRICING_FIELDS = [
   { key: "input_per_million", label: "Input" },
   { key: "cached_input_per_million", label: "Cached" },
   { key: "cache_write_per_million", label: "Cache write" },
