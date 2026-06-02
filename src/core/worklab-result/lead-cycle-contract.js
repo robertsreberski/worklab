@@ -23,7 +23,7 @@ const stringList = z.preprocess((value) => {
   return value;
 }, z.array(z.string()).transform((items) => items.map((item) => item.trim()).filter(Boolean))).default([]);
 
-export const leadTaskCreationSchema = z.object({
+const leadTaskCreationSchema = z.object({
   title: z.string().trim().min(1),
   instructions: z.string().default(""),
   suggested_agent: z.string().trim().min(1),
@@ -33,19 +33,19 @@ export const leadTaskCreationSchema = z.object({
   priority: z.enum(LEAD_TASK_PRIORITIES).default("normal"),
 }).passthrough();
 
-export const leadAdvisoryNoteSchema = z.object({
+const leadAdvisoryNoteSchema = z.object({
   target_task_id: z.string().trim().min(1),
   kind: z.enum(LEAD_NOTE_KINDS),
   content: z.string().trim().min(1),
 }).passthrough();
 
-export const leadTaskAssignmentSchema = z.object({
+const leadTaskAssignmentSchema = z.object({
   target_task_id: z.string().trim().min(1),
   owner_agent: z.string().trim().min(1),
   rationale: z.string().default(""),
 }).passthrough();
 
-export const leadTaskDeletionSchema = z.object({
+const leadTaskDeletionSchema = z.object({
   target_task_id: z.string().trim().min(1),
   rationale: z.string().trim().min(1),
 }).passthrough();
@@ -55,7 +55,7 @@ const leadGoalRefinementLinkSchema = z.object({
   url: z.string().default(""),
 }).passthrough();
 
-export const leadGoalRefinementPatchSchema = z.object({
+const leadGoalRefinementPatchSchema = z.object({
   north_star: z.string().default(""),
   objective: z.string().default(""),
   stopping_condition: z.string().default(""),
@@ -64,7 +64,7 @@ export const leadGoalRefinementPatchSchema = z.object({
   links_add: z.array(leadGoalRefinementLinkSchema).default([]),
 }).passthrough();
 
-export const leadGoalRefinementSchema = z.object({
+const leadGoalRefinementSchema = z.object({
   mode: z.enum(LEAD_GOAL_REFINEMENT_MODES).default("none"),
   confidence: z.enum(LEAD_GOAL_REFINEMENT_CONFIDENCES).default("low"),
   compatible_expansion: z.boolean().default(false),
@@ -83,7 +83,7 @@ const reviewHintSchema = z.object({
   after_event: z.enum(LEAD_REVIEW_AFTER_EVENTS).optional().nullable(),
 }).partial().nullable().default(null);
 
-export const leadCycleResultSchema = z.object({
+const leadCycleResultSchema = z.object({
   schema: z.literal(LEAD_CYCLE_SCHEMA),
   goal_status: z.enum(LEAD_GOAL_STATUSES),
   goal_status_reason: z.string().default(""),
