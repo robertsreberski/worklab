@@ -12,7 +12,7 @@ export function uploadedAttachmentDraft(upload, label = "") {
   };
 }
 
-export function transferFiles(transfer) {
+function transferFiles(transfer) {
   return Array.from(transfer?.files || []).filter(Boolean);
 }
 
