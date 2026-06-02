@@ -16,20 +16,17 @@ function compactError(value) {
     .slice(0, 2000);
 }
 
-function parsePlistStrings(value) {
-  return [...String(value || "").matchAll(/<string>([\s\S]*?)<\/string>/g)]
-    .map((match) => match[1]
-      .replace(/&quot;/g, "\"")
-      .replace(/&gt;/g, ">")
-      .replace(/&lt;/g, "<")
-      .replace(/&amp;/g, "&"));
-}
-
 export function configuredNodeFromServiceFile(content, p = platform()) {
   const text = String(content || "");
   if (p === "darwin") {
     const argsBlock = text.match(/<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/)?.[1] || "";
-    return parsePlistStrings(argsBlock)[0] || null;
+    const args = [...argsBlock.matchAll(/<string>([\s\S]*?)<\/string>/g)]
+      .map((match) => match[1]
+        .replace(/&quot;/g, "\"")
+        .replace(/&gt;/g, ">")
+        .replace(/&lt;/g, "<")
+        .replace(/&amp;/g, "&"));
+    return args[0] || null;
   }
   if (p === "linux") {
     const line = text.split(/\r?\n/).find((entry) => entry.trim().startsWith("ExecStart="));
