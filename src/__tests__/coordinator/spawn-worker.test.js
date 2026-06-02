@@ -33,6 +33,15 @@ function seedTaskAndRun(db, { mode = "execute" } = {}) {
   return { taskId, runId };
 }
 
+async function waitFor(predicate, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("timed out waiting for condition");
+}
+
 describe("spawnWorker", () => {
   it("streams fake-worker stdout events through broker and resolves on clean exit", async () => {
     const db = makeTestDb();
@@ -366,11 +375,10 @@ describe("spawnWorker", () => {
     });
 
     let runningLog = null;
-    for (let i = 0; i < 20; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 25));
+    await waitFor(() => {
       runningLog = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(runId);
-      if (JSON.parse(runningLog?.events || "[]").length >= 2) break;
-    }
+      return JSON.parse(runningLog?.events || "[]").length >= 2;
+    });
 
     expect(runningLog.status).toBe("running");
     expect(JSON.parse(runningLog.events).map((event) => event._event_seq)).toEqual([1, 2]);
@@ -408,11 +416,10 @@ describe("spawnWorker", () => {
     expect(delivery).toEqual({ ok: true });
 
     let controlEvent = null;
-    for (let i = 0; i < 20; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 25));
+    await waitFor(() => {
       controlEvent = broker.broadcasts.find((item) => item.ch === runId && item.p.type === "control_seen");
-      if (controlEvent) break;
-    }
+      return Boolean(controlEvent);
+    });
 
     expect(controlEvent?.p.message).toMatchObject({
       type: "live_user_message",

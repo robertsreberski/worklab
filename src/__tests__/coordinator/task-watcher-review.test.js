@@ -917,6 +917,7 @@ describe("task-watcher v2 workflow", () => {
     }, 2000);
 
     // Round 2: parent re-runs and delegates a second child.
+    await waitFor(() => spawn.mock.calls.length >= 3, 2000);
     resolvers[2]({
       exitCode: 0,
       status: "complete",
