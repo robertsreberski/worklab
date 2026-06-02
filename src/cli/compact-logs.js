@@ -32,12 +32,6 @@ function integerOption(value, fallback, { min = 0, name } = {}) {
   return parsed;
 }
 
-function strategyOption(value) {
-  const strategy = value || SQLITE_LOG_COMPACTION_STRATEGY;
-  if (strategy === SQLITE_LOG_COMPACTION_STRATEGY || strategy === "tail") return strategy;
-  throw new Error(`--strategy must be "${SQLITE_LOG_COMPACTION_STRATEGY}" or "tail"`);
-}
-
 function parseEvents(value) {
   try {
     const parsed = JSON.parse(value || "[]");
@@ -303,13 +297,17 @@ function printReport(report) {
 }
 
 export async function compactLogsCli(args = []) {
+  const strategy = argValue(args, "--strategy") || SQLITE_LOG_COMPACTION_STRATEGY;
+  if (strategy !== SQLITE_LOG_COMPACTION_STRATEGY && strategy !== "tail") {
+    throw new Error(`--strategy must be "${SQLITE_LOG_COMPACTION_STRATEGY}" or "tail"`);
+  }
   const report = compactLogs({
     dataDir: loadConfig().dataDir,
     apply: hasFlag(args, "--apply"),
     minAgeDays: numericOption(argValue(args, "--min-age-days"), 7, { min: 0, name: "--min-age-days" }),
     minBytes: integerOption(argValue(args, "--min-bytes"), 512 * 1024, { min: 0, name: "--min-bytes" }),
     keepEvents: integerOption(argValue(args, "--keep-events"), 200, { min: 1, name: "--keep-events" }),
-    strategy: strategyOption(argValue(args, "--strategy")),
+    strategy,
     recompact: hasFlag(args, "--recompact"),
     maxEventBytes: integerOption(argValue(args, "--max-event-bytes"), DEFAULT_SQLITE_LOG_COMPACTION_OPTIONS.maxEventBytes, { min: 0, name: "--max-event-bytes" }),
     maxLogBytes: integerOption(argValue(args, "--max-log-bytes"), DEFAULT_SQLITE_LOG_COMPACTION_OPTIONS.maxLogBytes, { min: 0, name: "--max-log-bytes" }),
