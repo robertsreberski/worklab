@@ -1,10 +1,10 @@
 export const ASSISTANT_KEYBOARD_LIFT_VAR = "--assistant-keyboard-lift";
-export const ASSISTANT_KEYBOARD_CLEARANCE = 8;
-export const ASSISTANT_KEYBOARD_RESCUE_MIN = 56;
-export const ASSISTANT_KEYBOARD_RESCUE_MAX = 96;
-export const ASSISTANT_KEYBOARD_RESCUE_EXTRA = 12;
-export const ASSISTANT_KEYBOARD_RESCUE_NO_SIGNAL_MAX = 80;
-export const ASSISTANT_KEYBOARD_RESCUE_DANGER_ZONE = 120;
+const ASSISTANT_KEYBOARD_CLEARANCE = 8;
+const ASSISTANT_KEYBOARD_RESCUE_MIN = 56;
+const ASSISTANT_KEYBOARD_RESCUE_MAX = 96;
+const ASSISTANT_KEYBOARD_RESCUE_EXTRA = 12;
+const ASSISTANT_KEYBOARD_RESCUE_NO_SIGNAL_MAX = 80;
+const ASSISTANT_KEYBOARD_RESCUE_DANGER_ZONE = 120;
 
 function positiveRound(value) {
   const number = Number(value);
@@ -52,7 +52,7 @@ export function computeAssistantKeyboardLift({
   return Math.max(0, ...candidates.map(positiveRound));
 }
 
-export function computeAssistantKeyboardRescueLift({
+function computeAssistantKeyboardRescueLift({
   visibleBottom = 0,
   dockBottom = 0,
   composerBottom = 0,
