@@ -110,7 +110,7 @@ function TodoRow({ todo, tone = "" }) {
   );
 }
 
-export function RunTodoPanel({ run }) {
+function RunTodoPanel({ run }) {
   const todoPanel = liveRunTodoPanelState(run);
   if (!todoPanel.visible) return null;
   const extraPending = Math.max(0, todoPanel.pending.length - 4);
