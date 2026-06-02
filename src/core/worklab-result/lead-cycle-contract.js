@@ -9,12 +9,12 @@
 import { z } from "zod";
 
 export const LEAD_CYCLE_SCHEMA = "worklab.lead_cycle.v1";
-export const LEAD_GOAL_STATUSES = ["in_progress", "complete", "blocked"];
-export const LEAD_TASK_PRIORITIES = ["high", "normal", "low"];
-export const LEAD_NOTE_KINDS = ["warning", "suggestion", "blocker_observation"];
-export const LEAD_REVIEW_AFTER_EVENTS = ["task_completed", "task_blocked"];
-export const LEAD_GOAL_REFINEMENT_MODES = ["none", "apply"];
-export const LEAD_GOAL_REFINEMENT_CONFIDENCES = ["low", "medium", "high"];
+const LEAD_GOAL_STATUSES = ["in_progress", "complete", "blocked"];
+const LEAD_TASK_PRIORITIES = ["high", "normal", "low"];
+const LEAD_NOTE_KINDS = ["warning", "suggestion", "blocker_observation"];
+const LEAD_REVIEW_AFTER_EVENTS = ["task_completed", "task_blocked"];
+const LEAD_GOAL_REFINEMENT_MODES = ["none", "apply"];
+const LEAD_GOAL_REFINEMENT_CONFIDENCES = ["low", "medium", "high"];
 
 const stringList = z.preprocess((value) => {
   if (value == null || value === "") return [];
