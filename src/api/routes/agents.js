@@ -296,10 +296,6 @@ const ALLOWLIST_FIELDS = {
 };
 const ALLOWLIST_PATCH_KEYS = new Set(Object.entries(ALLOWLIST_FIELDS).flatMap(([listKey, { modeKey }]) => [listKey, modeKey]));
 
-function existingAllowlistMode(row, listKey) {
-  return storedAllowlistMode(row?.[ALLOWLIST_FIELDS[listKey]?.modeKey]);
-}
-
 function validateAllowlist({ listKey, mode, list, dataDir, model }) {
   if (mode === ALLOWLIST_MODE_ALL) return [];
   const { validate } = ALLOWLIST_FIELDS[listKey];
@@ -328,7 +324,7 @@ function patchAllowlist({ body, existing, listKey, dataDir, model }) {
   if (!hasList && !hasMode) return null;
 
   const existingList = parseStoredAllowlist(existing?.[listKey]);
-  const existingMode = existingAllowlistMode(existing, listKey);
+  const existingMode = storedAllowlistMode(existing?.[ALLOWLIST_FIELDS[listKey]?.modeKey]);
   const rawList = hasList ? body[listKey] : existingList;
   const mode = hasMode
     ? normalizeAllowlistMode(body[modeKey])
