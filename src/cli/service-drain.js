@@ -9,7 +9,7 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function coordinatorPidFile(config = {}) {
+function coordinatorPidFile(config = {}) {
   return config?.dataDir ? join(config.dataDir, ".coordinator.pid") : null;
 }
 
