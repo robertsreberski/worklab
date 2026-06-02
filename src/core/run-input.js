@@ -147,7 +147,7 @@ function detectedRuntimeTimezone() {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
 
-export function buildRuntimeDateContext({ now = Date.now(), timezone } = {}) {
+function buildRuntimeDateContext({ now = Date.now(), timezone } = {}) {
   const runDate = now instanceof Date
     ? now
     : (typeof now === "number" ? new Date(now) : new Date(Number.isFinite(Number(now)) ? Number(now) : now));
@@ -508,7 +508,7 @@ function executionOutputForRun(run, events = []) {
   return run.details || run.summary || run.error_text || "";
 }
 
-export function loadResolvedBlockerContext(db, taskId, { limit = 8 } = {}) {
+function loadResolvedBlockerContext(db, taskId, { limit = 8 } = {}) {
   if (!db || !taskId) return [];
   const blockers = db.prepare(`
     SELECT t.id, t.task_key, t.title, t.stage, t.stage_reason,
