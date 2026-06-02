@@ -5,7 +5,7 @@ export const AGENT_MEMORY_KINDS = ["fact", "preference", "procedure", "failure",
 export const AGENT_MEMORY_SCOPES = ["agent", "project", "task", "global"];
 export const AGENT_MEMORY_STATUSES = ["draft", "approved", "archived"];
 export const MAX_AGENT_MEMORY_CANDIDATES_PER_BATCH = 8;
-export const AGENT_LEARNING_CONTEXT_MAX_CHARS = 4000;
+const AGENT_LEARNING_CONTEXT_MAX_CHARS = 4000;
 export const AGENT_LEARNING_CONTEXT_LINE_MAX_CHARS = 600;
 
 const KIND_ORDER = new Map([
@@ -224,7 +224,7 @@ export function recordAgentMemoryCandidates(db, {
   return stats;
 }
 
-export function agentLearningNativeEnabled(settings = {}) {
+function agentLearningNativeEnabled(settings = {}) {
   return settings.agent_learning_enabled !== false;
 }
 

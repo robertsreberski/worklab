@@ -21,7 +21,7 @@ export function sanitizeAgentText(text) {
   return collapseDuplicateParagraphs(stripWorklabResultJson(text));
 }
 
-export function structuredFinalText(result) {
+function structuredFinalText(result) {
   const value = result?.worklab_result || result;
   if (!value || value.schema !== "worklab.v2") return "";
   return sanitizeAgentText(value.final_text || "");

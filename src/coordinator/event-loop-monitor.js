@@ -3,7 +3,7 @@ import { monitorEventLoopDelay } from "node:perf_hooks";
 const DEFAULT_EVENT_LOOP_WARN_MS = 150;
 const DEFAULT_EVENT_LOOP_SAMPLE_MS = 15_000;
 
-export function eventLoopWarnThresholdMs(env = process.env) {
+function eventLoopWarnThresholdMs(env = process.env) {
   const value = Number(env.WORKLAB_EVENT_LOOP_WARN_MS || DEFAULT_EVENT_LOOP_WARN_MS);
   return Number.isFinite(value) && value >= 0 ? value : DEFAULT_EVENT_LOOP_WARN_MS;
 }

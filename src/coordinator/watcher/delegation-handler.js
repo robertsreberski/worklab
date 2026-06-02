@@ -25,7 +25,7 @@ export function isQaChildAgent(agentName) {
 // agent. Falls back to scanning the subtask title when `suggested_agent`
 // is missing — a planner that names "QA the result" without picking the
 // agent still telegraphs intent.
-export function delegationHasQaChild(subtasks) {
+function delegationHasQaChild(subtasks) {
   if (!Array.isArray(subtasks)) return false;
   return subtasks.some((subtask) => {
     if (!subtask) return false;
