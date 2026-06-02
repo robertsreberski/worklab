@@ -6,12 +6,6 @@ export function getTeamById(db, id) {
   return db.prepare("SELECT * FROM teams WHERE id = ?").get(id);
 }
 
-export function listTeamsByIds(db, ids) {
-  if (!ids.length) return [];
-  const placeholders = ids.map(() => "?").join(", ");
-  return db.prepare(`SELECT * FROM teams WHERE id IN (${placeholders})`).all(...ids);
-}
-
 export function listTeamsByIdsOrSlugs(db, values) {
   const idsOrSlugs = [...new Set((values || []).filter(Boolean))];
   if (!idsOrSlugs.length) return [];
@@ -27,11 +21,6 @@ export function resolveTeamByIdOrSlug(db, value) {
   return db.prepare("SELECT * FROM teams WHERE id = ? OR slug = ?").get(value, value);
 }
 
-export function getTeamIdBySlug(db, slug) {
-  const row = db.prepare("SELECT id FROM teams WHERE slug = ?").get(slug);
-  return row?.id || null;
-}
-
 export function listTeams(db, { filters = [], params = [], limit = 200 } = {}) {
   const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
   return db.prepare(`
@@ -43,26 +32,6 @@ export function listTeams(db, { filters = [], params = [], limit = 200 } = {}) {
     ORDER BY t.status ASC, t.updated_at DESC, t.name ASC
     LIMIT ?
   `).all(...params, limit);
-}
-
-export function listTeamsByNamePrefix(db, query, limit) {
-  const q = String(query || "").trim();
-  if (!q) return [];
-  const like = `${q.replace(/[%_]/g, "\\$&")}%`;
-  const contains = `%${q.replace(/[%_]/g, "\\$&")}%`;
-  return db.prepare(`
-    SELECT id, slug, name, description, status
-    FROM teams
-    WHERE status <> 'archived'
-      AND (name LIKE ? ESCAPE '\\' OR slug LIKE ? ESCAPE '\\')
-    ORDER BY
-      CASE WHEN slug = ? THEN 0
-           WHEN slug LIKE ? ESCAPE '\\' THEN 1
-           WHEN name LIKE ? ESCAPE '\\' THEN 2
-           ELSE 3 END,
-      updated_at DESC
-    LIMIT ?
-  `).all(contains, contains, q, like, like, limit);
 }
 
 export function insertTeam(db, {
@@ -108,10 +77,6 @@ export function deleteTeam(db, id) {
   return db.prepare("DELETE FROM teams WHERE id = ?").run(id);
 }
 
-export function setTeamLastLeadCycleAt(db, id, ts) {
-  db.prepare("UPDATE teams SET last_lead_cycle_at = ? WHERE id = ?").run(ts, id);
-}
-
 // ---- members ----
 
 export function listTeamMembers(db, teamId) {
@@ -123,16 +88,6 @@ export function listTeamMembers(db, teamId) {
     WHERE m.team_id = ?
     ORDER BY a.display_name COLLATE NOCASE ASC
   `).all(teamId);
-}
-
-export function listTeamsForAgent(db, agentName) {
-  return db.prepare(`
-    SELECT t.id, t.slug, t.name, m.role_description
-    FROM team_members m
-    JOIN teams t ON t.id = m.team_id
-    WHERE m.agent_name = ?
-    ORDER BY t.name COLLATE NOCASE ASC
-  `).all(agentName);
 }
 
 export function clearTeamMembers(db, teamId) {
@@ -158,12 +113,6 @@ export function getTeamRosterAgentNames(db, teamId) {
 }
 
 // ---- project / task team assignment ----
-
-export function getProjectTeamId(db, projectId) {
-  if (!projectId) return null;
-  const row = db.prepare("SELECT team_id FROM projects WHERE id = ?").get(projectId);
-  return row?.team_id || null;
-}
 
 export function listProjectsForTeam(db, teamId) {
   return db.prepare(`
@@ -191,14 +140,6 @@ export function listTeamRootTasks(db, teamId) {
     WHERE is_team_root = 1 AND team_id = ?
     ORDER BY updated_at DESC
   `).all(teamId);
-}
-
-export function setTaskGoalStatus(db, taskId, { goalStatus, goalStatusReason, lastLeadAt, updatedAt }) {
-  db.prepare(`
-    UPDATE tasks
-    SET goal_status = ?, goal_status_reason = ?, last_lead_at = ?, updated_at = ?
-    WHERE id = ?
-  `).run(goalStatus, goalStatusReason, lastLeadAt, updatedAt, taskId);
 }
 
 // ---- lead-cycle runs ----

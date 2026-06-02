@@ -7,39 +7,6 @@ export function getTaskById(db, id) {
   return db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
 }
 
-export function getTaskCoreFields(db, id) {
-  return db.prepare(
-    "SELECT id, stage, owner_agent, planner_agent, reviewer_agent, parent_task_id, root_task_id, run_policy FROM tasks WHERE id = ?",
-  ).get(id);
-}
-
-export function getTaskStage(db, id) {
-  return db.prepare("SELECT stage FROM tasks WHERE id = ?").get(id);
-}
-
-export function listSubtaskIds(db, parentTaskId) {
-  return db
-    .prepare("SELECT id FROM tasks WHERE parent_task_id = ? ORDER BY subtask_order ASC, created_at ASC")
-    .all(parentTaskId)
-    .map((row) => row.id);
-}
-
-export function countOpenChildren(db, parentTaskId) {
-  return db
-    .prepare(
-      "SELECT COUNT(*) AS n FROM tasks WHERE parent_task_id = ? AND stage NOT IN ('done', 'blocked')",
-    )
-    .get(parentTaskId).n;
-}
-
-export function setTaskStage(db, id, stage, updatedAt) {
-  db.prepare("UPDATE tasks SET stage = ?, updated_at = ? WHERE id = ?").run(stage, updatedAt, id);
-}
-
-export function setTaskStageReason(db, id, reason, updatedAt) {
-  db.prepare("UPDATE tasks SET stage_reason = ?, updated_at = ? WHERE id = ?").run(reason, updatedAt, id);
-}
-
 export function listTaskHeadersForKbUsage(db) {
   return db.prepare("SELECT id, task_key, title, instructions, stage FROM tasks").all();
 }
@@ -74,36 +41,6 @@ export function getTaskKeyById(db, id) {
 
 export function getTaskByKey(db, taskKey) {
   return db.prepare("SELECT * FROM tasks WHERE task_key = ?").get(taskKey);
-}
-
-export function listTasksByTitlePrefix(db, query, limit) {
-  const q = String(query || "").trim();
-  if (!q) return [];
-  const escaped = q.replace(/[%_]/g, "\\$&");
-  const like = `${escaped}%`;
-  const contains = `%${escaped}%`;
-  // Surface task_key matches first so typing `T-42` still resolves a
-  // task referenced by its key. Synthetic team-root tasks are hidden.
-  return db.prepare(`
-    SELECT id, task_key, title, stage, project_id
-    FROM tasks
-    WHERE is_team_root = 0
-      AND (
-        task_key LIKE ? ESCAPE '\\'
-        OR title LIKE ? ESCAPE '\\'
-      )
-    ORDER BY
-      CASE WHEN task_key = ? THEN 0
-           WHEN task_key LIKE ? ESCAPE '\\' THEN 1
-           WHEN title LIKE ? ESCAPE '\\' THEN 2
-           ELSE 3 END,
-      updated_at DESC
-    LIMIT ?
-  `).all(contains, contains, q, like, like, limit);
-}
-
-export function getTaskKeyRow(db, id) {
-  return db.prepare("SELECT task_key FROM tasks WHERE id = ?").get(id);
 }
 
 export function getTaskByClientRequestId(db, requestId) {
@@ -187,12 +124,6 @@ export function listTaskSummaryRows(db, { filters, params, includeTeamRoots = fa
     ${where}
     ORDER BY updated_at DESC
   `).all(...params);
-}
-
-export function listTasksByIds(db, ids) {
-  if (!ids.length) return [];
-  const placeholders = ids.map(() => "?").join(", ");
-  return db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders})`).all(...ids);
 }
 
 export function listTaskSummaryRowsByIds(db, ids) {
@@ -338,33 +269,6 @@ export function setTaskParentReviewPolicy(db, taskId, policy, updatedAt) {
   db.prepare(
     "UPDATE tasks SET parent_review_policy = ?, updated_at = ? WHERE id = ?",
   ).run(policy, updatedAt, taskId);
-}
-
-// R4: lifetime counters that survive `reset_failure_count`. Each helper is a
-// monotonic +1 — callers fire on the same events that adjust the streak
-// counters today.
-export function incrementLifetimeFailureCount(db, taskId, updatedAt) {
-  db.prepare(`
-    UPDATE tasks
-    SET lifetime_failure_count = lifetime_failure_count + 1, updated_at = ?
-    WHERE id = ?
-  `).run(updatedAt, taskId);
-}
-
-export function incrementLifetimeRejectionCount(db, taskId, updatedAt) {
-  db.prepare(`
-    UPDATE tasks
-    SET lifetime_rejection_count = lifetime_rejection_count + 1, updated_at = ?
-    WHERE id = ?
-  `).run(updatedAt, taskId);
-}
-
-export function incrementLifetimeRecoveryContinuationCount(db, taskId, updatedAt) {
-  db.prepare(`
-    UPDATE tasks
-    SET lifetime_recovery_continuation_count = lifetime_recovery_continuation_count + 1, updated_at = ?
-    WHERE id = ?
-  `).run(updatedAt, taskId);
 }
 
 // Lightweight read for the API/UI: returns the three lifetime counters and

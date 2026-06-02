@@ -52,14 +52,6 @@ export function recordApprovalDecision(db, taskRunId, requestId, {
     .get(taskRunId, requestId);
 }
 
-export function expireApprovalRequest(db, taskRunId, requestId, { reason = "timeout" } = {}) {
-  db.prepare(
-    `UPDATE task_run_approvals
-       SET status = 'expired', decision = NULL, reason = ?, decided_at = ?
-     WHERE task_run_id = ? AND request_id = ? AND status = 'pending'`,
-  ).run(reason, Date.now(), taskRunId, requestId);
-}
-
 export function expirePendingApprovalsForRun(db, taskRunId, { reason = "run_terminated" } = {}) {
   db.prepare(
     `UPDATE task_run_approvals
@@ -72,30 +64,4 @@ export function listApprovalsForRun(db, taskRunId) {
   return db
     .prepare("SELECT * FROM task_run_approvals WHERE task_run_id = ? ORDER BY requested_at ASC")
     .all(taskRunId);
-}
-
-export function getPendingApproval(db, taskRunId, requestId) {
-  return db
-    .prepare(
-      "SELECT * FROM task_run_approvals WHERE task_run_id = ? AND request_id = ? AND status = 'pending'",
-    )
-    .get(taskRunId, requestId);
-}
-
-export function countPendingApprovalsForRun(db, taskRunId) {
-  const row = db
-    .prepare("SELECT COUNT(*) AS n FROM task_run_approvals WHERE task_run_id = ? AND status = 'pending'")
-    .get(taskRunId);
-  return Number(row?.n) || 0;
-}
-
-export function countPendingApprovalsForTask(db, taskId) {
-  const row = db
-    .prepare(`
-      SELECT COUNT(*) AS n FROM task_run_approvals a
-      JOIN task_runs r ON r.id = a.task_run_id
-      WHERE r.task_id = ? AND a.status = 'pending'
-    `)
-    .get(taskId);
-  return Number(row?.n) || 0;
 }

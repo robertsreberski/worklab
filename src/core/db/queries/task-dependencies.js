@@ -93,10 +93,6 @@ export function listDirectDependentRows(db, taskId) {
   `).all(taskId);
 }
 
-export function deleteAllDependenciesForTask(db, taskId) {
-  db.prepare("DELETE FROM task_dependencies WHERE task_id = ?").run(taskId);
-}
-
 // Replace the full dependency edge set for a task in a single transaction.
 // Caller must pre-validate the IDs (no self-dep, no cycles).
 export function replaceDependenciesForTask(db, taskId, dependencyIds, createdAt) {
