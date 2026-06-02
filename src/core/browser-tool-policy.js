@@ -4,7 +4,7 @@ function compactIdentity(value) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
-export function matchesKnownBrowserToolIdentity(...values) {
+function matchesKnownBrowserToolIdentity(...values) {
   return values.some((value) => {
     const compact = compactIdentity(value);
     return compact.includes("playwright") || compact.includes("browseruse");
