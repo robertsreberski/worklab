@@ -8,11 +8,16 @@ Managed by behavior-preserving-cleanup plugin.
 - Scope completed: `LOOP-001` through `LOOP-100` are recorded in `CLEANUP_INVENTORY.csv`; this continuation completed and committed `LOOP-083` through `LOOP-100`.
 - Cleanup type: private single-use helpers, unused internal exports, and local wrapper reductions only.
 - Behavior boundary: no public APIs, schemas, migrations, auth/security paths, generated assets, vendored code, or production dependencies were changed.
+- Final validation status: full validation is green after follow-up timing/test-environment stabilization commits.
 
 ## Metrics
 
 - P0/P1 Cleanup Completion Rate: 100% for accepted inventory rows through `LOOP-100`.
-- Introduced validation failures: 0 observed in per-loop gates.
+- Inventory disposition: 127 rows triaged; 113 resolved; 14 intentionally kept with rationale.
+- Resolved cleanup shape: 72 P0 findings and 41 P1 findings resolved; approximately 152 symbols/helpers removed, internalized, moved, or inlined.
+- Cleanup-only source reduction through `LOOP-100`: 1,313 deleted lines and 668 added lines in `src`, for 645 net source lines removed.
+- Current source reduction at final validation: 1,316 deleted lines and 684 added lines in production `src` files, for 632 net production source lines removed; including tests, 1,328 deleted and 717 added, for 611 net `src` lines removed.
+- Introduced validation failures: 0.
 - New production dependencies: 0.
 - Unapproved public API changes: 0.
 
@@ -35,18 +40,19 @@ Managed by behavior-preserving-cleanup plugin.
 
 - Each implementation batch was one small loop with a granular commit.
 - Focused tests were selected by the touched module and passed before every cleanup commit.
-- Final full-suite `npm test` remains red in suites outside the `LOOP-083`-`LOOP-100` edited files; details are captured below.
+- Follow-up validation stabilization kept behavior unchanged while making full-suite async expectations deterministic.
 
 ## Validation Evidence
 
 | Command | Result | Notes |
 | --- | --- | --- |
-| `npm run lint` | Passed per loop | Also passed for `LOOP-100`. |
-| `npm run lint:size` | Passed per loop | Guard checked 405 production source files. |
-| `npm run build:ui` | Passed per loop and final pass | Final Vite/PWA build completed. |
-| `git diff --check` | Passed per loop and final pass | No whitespace errors. |
+| `npm run lint` | Passed | Final validation passed. |
+| `npm run lint:size` | Passed | Guard checked 405 production source files. |
+| `npm run build:ui` | Passed | Final Vite/PWA build completed. |
+| `git diff --check` | Passed | No whitespace errors. |
 | Focused Vitest suites | Passed per loop | Included service, CLI, coordinator, watcher, and UI suites for touched modules. |
-| `npm test` | Failed | 18 failures across `shutdown-drain.test.js`, `spawn-worker.test.js`, `assistant-run-stream.test.js`, `use-run-stream.test.js`, and `use-sse.test.js`. |
-| `npx vitest run src/__tests__/coordinator/spawn-worker.test.js` | Passed | Isolated rerun passed all 26 tests after the full-suite failure. |
-| `npx vitest run src/__tests__/coordinator/shutdown-drain.test.js` | Failed | Existing failing assertion: `transcript_tail_json` was `null`. |
-| `npx vitest run src/__tests__/ui/use-sse.test.js src/__tests__/ui/use-run-stream.test.js src/__tests__/ui/assistant-run-stream.test.js` | Failed | EventSource fake instances were not created; same failure shape as full-suite run. |
+| `npx vitest run src/__tests__/ui/use-sse.test.js src/__tests__/ui/use-run-stream.test.js src/__tests__/ui/assistant-run-stream.test.js src/__tests__/ui/shared-event-source.test.js` | Passed | Validated EventSource/storage fallback behavior. |
+| `npx vitest run src/__tests__/coordinator/shutdown-drain.test.js src/__tests__/coordinator/shutdown-drain-timeout.test.js` | Passed | Validated clean and timeout drain behavior. |
+| `npx vitest run src/__tests__/coordinator/spawn-worker.test.js src/__tests__/coordinator/task-watcher-review.test.js` | Passed | Validated coordinator timing stabilization. |
+| `npx vitest run src/__tests__/core/mcp-config.test.js src/__tests__/api/routes-mcp.test.js` | Passed | Validated MCP health timing stabilization. |
+| `npm test` | Passed | 226 test files and 2,328 tests passed. |
