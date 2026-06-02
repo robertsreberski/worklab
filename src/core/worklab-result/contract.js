@@ -16,7 +16,7 @@ const stringListSchema = z.preprocess((value) => {
   return value;
 }, z.array(z.string()).transform((items) => items.map((item) => item.trim()).filter(Boolean))).default([]);
 
-export const subtaskSchema = z.object({
+const subtaskSchema = z.object({
   title: z.string().trim().min(1),
   instructions: z.string().default(""),
   suggested_agent: z.string().trim().min(1).optional().nullable(),
@@ -38,7 +38,7 @@ const questionOptionSchema = z.preprocess((value) => {
   description: z.string().optional().default(""),
 }));
 
-export const pendingQuestionSchema = z.object({
+const pendingQuestionSchema = z.object({
   id: z.string().trim().min(1),
   header: z.string().trim().min(1),
   question: z.string().trim().min(1),
@@ -53,7 +53,7 @@ export const pendingQuestionSchema = z.object({
 // `tasks.parent_review_policy`. Unrecognised values fall back to the
 // watcher-derived default (`skip_when_qa_child` when a QA child is present,
 // else `default`).
-export const PARENT_REVIEW_POLICY_VALUES = ["default", "skip_when_qa_child", "always_skip"];
+const PARENT_REVIEW_POLICY_VALUES = ["default", "skip_when_qa_child", "always_skip"];
 export const MEMORY_CANDIDATE_KINDS = ["fact", "preference", "procedure", "failure", "decision", "episode"];
 export const MEMORY_CANDIDATE_SCOPES = ["agent", "project", "task", "global"];
 export const VERIFICATION_EVIDENCE_KINDS = ["test", "build", "lint", "manual_check", "screenshot", "n_a"];
@@ -80,7 +80,7 @@ const parentReviewPolicySchema = z.preprocess((value) => {
   return value;
 }, z.string().min(1).optional());
 
-export const worklabResultSchema = z.object({
+const worklabResultSchema = z.object({
   schema: z.literal("worklab.v2"),
   stage: z.enum(STAGES).optional(),
   decision: z.enum(DECISIONS),
