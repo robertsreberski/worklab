@@ -13,23 +13,6 @@ function out(stdout, line = "") {
   else console.log(line);
 }
 
-function authPositionals(args = []) {
-  const positionals = [];
-  for (let i = 0; i < args.length; i += 1) {
-    const arg = args[i];
-    const eq = arg.indexOf("=");
-    if (eq > 0 && CONFIG_VALUE_FLAGS.has(arg.slice(0, eq))) continue;
-    if (CONFIG_VALUE_FLAGS.has(arg)) {
-      i += 1;
-      continue;
-    }
-    if (arg === "--dry-run") continue;
-    if (arg.startsWith("--")) throw new Error(`unknown auth option: ${arg}`);
-    positionals.push(arg);
-  }
-  return positionals;
-}
-
 function prompt(rl, question) {
   return new Promise((resolve) => rl.question(question, resolve));
 }
@@ -82,7 +65,19 @@ export async function loginPiOAuth({
 export async function authCli(args = process.argv.slice(3), deps = {}) {
   const env = deps.env || process.env;
   applyConfigArgs(args, env);
-  const positionals = authPositionals(args);
+  const positionals = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    const eq = arg.indexOf("=");
+    if (eq > 0 && CONFIG_VALUE_FLAGS.has(arg.slice(0, eq))) continue;
+    if (CONFIG_VALUE_FLAGS.has(arg)) {
+      i += 1;
+      continue;
+    }
+    if (arg === "--dry-run") continue;
+    if (arg.startsWith("--")) throw new Error(`unknown auth option: ${arg}`);
+    positionals.push(arg);
+  }
   if (positionals.length !== 2 || positionals[0] !== "pi" || positionals[1] !== "openai-codex") {
     throw new Error("usage: worklab auth pi openai-codex [options]");
   }
