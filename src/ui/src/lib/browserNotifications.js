@@ -97,7 +97,7 @@ function pwaBlockingReason(diagnostics) {
   return null;
 }
 
-export function pwaNotificationsSupported(env = getGlobal()) {
+function pwaNotificationsSupported(env = getGlobal()) {
   const diagnostics = notificationDiagnostics(env);
   return pwaBlockingReason(diagnostics) === null;
 }
@@ -198,7 +198,7 @@ function pwaEnableResult(env, reason, extra = {}) {
   return { ...pwaNotificationSettings(env), reason, ...extra };
 }
 
-export async function requestAndEnablePwaNotifications({ env = getGlobal(), api } = {}) {
+async function requestAndEnablePwaNotifications({ env = getGlobal(), api } = {}) {
   const apiImpl = api || {};
   const support = pwaNotificationSettings(env);
   if (!support.supported) {
@@ -264,7 +264,7 @@ export async function requestAndEnablePwaNotifications({ env = getGlobal(), api 
   return pwaEnableResult(env, "registered", { serverStatus: status });
 }
 
-export async function disablePwaNotifications({ env = getGlobal(), api } = {}) {
+async function disablePwaNotifications({ env = getGlobal(), api } = {}) {
   const apiImpl = api || {};
   const registration = await pwaRegistration(env).catch(() => null);
   const subscription = await registration?.pushManager?.getSubscription?.();
@@ -286,7 +286,7 @@ export async function disableNotifications({ env = getGlobal(), api } = {}) {
   return { mode: "browser", ...disableBrowserNotifications(env) };
 }
 
-export function claimNotificationEvent(key, env = getGlobal(), { now = Date.now(), ttlMs = DEDUPE_TTL_MS } = {}) {
+function claimNotificationEvent(key, env = getGlobal(), { now = Date.now(), ttlMs = DEDUPE_TTL_MS } = {}) {
   const storage = safeStorage(env);
   if (!storage || !key) return true;
   const storageKey = `${DEDUPE_KEY_PREFIX}${key}`;
