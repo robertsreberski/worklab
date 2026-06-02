@@ -54,9 +54,9 @@ const pendingQuestionSchema = z.object({
 // watcher-derived default (`skip_when_qa_child` when a QA child is present,
 // else `default`).
 const PARENT_REVIEW_POLICY_VALUES = ["default", "skip_when_qa_child", "always_skip"];
-export const MEMORY_CANDIDATE_KINDS = ["fact", "preference", "procedure", "failure", "decision", "episode"];
-export const MEMORY_CANDIDATE_SCOPES = ["agent", "project", "task", "global"];
-export const VERIFICATION_EVIDENCE_KINDS = ["test", "build", "lint", "manual_check", "screenshot", "n_a"];
+const MEMORY_CANDIDATE_KINDS = ["fact", "preference", "procedure", "failure", "decision", "episode"];
+const MEMORY_CANDIDATE_SCOPES = ["agent", "project", "task", "global"];
+const VERIFICATION_EVIDENCE_KINDS = ["test", "build", "lint", "manual_check", "screenshot", "n_a"];
 
 const verificationEvidenceSchema = z.object({
   kind: z.enum(VERIFICATION_EVIDENCE_KINDS),
