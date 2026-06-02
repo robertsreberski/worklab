@@ -40,15 +40,11 @@ function parseMaybeJson(value) {
   return null;
 }
 
-function validKbSlug(value) {
-  const slug = String(value || "").trim();
-  return KB_SLUG_RE.test(slug) ? slug : null;
-}
-
 function slugFromToolPayload(value) {
   const parsed = parseMaybeJson(value) || value;
   if (!parsed || typeof parsed !== "object") return null;
-  return validKbSlug(parsed.slug || parsed.input?.slug || parsed.result?.slug);
+  const slug = String(parsed.slug || parsed.input?.slug || parsed.result?.slug || "").trim();
+  return KB_SLUG_RE.test(slug) ? slug : null;
 }
 
 function isWorklabKbWriteTool(name) {
