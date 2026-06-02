@@ -14,13 +14,6 @@ import { getAgentConsolidationHash, upsertAgentConsolidation } from "../core/db/
 
 const TICK_MS = 60_000;
 
-function localHourAndDate(date, timezone) {
-  const local = timezone
-    ? new Date(date.toLocaleString("en-US", { timeZone: timezone }))
-    : date;
-  return { hour: local.getHours(), date: local.toISOString().slice(0, 10) };
-}
-
 export function createConsolidationManager({
   db,
   broker,
@@ -113,7 +106,11 @@ export function createConsolidationManager({
   function tick(now = new Date()) {
     const settings = readSettings(db);
     if (!settings.consolidation_enabled) return { skipped: true, reason: "disabled" };
-    const { hour, date } = localHourAndDate(now, config.timezone);
+    const local = config.timezone
+      ? new Date(now.toLocaleString("en-US", { timeZone: config.timezone }))
+      : now;
+    const hour = local.getHours();
+    const date = local.toISOString().slice(0, 10);
     if (hour !== Number(settings.consolidation_hour)) return { skipped: true, reason: "wrong hour" };
     if (lastTickDate === date) return { skipped: true, reason: "already checked today" };
     lastTickDate = date;
