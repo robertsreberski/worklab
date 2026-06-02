@@ -53,10 +53,3 @@ export function subscribeToasts(fn) {
   fn(toasts);
   return () => subscribers.delete(fn);
 }
-
-// Convenience helpers per toast policy (§5.11).
-export const toast = {
-  success: (message, opts) => pushToast(message, { ...opts, variant: "success" }),
-  error:   (message, opts) => pushToast(message, { ...opts, variant: "error" }),
-  info:    (message, opts) => pushToast(message, { ...opts, variant: "info" }),
-};
