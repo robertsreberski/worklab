@@ -13,6 +13,7 @@ export const PROVIDER_TYPES = [
   "together",
   "fireworks",
   "deepseek",
+  "opencode-zen",
 ];
 
 export const OPENAI_COMPAT_PROVIDER_TYPES = [
@@ -24,6 +25,22 @@ export const OPENAI_COMPAT_PROVIDER_TYPES = [
   "together",
   "fireworks",
   "deepseek",
+  "opencode-zen",
+];
+
+// Fallback model list used when the OpenCode Zen gateway does not expose a
+// usable /v1/models discovery endpoint (tracked upstream in sst/opencode#2901).
+// These are the OpenAI-compatible (open-source + GPT/Gemini) models served at
+// .../zen/v1/chat/completions; the curated set may drift, so users should re-run
+// Discover once the gateway advertises models.
+export const ZEN_SEED_MODELS = [
+  { id: "gpt-5.1", name: "GPT-5.1" },
+  { id: "gpt-5.1-codex", name: "GPT-5.1 Codex" },
+  { id: "gpt-5-mini", name: "GPT-5 Mini" },
+  { id: "qwen3-coder", name: "Qwen3 Coder" },
+  { id: "kimi-k2", name: "Kimi K2" },
+  { id: "glm-4.6", name: "GLM-4.6" },
+  { id: "grok-code", name: "Grok Code" },
 ];
 
 const OPENAI_COMPAT_PROVIDER_TYPE_SET = new Set(OPENAI_COMPAT_PROVIDER_TYPES);
@@ -567,6 +584,27 @@ function inferOpenAICompatCapabilities(model) {
   };
 }
 
+// OpenCode Zen serves GPT-5.x as effort-reasoning models that the generic
+// OpenAI-compat heuristic misses; everything else falls back to the generic
+// inference (which already handles deepseek-r/qwq/thinking families).
+export function inferOpenCodeZenCapabilities(model) {
+  const id = String(model.id || model.name || "").toLowerCase();
+  if (/gpt-5/.test(id)) {
+    return {
+      tool_use: true,
+      reasoning: true,
+      reasoning_mode: "effort",
+      reasoning_levels: [...OPENAI_COMPAT_REASONING_LEVELS],
+      reasoning_disable_supported: true,
+      vision: true,
+      json_mode: true,
+      embedding: false,
+      chat: true,
+    };
+  }
+  return inferOpenAICompatCapabilities(model);
+}
+
 export async function discoverModels({ db, dataDir, providerId, fetchImpl = fetch, timeoutMs = 0 }) {
   const provider = getProvider({ db, id: providerId, includeKey: true, dataDir });
   if (!provider) throw new Error("provider not found");
@@ -586,17 +624,32 @@ export async function discoverModels({ db, dataDir, providerId, fetchImpl = fetc
       });
     }
   } else if (isOpenAICompatibleProviderType(provider.provider_type)) {
+    const zen = provider.provider_type === "opencode-zen";
+    const inferCapabilities = zen ? inferOpenCodeZenCapabilities : inferOpenAICompatCapabilities;
     const resp = await providerFetch(modelsUrl(provider.base_url), { headers: authHeaders(provider) });
-    if (!resp.ok) throw new Error(`/v1/models returned ${resp.status}`);
-    const data = await resp.json();
-    for (const model of Array.isArray(data.data) ? data.data : Array.isArray(data) ? data : []) {
-      const modelName = model.id || model.name;
-      if (!modelName) continue;
-      discovered.push({
-        modelName,
-        displayName: model.name || model.id,
-        capabilities: inferOpenAICompatCapabilities(model),
-      });
+    // The Zen gateway may not advertise /v1/models yet (sst/opencode#2901); fall
+    // back to a curated seed list instead of failing the whole discovery.
+    if (!resp.ok && !zen) throw new Error(`/v1/models returned ${resp.status}`);
+    if (resp.ok) {
+      const data = await resp.json();
+      for (const model of Array.isArray(data.data) ? data.data : Array.isArray(data) ? data : []) {
+        const modelName = model.id || model.name;
+        if (!modelName) continue;
+        discovered.push({
+          modelName,
+          displayName: model.name || model.id,
+          capabilities: inferCapabilities(model),
+        });
+      }
+    }
+    if (zen && discovered.length === 0) {
+      for (const seed of ZEN_SEED_MODELS) {
+        discovered.push({
+          modelName: seed.id,
+          displayName: seed.name || seed.id,
+          capabilities: inferOpenCodeZenCapabilities(seed),
+        });
+      }
     }
   } else {
     throw unsupportedProviderTypeError(provider);
