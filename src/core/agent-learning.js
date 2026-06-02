@@ -4,9 +4,9 @@ import { newAgentMemoryId } from "./ids.js";
 export const AGENT_MEMORY_KINDS = ["fact", "preference", "procedure", "failure", "decision", "episode"];
 export const AGENT_MEMORY_SCOPES = ["agent", "project", "task", "global"];
 export const AGENT_MEMORY_STATUSES = ["draft", "approved", "archived"];
-export const MAX_AGENT_MEMORY_CANDIDATES_PER_BATCH = 8;
+const MAX_AGENT_MEMORY_CANDIDATES_PER_BATCH = 8;
 const AGENT_LEARNING_CONTEXT_MAX_CHARS = 4000;
-export const AGENT_LEARNING_CONTEXT_LINE_MAX_CHARS = 600;
+const AGENT_LEARNING_CONTEXT_LINE_MAX_CHARS = 600;
 
 const KIND_ORDER = new Map([
   ["procedure", 0],
@@ -29,7 +29,7 @@ function oneLine(value, max = 2000) {
   return text.length > max ? text.slice(0, max).trim() : text;
 }
 
-export function memoryContentKey(content) {
+function memoryContentKey(content) {
   const normalized = String(content || "").replace(/\s+/g, " ").trim().toLowerCase();
   return createHash("sha256").update(normalized).digest("hex");
 }
