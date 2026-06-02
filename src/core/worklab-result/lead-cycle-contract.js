@@ -237,7 +237,7 @@ export const WORKLAB_LEAD_CYCLE_JSON_SCHEMA = {
   },
 };
 
-export const LEAD_CYCLE_MAX_TASK_CREATIONS = 8;
+const LEAD_CYCLE_MAX_TASK_CREATIONS = 8;
 
 export function normalizeLeadTaskTitle(value) {
   return String(value || "")
