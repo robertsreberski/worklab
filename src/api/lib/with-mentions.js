@@ -71,7 +71,10 @@ function parseEntityLinks(text) {
 }
 
 function entityLinkFromHref(href) {
-  const safe = normalizeHref(href);
+  const trimmed = String(href || "").trim();
+  const safe = trimmed.startsWith("#/")
+    ? trimmed
+    : (trimmed.startsWith("/#/") ? trimmed.slice(1) : null);
   if (!safe) return null;
   const raw = safe.replace(/^#\/?/, "").replace(/&amp;/g, "&");
   const queryIndex = raw.indexOf("?");
@@ -92,13 +95,6 @@ function entityLinkFromHref(href) {
     const runId = query.get("run");
     return runId ? linkRef(safe, "run", runId) : linkRef(safe, "task", segments[1]);
   }
-  return null;
-}
-
-function normalizeHref(href) {
-  const trimmed = String(href || "").trim();
-  if (trimmed.startsWith("#/")) return trimmed;
-  if (trimmed.startsWith("/#/")) return trimmed.slice(1);
   return null;
 }
 
