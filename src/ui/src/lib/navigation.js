@@ -69,7 +69,7 @@ export function parseHashRoute(hash = "") {
   };
 }
 
-export function registerNavigationGuard(guard) {
+function registerNavigationGuard(guard) {
   activeGuards.push(guard);
   return () => {
     const index = activeGuards.indexOf(guard);
@@ -88,7 +88,7 @@ export function registerOverlayNavigationHandler(handler) {
   };
 }
 
-export function allowHashNavigationOnce(hash) {
+function allowHashNavigationOnce(hash) {
   allowedHashes.add(normalizeHash(hash));
 }
 
