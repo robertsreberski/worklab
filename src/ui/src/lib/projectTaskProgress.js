@@ -1,6 +1,6 @@
 import { hasRunError, taskRecoveryLabel } from "./display.js";
 
-export const PROJECT_TASK_GROUPS = [
+const PROJECT_TASK_GROUPS = [
   { key: "todo", label: "Todo" },
   { key: "in_progress", label: "In progress" },
   { key: "done", label: "Done" },
@@ -81,7 +81,7 @@ export function projectTaskAttentionItems(task = {}) {
   return items;
 }
 
-export function compareProjectTasks(a = {}, b = {}) {
+function compareProjectTasks(a = {}, b = {}) {
   const aAttention = Array.isArray(a.attention) ? a.attention.length > 0 : projectTaskAttentionItems(a).length > 0;
   const bAttention = Array.isArray(b.attention) ? b.attention.length > 0 : projectTaskAttentionItems(b).length > 0;
   if (aAttention !== bAttention) return aAttention ? -1 : 1;
