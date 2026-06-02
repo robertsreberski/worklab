@@ -11,7 +11,7 @@ import {
 
 const LOCAL_PROVIDER_TYPES = new Set(["ollama", "lmstudio", "vllm"]);
 
-export function customProviderPricing(db, parsed) {
+function customProviderPricing(db, parsed) {
   if (!db || !parsed?.provider || !parsed?.model) return null;
   try {
     const row = db.prepare(`

@@ -11,15 +11,15 @@ export function matchesKnownBrowserToolIdentity(...values) {
   });
 }
 
-export function isKnownBrowserSkill(skill = {}) {
+function isKnownBrowserSkill(skill = {}) {
   return matchesKnownBrowserToolIdentity(skill.name, skill.display_name, skill.trigger);
 }
 
-export function isKnownBrowserMcpServer(name) {
+function isKnownBrowserMcpServer(name) {
   return matchesKnownBrowserToolIdentity(name);
 }
 
-export function shouldRestrictBrowserTools(agent, mode) {
+function shouldRestrictBrowserTools(agent, mode) {
   return mode === "execute" && Boolean(Number(agent?.browser_tools_review_only || 0));
 }
 

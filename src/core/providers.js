@@ -343,7 +343,7 @@ function pricingHasRates(pricing = {}) {
   return MODEL_PRICING_KEYS.some((key) => pricingRate(pricing?.[key]) != null);
 }
 
-export function normalizeModelPricing(pricing = {}) {
+function normalizeModelPricing(pricing = {}) {
   if (!pricing || typeof pricing !== "object" || Array.isArray(pricing)) return {};
   const next = {};
   for (const key of MODEL_PRICING_KEYS) {

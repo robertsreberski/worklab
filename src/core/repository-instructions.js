@@ -6,9 +6,9 @@ import { shortHash } from "./context-cache.js";
 // AGENTS.md is the codex-style fallback. We do NOT auto-merge — keeping them
 // separate is a deliberate choice some projects make (different audiences
 // for the two files), so silently concatenating would surprise users.
-export const REPOSITORY_INSTRUCTION_FILES = ["CLAUDE.md", "AGENTS.md"];
+const REPOSITORY_INSTRUCTION_FILES = ["CLAUDE.md", "AGENTS.md"];
 export const REPOSITORY_INSTRUCTIONS_MAX_CHARS = 64_000;
-export const REPOSITORY_INSTRUCTIONS_PROMPT_SECTION = "Repository instructions";
+const REPOSITORY_INSTRUCTIONS_PROMPT_SECTION = "Repository instructions";
 
 function truncationMarker(rawLength, capChars) {
   const totalKb = Math.round(rawLength / 1024);
@@ -75,4 +75,3 @@ export function repositoryInstructionsPromptMetadata(instructions) {
     prompt_section: REPOSITORY_INSTRUCTIONS_PROMPT_SECTION,
   };
 }
-
