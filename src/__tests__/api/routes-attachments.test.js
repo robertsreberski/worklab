@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -195,6 +195,52 @@ describe("task attachments API", () => {
         .expect(403);
 
       expect(res.body.error?.code).toBe("outside_workdir");
+    });
+
+    it("allows child filenames whose first segment starts with dots", async () => {
+      const workdir = makeTempDir("worklab-read-dotfile-workdir-");
+      const dataDir = makeTempDir("worklab-read-dotfile-data-");
+      writeFileSync(join(workdir, "..env"), "still inside\n");
+      const { agent } = makeTestServer({
+        dataDir,
+        config: { dataDir, repoRoot: workdir, workspace: workdir },
+      });
+      const task = await agent.post("/api/tasks").send({ title: "Dot child" }).expect(201);
+
+      const res = await agent
+        .get(`/api/files/read?task_id=${task.body.task.id}&path=${encodeURIComponent("..env")}`)
+        .expect(200);
+
+      expect(res.body.content).toBe("still inside\n");
+      expect(res.body.abs_path).toBe(realpathSync(join(workdir, "..env")));
+    });
+
+    it("returns 403 when a file cannot be read", async () => {
+      if (process.platform === "win32" || process.getuid?.() === 0) return;
+
+      const workdir = makeTempDir("worklab-read-forbidden-workdir-");
+      const dataDir = makeTempDir("worklab-read-forbidden-data-");
+      const unreadable = join(workdir, "secret.txt");
+      writeFileSync(unreadable, "nope");
+      chmodSync(unreadable, 0o000);
+      const { agent } = makeTestServer({
+        dataDir,
+        config: { dataDir, repoRoot: workdir, workspace: workdir },
+      });
+      const task = await agent.post("/api/tasks").send({ title: "Forbidden" }).expect(201);
+
+      try {
+        const res = await agent
+          .get(`/api/files/read?task_id=${task.body.task.id}&path=secret.txt`)
+          .expect(403);
+
+        expect(res.body.error).toMatchObject({
+          code: "forbidden",
+          message: "file is not readable",
+        });
+      } finally {
+        chmodSync(unreadable, 0o600);
+      }
     });
 
     it("flags binary files instead of returning their content", async () => {

@@ -41,7 +41,12 @@ function realpathSafe(target) {
 function isInside(child, parent) {
   if (!child || !parent) return false;
   const rel = path.relative(parent, child);
-  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+  const normalizedRel = rel.split(path.sep).join("/");
+  return rel === "" || (
+    normalizedRel !== ".."
+    && !normalizedRel.startsWith("../")
+    && !path.isAbsolute(rel)
+  );
 }
 
 function detectBinary(buffer) {
@@ -50,6 +55,21 @@ function detectBinary(buffer) {
     if (buffer[i] === 0) return true;
   }
   return false;
+}
+
+function isPermissionError(error) {
+  return error?.code === "EACCES" || error?.code === "EPERM";
+}
+
+function readPrefix(fd, readLen) {
+  const buffer = Buffer.alloc(readLen);
+  let bytesRead = 0;
+  while (bytesRead < readLen) {
+    const next = fs.readSync(fd, buffer, bytesRead, readLen - bytesRead, bytesRead);
+    if (next === 0) break;
+    bytesRead += next;
+  }
+  return buffer.subarray(0, bytesRead);
 }
 
 export function registerFileRoutes(app, { db, config }) {
@@ -91,6 +111,9 @@ export function registerFileRoutes(app, { db, config }) {
         if (err?.code === "ENOENT") {
           return sendRouteError(res, { status: 404, code: "not_found", message: "file not found" });
         }
+        if (isPermissionError(err)) {
+          return sendRouteError(res, { status: 403, code: "forbidden", message: "file is not readable" });
+        }
         throw err;
       }
       if (!stat.isFile()) {
@@ -107,11 +130,11 @@ export function registerFileRoutes(app, { db, config }) {
           max_bytes: MAX_FILE_BYTES,
         });
       }
-      const fd = fs.openSync(resolved, "r");
+      let fd = null;
       try {
+        fd = fs.openSync(resolved, "r");
         const readLen = Math.min(stat.size, MAX_READ_BYTES);
-        const buffer = Buffer.alloc(readLen);
-        if (readLen > 0) fs.readSync(fd, buffer, 0, readLen, 0);
+        const buffer = readPrefix(fd, readLen);
         if (detectBinary(buffer)) {
           return res.json({
             path: rawPath,
@@ -132,8 +155,13 @@ export function registerFileRoutes(app, { db, config }) {
           content: buffer.toString("utf8"),
           max_bytes: MAX_READ_BYTES,
         });
+      } catch (err) {
+        if (isPermissionError(err)) {
+          return sendRouteError(res, { status: 403, code: "forbidden", message: "file is not readable" });
+        }
+        throw err;
       } finally {
-        fs.closeSync(fd);
+        if (fd !== null) fs.closeSync(fd);
       }
     } catch (error) {
       sendRouteError(res, error);
