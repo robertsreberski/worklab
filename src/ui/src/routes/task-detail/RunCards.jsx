@@ -822,28 +822,38 @@ function FilePreviewDrawer({ file, taskId, onClose }) {
 
   const handleResize = (startEvent) => {
     startEvent.preventDefault();
-    if (isFull) setIsFull(false);
     const startX = startEvent.clientX;
     const startWidth = isFull ? window.innerWidth : width;
+    if (isFull) {
+      setWidth(startWidth);
+      setIsFull(false);
+    }
+    const resizeHandle = startEvent.currentTarget;
+    resizeHandle?.setPointerCapture?.(startEvent.pointerId);
     const onMove = (event) => {
       const dx = startX - event.clientX;
       const next = Math.max(FILE_PREVIEW_MIN_WIDTH, Math.min(window.innerWidth, startWidth + dx));
       setWidth(next);
     };
     const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      if (resizeHandle?.hasPointerCapture?.(startEvent.pointerId)) {
+        resizeHandle.releasePointerCapture(startEvent.pointerId);
+      }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
     document.body.style.cursor = "ew-resize";
     document.body.style.userSelect = "none";
   };
 
   if (!file) return null;
-  const title = file.name || file.display_path || file.path;
+  const title = file.display_path || file.path || file.name;
   const data = state.data;
   const showMarkdownToggle = isMarkdown && data?.encoding === "utf8";
   const headerActions = (

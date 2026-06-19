@@ -35,7 +35,7 @@ export function Drawer({
         {onResizeStart && (
           <div
             class="drawer-resize-handle"
-            onMouseDown={onResizeStart}
+            onPointerDown={onResizeStart}
             role="separator"
             aria-orientation="vertical"
             aria-label="Resize panel"

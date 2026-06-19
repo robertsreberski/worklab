@@ -2484,6 +2484,7 @@ a.badge-token:focus-visible {
   width: 6px;
   height: 100%;
   cursor: ew-resize;
+  touch-action: none;
   background: transparent;
   z-index: 1;
 }
