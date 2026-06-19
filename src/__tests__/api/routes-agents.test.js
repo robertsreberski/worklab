@@ -151,6 +151,30 @@ describe("agents CRUD", () => {
     expect(res.body.error.code).toBe("validation");
   });
 
+  it("accepts opencode:<provider>:<model> agents under cli execution mode", async () => {
+    const { agent, db } = makeTestServer();
+    const res = await agent.post("/api/agents").send({
+      name: "opencode-agent",
+      display_name: "OpenCode Agent",
+      model: "opencode:github-copilot:gpt-5.1",
+      execution_mode: "cli",
+    }).expect(201);
+    expect(res.body.agent.sdk).toBe("opencode");
+    expect(res.body.agent.execution_mode).toBe("cli");
+    expect(db.prepare("SELECT sdk FROM agents WHERE name = 'opencode-agent'").get().sdk).toBe("opencode");
+  });
+
+  it("rejects opencode agents under sdk execution mode", async () => {
+    const { agent } = makeTestServer();
+    const res = await agent.post("/api/agents").send({
+      name: "opencode-sdk",
+      display_name: "Bad OpenCode",
+      model: "opencode:github-copilot:gpt-5.1",
+      execution_mode: "sdk",
+    }).expect(400);
+    expect(res.body.error.code).toBe("incompatible_execution_mode");
+  });
+
   it("PATCH updates execution_mode", async () => {
     const { agent, db } = makeTestServer();
     await agent.post("/api/agents").send({ name: "mover", display_name: "Mover", model: "claude:claude-sonnet-4-6" }).expect(201);

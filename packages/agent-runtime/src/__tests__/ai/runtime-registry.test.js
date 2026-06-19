@@ -8,7 +8,7 @@ import {
 describe("AI runtime bridge registry", () => {
   it("registers SDK and CLI bridges for both provider families", () => {
     expect(listRuntimeBridges().map((bridge) => bridge.id).sort())
-      .toEqual(["claude", "claude-code", "codex-app", "pi"]);
+      .toEqual(["claude", "claude-code", "codex-app", "opencode-app", "pi"]);
   });
 
   it("resolves canonical Pi and Claude model references to SDK bridges by default", async () => {

@@ -1,5 +1,5 @@
 const RESERVED_RUNTIME_IDS = new Set(["openai", "vercel", "claude-code", "codex-cli"]);
-const ACTIVE_RUNTIME_IDS = new Set(["claude", "pi", "codex"]);
+const ACTIVE_RUNTIME_IDS = new Set(["claude", "pi", "codex", "opencode"]);
 
 function requirePart(value, message) {
   if (!value || typeof value !== "string" || value.trim() !== value) {
@@ -65,6 +65,20 @@ export function parseRuntimeModelReference(value) {
     return { sdk: "pi", provider, model, reference: value };
   }
 
+  if (value.startsWith("opencode:")) {
+    // opencode:<providerID>:<modelID> — providerID/modelID come from OpenCode's own
+    // provider registry (auth.json). Only the first colon separates them; modelID may
+    // contain slashes (e.g. openrouter's `anthropic/claude-3.5-sonnet`).
+    const rest = value.slice("opencode:".length);
+    const i = rest.indexOf(":");
+    if (i <= 0 || i === rest.length - 1) {
+      throw new Error("invalid opencode model reference; expected opencode:<providerId>:<modelId>");
+    }
+    const provider = requirePart(rest.slice(0, i), "provider id required");
+    const model = requirePart(rest.slice(i + 1), "model id required");
+    return { sdk: "opencode", provider, model, reference: value };
+  }
+
   const i = value.indexOf(":");
   if (i <= 0 || i === value.length - 1) {
     throw new Error("invalid model reference; expected <sdk>:<modelId>");
@@ -86,9 +100,10 @@ export const ACTIVE_RUNTIME_KINDS = [...ACTIVE_RUNTIME_IDS];
 export const RESERVED_RUNTIME_KINDS = [...RESERVED_RUNTIME_IDS];
 
 // intelligence-ramp: which model refs can run under which execution_mode.
-//   sdk='claude' → CLI (claude binary) or SDK (Anthropic)
-//   sdk='codex'  → CLI only (codex app-server)
-//   sdk='pi'     → SDK only (pi-sdk handles openai-codex and other providers)
+//   sdk='claude'   → CLI (claude binary) or SDK (Anthropic)
+//   sdk='codex'    → CLI only (codex app-server)
+//   sdk='opencode' → CLI only (opencode server via @opencode-ai/sdk)
+//   sdk='pi'       → SDK only (pi-sdk handles openai-codex and other providers)
 
 // Returns null when the combo is fine; otherwise a short reason string the
 // UI / API can show.
@@ -107,11 +122,15 @@ export function executionModeIncompatibilityReason(modelRefOrParsed, executionMo
     if (parsed.sdk === "codex") {
       return "Codex CLI requires CLI execution mode.";
     }
+    if (parsed.sdk === "opencode") {
+      return "OpenCode CLI requires CLI execution mode.";
+    }
     return null;
   }
   if (executionMode !== "cli") return null;
   if (parsed.sdk === "claude") return null;
   if (parsed.sdk === "codex") return null;
+  if (parsed.sdk === "opencode") return null;
   if (parsed.sdk === "pi") {
     const provider = parsed.provider || "unknown";
     const suffix = provider === "openai-codex" ? "; use codex:<model> for Codex CLI" : "";

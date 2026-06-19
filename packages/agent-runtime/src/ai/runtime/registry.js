@@ -16,6 +16,12 @@ const builtinBridgeSpecs = {
     capabilities: () => ({ kind: "codex-app", runtime: "cli", ...COMMON_CAPABILITIES }),
     load: async () => (await import("../providers/codex-app.js")).codexAppRuntimeBridge,
   },
+  "opencode-app": {
+    id: "opencode-app",
+    supports: (ref, options) => ref?.sdk === "opencode" && options?.executionMode === "cli",
+    capabilities: () => ({ kind: "opencode-app", runtime: "cli", ...COMMON_CAPABILITIES }),
+    load: async () => (await import("../providers/opencode-app.js")).opencodeAppRuntimeBridge,
+  },
   claude: {
     id: "claude",
     supports: (ref) => ref?.sdk === "claude",

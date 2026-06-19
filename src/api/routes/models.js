@@ -2,10 +2,17 @@ import {
   buildModelCapabilities,
   getBuiltinModelGroups,
   getBuiltinProviderAvailability,
+  getOpencodeModelCatalogue,
+  isPrivateBaseUrl,
   isValidProviderType,
+  providerStatusIsFresh,
+  refreshProviderStatus,
   listModels,
   listProviders,
 } from "../../core/index.js";
+
+const LOCAL_PROVIDER_FRESHNESS_MS = 60000;
+const LOCAL_PROVIDER_AVAILABILITY_TIMEOUT_MS = 1500;
 
 const OPENAI_EMBEDDING_MODELS = [
   { model: "text-embedding-3-small", label: "text-embedding-3-small", description: "1536 dims, low cost" },
@@ -32,8 +39,15 @@ function runtimeModelMetadata(model, group, availability) {
   };
 }
 
+function providerUnavailableReason(status) {
+  if (!status || status.ok !== false) return null;
+  if (status.error) return status.error;
+  if (status.status) return `HTTP ${status.status}`;
+  return "Provider unavailable";
+}
+
 export function registerModelRoutes(app, { db, dataDir }) {
-  app.get("/api/models/available", (_req, res) => {
+  app.get("/api/models/available", async (_req, res) => {
     const groups = getBuiltinModelGroups().filter((group) => group.id !== "pi:openai");
     const availability = getBuiltinProviderAvailability({ dataDir });
     for (const group of groups) {
@@ -49,8 +63,23 @@ export function registerModelRoutes(app, { db, dataDir }) {
       group.models = (group.models || []).map((model) => runtimeModelMetadata(model, group, avail));
     }
 
-    for (const provider of listProviders({ db, dataDir, enabledOnly: true })) {
+    for (let provider of listProviders({ db, dataDir, enabledOnly: true })) {
       if (!isValidProviderType(provider.provider_type)) continue;
+      if (isPrivateBaseUrl(provider.base_url) && !providerStatusIsFresh(provider, LOCAL_PROVIDER_FRESHNESS_MS)) {
+        try {
+          await refreshProviderStatus({
+            db,
+            dataDir,
+            providerId: provider.id,
+            timeoutMs: LOCAL_PROVIDER_AVAILABILITY_TIMEOUT_MS,
+          });
+          provider = listProviders({ db, dataDir, enabledOnly: true }).find((item) => item.id === provider.id) || provider;
+        } catch {
+          provider = listProviders({ db, dataDir, enabledOnly: true }).find((item) => item.id === provider.id) || provider;
+        }
+      }
+      const unavailableReason = providerUnavailableReason(provider.status);
+      const providerAvailable = !unavailableReason;
       const models = listModels({ db, providerId: provider.id, enabledOnly: true }).flatMap((model) => {
         const capabilities = buildModelCapabilities(provider.provider_type, model.model_name, model.capabilities);
         if (!capabilities.runnable_for_agent) return [];
@@ -65,9 +94,9 @@ export function registerModelRoutes(app, { db, dataDir }) {
           provider_type: provider.provider_type,
           model_name: model.model_name,
           capabilities,
-          available: true,
-          disabled: false,
-          unavailable_reason: null,
+          available: providerAvailable,
+          disabled: !providerAvailable,
+          unavailable_reason: unavailableReason,
           builtin_tools: capabilities.builtin_tools,
           supports_builtin_tools: capabilities.supports_builtin_tools,
           supports_skills: true,
@@ -84,9 +113,9 @@ export function registerModelRoutes(app, { db, dataDir }) {
           id: provider.id,
           label: provider.name,
           provider_type: provider.provider_type,
-          available: true,
-          disabled: false,
-          unavailable_reason: null,
+          available: providerAvailable,
+          disabled: !providerAvailable,
+          unavailable_reason: unavailableReason,
           runtime_kind: "pi-agent",
           models,
         });
@@ -94,6 +123,15 @@ export function registerModelRoutes(app, { db, dataDir }) {
     }
 
     res.json({ groups, models: groups.flatMap((group) => group.models) });
+  });
+
+  // Lazy, cached discovery of OpenCode's own providers/models (boots a transient
+  // opencode server). Kept off the hot /api/models/available path; the agent editor
+  // fetches it only when needed. ?refresh=true forces a rediscovery.
+  app.get("/api/models/opencode", async (req, res) => {
+    const refresh = req.query.refresh === "true" || req.query.refresh === "1";
+    const catalogue = await getOpencodeModelCatalogue({ refresh });
+    res.json(catalogue);
   });
 
   app.get("/api/models/embeddings", (_req, res) => {

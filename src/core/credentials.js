@@ -57,6 +57,7 @@ export function getBuiltinProviderAvailability({
   const probeEnv = { ...process.env, ...env, PATH: path };
   const codexAuth = piAuthAvailable("openai-codex", { env: probeEnv, dataDir });
   const codexCliAvailable = commandOnPath("codex", path);
+  const opencodeCliAvailable = commandOnPath("opencode", path);
   const piProviders = [
     "github-copilot",
     "google-gemini-cli",
@@ -107,6 +108,14 @@ export function getBuiltinProviderAvailability({
       reason: codexCliAvailable ? null : "Install or add the codex CLI to PATH.",
       runtime_kind: "cli",
       auth: codexCliAvailable ? "codex-cli" : "missing-command",
+    },
+    opencode: {
+      available: opencodeCliAvailable,
+      // OpenCode resolves provider credentials from its own auth.json; Worklab only
+      // needs the binary present (the user runs `opencode auth login` separately).
+      reason: opencodeCliAvailable ? null : "Install the opencode CLI (then run `opencode auth login`) or add it to PATH.",
+      runtime_kind: "cli",
+      auth: opencodeCliAvailable ? "opencode-cli" : "missing-command",
     },
     pi: {
       available: true,

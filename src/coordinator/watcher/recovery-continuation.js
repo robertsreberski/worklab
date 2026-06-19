@@ -340,7 +340,7 @@ export function createRecoveryContinuation({
     const heading = recovery.reason === "usage_limit"
       ? "Automatic continuation after context-window overflow."
       : recovery.reason === "schema_correction"
-        ? "Automatic schema-correction continuation after malformed Worklab result."
+        ? "Automatic schema-correction continuation after invalid Worklab result."
       : recovery.reason === "finalisation"
         ? "Automatic finalisation continuation: prior run completed work but dropped before emitting the worklab.v2 envelope."
       : mode === "review"
@@ -350,6 +350,7 @@ export function createRecoveryContinuation({
       ? [
           ...delegationRetryGuidance,
           "Return exactly one valid `worklab.v2` JSON object that preserves your prior decision.",
+          "Fix the validation error named above. If it says a named artifact is missing, include that key in `artifact_entries` with the deliverable content before claiming `artifacts.<key>`.",
           "Escape double quotes inside strings, especially in `summary`, `details`, and `final_text`.",
           "Do not use XML, tool-call syntax, or `<parameter name=...>` tags; every field must be a top-level JSON property.",
           "Do not include markdown fences or prose before or after the JSON.",

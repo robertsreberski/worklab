@@ -27,6 +27,7 @@ function localMcpHealthError(row, message) {
 export function mcpHealthMeta(result) {
   if (!result) return null;
   if (result.health === "ok") return { status: "enabled", label: "Healthy" };
+  if (result.health === "disabled") return { status: "disabled", label: "Disabled" };
   return { status: "error", label: "Check failed" };
 }
 

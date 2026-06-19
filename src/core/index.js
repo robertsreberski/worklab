@@ -93,6 +93,9 @@ export {
   listProviders,
   OPENAI_COMPAT_PROVIDER_TYPES,
   PROVIDER_TYPES,
+  providerStatusIsFresh,
+  recordProviderStatus,
+  refreshProviderStatus,
   resolveAgentRunnableStatus,
   resolveReasoningCapabilities,
   resolveVercelModel,
@@ -104,6 +107,7 @@ export {
 } from "./providers.js";
 
 export { getBuiltinProviderAvailability } from "./credentials.js";
+export { getOpencodeModelCatalogue } from "./opencode-models.js";
 export { readPiAuthFile } from "./pi-oauth.js";
 
 // ---------- IDs + slugs ----------

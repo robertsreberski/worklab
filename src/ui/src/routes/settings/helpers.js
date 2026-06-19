@@ -191,6 +191,7 @@ export function mcpRowsFromServers(servers = {}) {
       envText: config?.env ? JSON.stringify(config.env, null, 2) : "",
       url: config?.url || "",
       headersText: config?.headers ? JSON.stringify(config.headers, null, 2) : "",
+      enabled: config?.enabled !== false,
     };
   });
 }
@@ -203,6 +204,7 @@ export function mcpServerFromRow(row = {}) {
     const config = { type: row.transport, url: String(row.url).trim() };
     const headers = parseJsonObject(row.headersText, `${name} headers`);
     if (headers) config.headers = headers;
+    if (row.enabled === false) config.enabled = false;
     return { name, config };
   }
   if (!String(row.command || "").trim()) throw new Error(`MCP server ${name} requires an absolute command path`);
@@ -211,6 +213,7 @@ export function mcpServerFromRow(row = {}) {
   const config = { command: String(row.command).trim() };
   if (args.length) config.args = args;
   if (env) config.env = env;
+  if (row.enabled === false) config.enabled = false;
   return { name, config };
 }
 
@@ -463,12 +466,14 @@ export function searchIndexMeta(status) {
 
 export function mcpAvailabilitySummary(status = {}, rows = []) {
   const servers = status?.servers || [];
-  const unavailable = servers.filter((server) => server.available === false).length;
+  const disabled = servers.filter((server) => server.disabled === true).length;
+  const unavailable = servers.filter((server) => server.available === false && server.disabled !== true).length;
   const builtin = servers.filter((server) => server.source === "builtin").length;
   const user = rows.length;
-  if (status?.config_error) return { status: "error", label: "Config error", builtin, user, unavailable };
-  if (unavailable) return { status: "error", label: `${unavailable} unavailable`, builtin, user, unavailable };
-  return { status: "enabled", label: "Available", builtin, user, unavailable };
+  const withDisabled = (summary) => disabled ? { ...summary, disabled } : summary;
+  if (status?.config_error) return withDisabled({ status: "error", label: "Config error", builtin, user, unavailable });
+  if (unavailable) return withDisabled({ status: "error", label: `${unavailable} unavailable`, builtin, user, unavailable });
+  return withDisabled({ status: "enabled", label: "Available", builtin, user, unavailable });
 }
 
 export function scrollToSettingsSection(id) {

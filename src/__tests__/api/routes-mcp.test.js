@@ -52,6 +52,30 @@ await server.connect(new StdioServerTransport());
     expect(res.body.mcpServers.slack.command).toBe("/usr/bin/node");
   });
 
+  it("PUT preserves disabled MCP servers and status marks them disabled", async () => {
+    const { agent, dataDir } = mkServer();
+    const payload = {
+      mcpServers: {
+        apple: { type: "http", url: "http://127.0.0.1:7501/mcp", enabled: false },
+      },
+    };
+
+    await agent.put("/api/mcp").send(payload).expect(200);
+    const content = JSON.parse(readFileSync(join(dataDir, "config/mcp.json"), "utf8"));
+    expect(content.mcpServers.apple.enabled).toBe(false);
+
+    const config = await agent.get("/api/mcp").expect(200);
+    expect(config.body.mcpServers.apple).toMatchObject(payload.mcpServers.apple);
+
+    const status = await agent.get("/api/mcp/status").expect(200);
+    expect(status.body.servers.find((server) => server.name === "apple")).toMatchObject({
+      source: "user",
+      available: false,
+      disabled: true,
+      unavailable_reason: "disabled",
+    });
+  });
+
   it("PUT rejects non-absolute stdio command", async () => {
     const { agent } = mkServer();
     await agent.put("/api/mcp").send({ mcpServers: { bad: { command: "node" } } }).expect(400);

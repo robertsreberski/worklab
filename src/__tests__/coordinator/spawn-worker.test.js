@@ -843,6 +843,106 @@ describe("spawnWorker", () => {
     expect(run.cost_usd).toBeCloseTo(0.0001);
   });
 
+  it("fails a final result that omits an artifact required by completed todos", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    db.prepare("UPDATE task_runs SET todo_state_json = ? WHERE id = ?").run(JSON.stringify({
+      todos: [{ content: "Return structured file-by-file audit notes in artifacts.audit_notes", status: "completed" }],
+      updated_at: Date.now(),
+      update_count: 1,
+    }), runId);
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Done.",
+      details: "",
+      final_text: "Done.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      questions: [],
+      subtasks: [],
+      memory_candidates: [],
+      verification_evidence: [],
+    };
+    const script = {
+      events: [{ type: "final", text: "Done.", worklab_result: worklabResult }],
+      exitCode: 0,
+    };
+
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId, taskId, broker, db,
+      runIdleWarningMs: 0,
+    });
+
+    const result = await handle.done;
+
+    expect(result.processStatus).toBe("failed");
+    expect(result.failureKind).toBe("invalid_result");
+    expect(result.error).toContain("artifacts.audit_notes");
+    const run = db.prepare("SELECT process_status, failure_kind, error_text, result_json FROM task_runs WHERE id = ?").get(runId);
+    expect(run.process_status).toBe("failed");
+    expect(run.failure_kind).toBe("invalid_result");
+    expect(run.error_text).toContain("artifacts.audit_notes");
+    expect(run.result_json).toBeNull();
+  });
+
+  it("fails finalisation-idle runs before they can be cancelled externally", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    db.prepare("UPDATE task_runs SET todo_state_json = ? WHERE id = ?").run(JSON.stringify({
+      todos: [{ content: "Emit final worklab_result", status: "completed" }],
+      updated_at: Date.now(),
+      update_count: 1,
+    }), runId);
+    const script = {
+      events: [{
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: { content: [{ type: "tool_use", id: "summary-1", name: "mcp__worklab__journal_summary", input: {} }] },
+        },
+      }, {
+        type: "sdk_event",
+        event: {
+          type: "user",
+          message: { content: [{ type: "tool_result", tool_use_id: "summary-1", content: "{\"ok\":true}", is_error: false }] },
+        },
+      }],
+      exitCode: 0,
+      exitAfterMs: 120,
+    };
+
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId, taskId, broker, db,
+      runIdleWarningMs: 20,
+      cancelGraceMs: 100,
+    });
+
+    const result = await handle.done;
+
+    expect(result.processStatus).toBe("failed");
+    expect(result.failureKind).toBe("invalid_result");
+    expect(result.error).toMatch(/missing final output/i);
+    const run = db.prepare("SELECT process_status, failure_kind, error_text, diagnostics_json FROM task_runs WHERE id = ?").get(runId);
+    expect(run.process_status).toBe("failed");
+    expect(run.failure_kind).toBe("invalid_result");
+    expect(run.error_text).toMatch(/missing final output/i);
+    expect(JSON.parse(run.diagnostics_json)).toMatchObject({
+      finalisation_idle_failed: true,
+      run_todo: { used: true, total: 1, completed: 1, open: 0 },
+    });
+  });
+
   it("persists provider_session_id from failed worker diagnostics", async () => {
     const db = makeTestDb();
     const broker = stubBroker();

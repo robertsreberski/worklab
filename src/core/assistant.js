@@ -418,6 +418,13 @@ Return only one JSON object with this exact schema:
       events.push(next);
       schedulePersist();
       this.broker?.broadcast?.(`assistant:${runId}`, next);
+      this.broker?.broadcast?.("global", {
+        type: "assistant_run_event",
+        thread_id: threadId,
+        run_id: runId,
+        event_seq: next._event_seq ?? raw._event_seq ?? events.length - 1,
+        event: next,
+      });
     };
 
     try {
@@ -494,11 +501,7 @@ Return only one JSON object with this exact schema:
           throw Object.assign(err, { failureKind: "invalid_result" });
         }
         result = fallbackAssistantResult(response.text, err);
-        recordEvent({
-          type: "runtime_warning",
-          warning_kind: "assistant_result_parse",
-          message: result.parse_error,
-        });
+        resultSource = "text_fallback";
       }
 
       this.applyResult({ agentName, runId, threadId, userMessageId, assistantMessageId, input, result });
@@ -583,7 +586,7 @@ Return only one JSON object with this exact schema:
       run,
     );
     this.broker?.broadcast?.(`assistant:${runId}`, { type: "done", run, message });
-    this.broker?.broadcast?.("global", { type: "assistant_run_ended", thread_id: threadId || run?.thread_id, run_id: runId, status });
+    this.broker?.broadcast?.("global", { type: "assistant_run_ended", thread_id: threadId || run?.thread_id, run_id: runId, status, run, message });
   }
 
   finishSucceeded({ runId, threadId, assistantMessageId, response, result, events, resultSource = "text", structuredResultSource = null }) {
@@ -594,6 +597,7 @@ Return only one JSON object with this exact schema:
       effort: response.effort || null,
       result_source: resultSource,
       ...(structuredResultSource ? { structured_result_source: structuredResultSource } : {}),
+      ...(result?.parse_error ? { parse_error: result.parse_error } : {}),
       warning_count: warnings.length,
     };
     const updated = this.db.prepare(`

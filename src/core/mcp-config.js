@@ -26,6 +26,16 @@ export function validateMcpServerConfig(name, config) {
   return validateStdio(name, config);
 }
 
+function applyEnabledFlag(name, config, out) {
+  if (Object.prototype.hasOwnProperty.call(config || {}, "enabled")) {
+    if (typeof config.enabled !== "boolean") {
+      throw new Error(`mcp server "${name}" enabled must be a boolean`);
+    }
+    out.enabled = config.enabled;
+  }
+  return out;
+}
+
 function validateRemote(name, config) {
   const u = new URL(config.url);
   if (!isPrivateHost(u.hostname)) {
@@ -33,7 +43,7 @@ function validateRemote(name, config) {
   }
   const out = { type: config.type, url: config.url };
   if (config.headers) out.headers = config.headers;
-  return out;
+  return applyEnabledFlag(name, config, out);
 }
 
 function validateStdio(name, config) {
@@ -49,7 +59,7 @@ function validateStdio(name, config) {
     }
     out.cwd = config.cwd;
   }
-  return out;
+  return applyEnabledFlag(name, config, out);
 }
 
 /**
@@ -96,12 +106,24 @@ function executableReason(command) {
 function statusForServer({ name, source, rawConfig }) {
   try {
     const config = validateMcpServerConfig(name, rawConfig);
+    if (config.enabled === false) {
+      return {
+        name,
+        source,
+        transport: config.type || "stdio",
+        available: false,
+        disabled: true,
+        unavailable_reason: "disabled",
+        config,
+      };
+    }
     const reason = config.command ? executableReason(config.command) : null;
     return {
       name,
       source,
       transport: config.type || "stdio",
       available: !reason,
+      disabled: false,
       unavailable_reason: reason,
       config,
     };
@@ -111,6 +133,7 @@ function statusForServer({ name, source, rawConfig }) {
       source,
       transport: rawConfig?.type || "stdio",
       available: false,
+      disabled: rawConfig?.enabled === false,
       unavailable_reason: err.message || String(err),
       config: rawConfig || {},
     };
@@ -188,6 +211,17 @@ export async function checkMcpServerHealth(name, rawConfig, {
     transport: staticStatus.transport,
     static_available: staticStatus.available !== false,
   };
+  if (staticStatus.disabled) {
+    return {
+      ...base,
+      disabled: true,
+      health: "disabled",
+      message: "disabled",
+      duration_ms: Date.now() - started,
+      tool_count: 0,
+      tools_preview: [],
+    };
+  }
   if (staticStatus.available === false) {
     return {
       ...base,

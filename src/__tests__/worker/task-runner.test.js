@@ -192,6 +192,66 @@ describe("task runner result parsing", () => {
     });
   });
 
+  it("normalizes structured artifact entries from provider structuredResult", async () => {
+    mocks.generateResponse.mockResolvedValue({
+      text: "ignored",
+      structuredResult: {
+        schema: "worklab.v2",
+        stage: "execute",
+        decision: "advance",
+        summary: "Structured notes are in artifacts.audit_notes.",
+        details: "",
+        final_text: "Read artifacts.audit_notes.",
+        artifacts: {},
+        artifact_entries: [{ key: "audit_notes", content: "Audit notes.", description: "", media_type: "text/markdown" }],
+        blocking_issues: [],
+        pending_actions: [],
+        subtasks: [],
+      },
+      structuredResultSource: "structured_output",
+      usage: {},
+      durationMs: 1,
+      numTurns: 1,
+      model: "pi:openai-codex:gpt-5.5",
+      effort: "medium",
+    });
+
+    const result = await runTask(taskContext());
+
+    expect(result.parsedResultFatal).toBe(false);
+    expect(result.worklabResult.artifacts.audit_notes).toBe("Audit notes.");
+  });
+
+  it("treats claimed but missing artifacts as fatal", async () => {
+    mocks.generateResponse.mockResolvedValue({
+      text: "ignored",
+      structuredResult: {
+        schema: "worklab.v2",
+        stage: "execute",
+        decision: "advance",
+        summary: "Structured notes are in artifacts.audit_notes.",
+        details: "",
+        final_text: "Read artifacts.audit_notes.",
+        artifacts: {},
+        blocking_issues: [],
+        pending_actions: [],
+        subtasks: [],
+      },
+      structuredResultSource: "structured_output",
+      usage: {},
+      durationMs: 1,
+      numTurns: 1,
+      model: "pi:openai-codex:gpt-5.5",
+      effort: "medium",
+    });
+
+    const result = await runTask(taskContext());
+
+    expect(result.parsedResultFatal).toBe(true);
+    expect(result.worklabResult).toBeNull();
+    expect(result.parsedResultError).toContain("artifacts.audit_notes");
+  });
+
   it("treats a malformed structuredResult as fatal without falling back to text", async () => {
     const malformed = {
       schema: "worklab.v2",
@@ -261,5 +321,44 @@ describe("task runner result parsing", () => {
       summary: "From events.",
       details: "Recovered from event scan.",
     });
+  });
+
+  it("does not treat mid-run standalone worklab JSON as the terminal result", async () => {
+    const progress = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Starting.",
+      details: "",
+      final_text: "",
+      artifacts: {},
+      artifact_entries: [],
+      blocking_issues: [],
+      pending_actions: [],
+      questions: [],
+      subtasks: [],
+      parent_review_policy: null,
+      memory_candidates: [],
+      verification_evidence: [],
+    };
+    mocks.generateResponse.mockResolvedValue({
+      text: "",
+      events: [
+        { type: "assistant", message: { content: [{ type: "text", text: JSON.stringify(progress) }] } },
+        { type: "assistant", message: { content: [{ type: "tool_use", id: "read-1", name: "Read", input: { file_path: "README.md" } }] } },
+        { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "read-1", content: "readme", is_error: false }] } },
+      ],
+      usage: {},
+      durationMs: 1,
+      numTurns: 1,
+      model: "pi:openai-codex:gpt-5.5",
+      effort: "medium",
+    });
+
+    const result = await runTask(taskContext());
+
+    expect(result.parsedResultFatal).toBe(true);
+    expect(result.parsedResultError).toBe("missing final output");
+    expect(result.worklabResult).toBeNull();
   });
 });

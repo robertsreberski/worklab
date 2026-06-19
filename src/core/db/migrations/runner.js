@@ -926,6 +926,9 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "projects", "delegation_allow_unlisted", "delegation_allow_unlisted INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "projects", "worktree_mode", "worktree_mode TEXT NOT NULL DEFAULT 'off'");
   addColumnIfMissing(db, "custom_providers", "enabled", "enabled INTEGER NOT NULL DEFAULT 1");
+  addColumnIfMissing(db, "custom_providers", "status_json", "status_json TEXT NOT NULL DEFAULT '{}'");
+  addColumnIfMissing(db, "custom_providers", "status_checked_at", "status_checked_at INTEGER");
+  addColumnIfMissing(db, "custom_providers", "last_discovered_at", "last_discovered_at INTEGER");
   addColumnIfMissing(db, "custom_models", "display_name", "display_name TEXT");
   addColumnIfMissing(db, "custom_models", "capabilities_json", "capabilities_json TEXT NOT NULL DEFAULT '{}'");
   addColumnIfMissing(db, "custom_models", "pricing_json", "pricing_json TEXT NOT NULL DEFAULT '{}'");

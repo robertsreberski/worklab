@@ -11,7 +11,31 @@ import { runTaskAgentTurn } from "./agent-turn.js";
 function validateRuntimeResult(result) {
   const validated = validateWorklabResultSemantics(result);
   if (validated.ok) return { result, error: null, fatal: false };
-  return { result, error: validated.error, fatal: true };
+  return { result: null, error: validated.error, fatal: true };
+}
+
+function eventContentBlocks(event) {
+  const target = event?.type === "sdk_event" && event.event ? event.event : event;
+  if (Array.isArray(target?.message?.content)) return target.message.content;
+  if (Array.isArray(target?.content)) return target.content;
+  return [];
+}
+
+function hasNonTerminalToolActivity(event) {
+  return eventContentBlocks(event).some((block) => {
+    if (block?.type === "tool_result") return true;
+    if (block?.type !== "tool_use") return false;
+    return block.name !== "StructuredOutput";
+  });
+}
+
+function terminalCandidateEvents(events) {
+  if (!Array.isArray(events) || events.length === 0) return [];
+  let lastToolActivity = -1;
+  for (let i = 0; i < events.length; i += 1) {
+    if (hasNonTerminalToolActivity(events[i])) lastToolActivity = i;
+  }
+  return events.slice(lastToolActivity + 1);
 }
 
 function resultFromTextOrFallback(text, fallback) {
@@ -52,8 +76,9 @@ function resultFromResponseOrFallback(response, fallback) {
       source: response.structuredResultSource || "structured",
     };
   }
-  if (Array.isArray(response?.events) && response.events.length > 0) {
-    const extracted = extractWorklabResult(response.events, fallback);
+  const finalEvents = terminalCandidateEvents(response?.events);
+  if (finalEvents.length > 0) {
+    const extracted = extractWorklabResult(finalEvents, fallback);
     if (extracted.ok) {
       return {
         ...validateRuntimeResult(extracted.result),

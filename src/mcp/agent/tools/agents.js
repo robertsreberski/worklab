@@ -77,6 +77,11 @@ function validateAgentModel({ db, dataDir, model }) {
     return resolved;
   }
 
+  if (resolved.sdk === "opencode") {
+    // OpenCode resolves provider/model from its own auth.json at run time; accept the ref.
+    return resolved;
+  }
+
   if (resolved.sdk !== "pi") throw new Error(`unknown built-in model: ${reference}`);
   const provider = getProvider({ db, dataDir, id: resolved.provider, includeKey: false });
   if (!provider) throw new Error(`provider not found: ${resolved.provider}`);

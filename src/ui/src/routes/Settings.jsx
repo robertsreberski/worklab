@@ -381,6 +381,7 @@ function SettingsGeneral() {
       envText: "",
       url: "",
       headersText: "",
+      enabled: true,
     }]);
   }
 
@@ -1107,11 +1108,12 @@ function SettingsGeneral() {
                 const rowHealth = mcpHealthResults[healthKey];
                 const rowHealthMeta = mcpHealthMeta(rowHealth);
                 const rowBusy = !!mcpHealthBusy[healthKey] || mcpAllBusy;
+                const rowEnabled = row.enabled !== false && serverStatus?.disabled !== true;
                 const status = row.name
-                  ? (serverStatus?.available === false ? "error" : "enabled")
+                  ? (!rowEnabled ? "disabled" : serverStatus?.available === false ? "error" : "enabled")
                   : "disabled";
                 const statusLabel = row.name
-                  ? (serverStatus?.available === false ? "Unavailable" : "Configured")
+                  ? (!rowEnabled ? "Disabled" : serverStatus?.available === false ? "Unavailable" : "Configured")
                   : "Draft";
                 return (
                 <div class="settings-admin-row settings-mcp-row" key={row.id}>
@@ -1133,6 +1135,14 @@ function SettingsGeneral() {
                     </FormField>
                     <FormField label="Transport">
                       <Select variant="native" value={row.transport} options={MCP_TRANSPORT_OPTIONS} onChange={(value) => updateMcpRow(row.id, { transport: value })} />
+                    </FormField>
+                    <FormField switchInside>
+                      <Switch
+                        checked={row.enabled !== false}
+                        onChange={(enabled) => updateMcpRow(row.id, { enabled })}
+                        label="Enabled"
+                        description="Offer this MCP server to assistant and task runs."
+                      />
                     </FormField>
                   </FormGrid>
                   <AdvancedSettings summary="Connection details" count={row.transport === "stdio" ? 3 : 2} defaultOpen={!row.name || row.id.startsWith("new-")}>

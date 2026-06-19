@@ -10,7 +10,7 @@ const dirs = [];
 function fakeCliPath() {
   const dir = mkdtempSync(join(tmpdir(), "worklab-credentials-bin-"));
   dirs.push(dir);
-  for (const command of ["claude", "codex"]) {
+  for (const command of ["claude", "codex", "opencode"]) {
     const path = join(dir, command);
     writeFileSync(path, "#!/bin/sh\nexit 0\n");
     chmodSync(path, 0o755);
@@ -88,6 +88,15 @@ describe("getBuiltinProviderAvailability", () => {
     expect(result["pi:openai-codex"]).toMatchObject({ available: true, runtime_kind: "pi-agent", auth: "codex_api_key" });
     expect(result.codex).toMatchObject({ available: true, runtime_kind: "cli", auth: "codex-cli" });
     expect(result).not.toHaveProperty("claude-code");
+  });
+
+  it("reports opencode CLI readiness from the binary on PATH", () => {
+    const ready = getBuiltinProviderAvailability({ env: { PATH: fakeCliPath() } });
+    expect(ready.opencode).toMatchObject({ available: true, runtime_kind: "cli", auth: "opencode-cli" });
+
+    const missing = getBuiltinProviderAvailability({ env: { PATH: "/nonexistent-dir" } });
+    expect(missing.opencode.available).toBe(false);
+    expect(missing.opencode.reason).toMatch(/opencode/i);
   });
 
   it("marks pi Codex unavailable without env or pi OAuth credentials", () => {

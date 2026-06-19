@@ -10,15 +10,19 @@ import {
   createProvider,
   discoverModels,
   getProvider,
+  inferOpenCodeZenCapabilities,
+  isOpenAICompatibleProviderType,
   isValidProviderType,
   isPrivateBaseUrl,
   listModels,
+  refreshProviderStatus,
   resolveReasoningCapabilities,
   resolveVercelModel,
   setModelEnabled,
   testProvider,
   upsertModel,
   validateBaseUrl,
+  ZEN_SEED_MODELS,
 } from "../../core/providers.js";
 import { _resetForTests } from "../../core/crypto.js";
 
@@ -175,6 +179,83 @@ describe("providers", () => {
     });
   });
 
+  it("persists failed provider status checks", async () => {
+    const provider = createProvider({
+      db,
+      dataDir,
+      name: "ollama",
+      provider_type: "ollama",
+      base_url: "http://localhost:11434",
+    });
+
+    const result = await refreshProviderStatus({
+      db,
+      dataDir,
+      providerId: provider.id,
+      fetchImpl: vi.fn().mockRejectedValue(new Error("ECONNREFUSED")),
+      timeoutMs: 25,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 0,
+      error: "ECONNREFUSED",
+    });
+    const saved = getProvider({ db, dataDir, id: provider.id });
+    expect(saved.status_checked_at).toEqual(expect.any(Number));
+    expect(saved.status).toMatchObject({
+      ok: false,
+      status: 0,
+      error: "ECONNREFUSED",
+    });
+  });
+
+  it("refreshes reachable providers and preserves enabled toggles and pricing during rediscovery", async () => {
+    const provider = createProvider({
+      db,
+      dataDir,
+      name: "compat",
+      provider_type: "openai_compat",
+      base_url: "http://localhost:8000",
+    });
+    await discoverModels({
+      db,
+      dataDir,
+      providerId: provider.id,
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ data: [{ id: "priced-model" }] }) }),
+    });
+    const existing = listModels({ db, providerId: provider.id })[0];
+    setModelEnabled({ db, id: existing.id, enabled: true });
+    upsertModel({
+      db,
+      providerId: provider.id,
+      modelName: existing.model_name,
+      pricing: { input_per_million: 1, output_per_million: 5 },
+    });
+
+    const result = await refreshProviderStatus({
+      db,
+      dataDir,
+      providerId: provider.id,
+      discover: true,
+      fetchImpl: vi.fn()
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ data: [{ id: "priced-model" }, { id: "new-model" }] }) })
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ data: [{ id: "priced-model" }, { id: "new-model" }] }) }),
+    });
+
+    expect(result).toMatchObject({ ok: true, status: 200, discovered: true, model_count: 2 });
+    const saved = getProvider({ db, dataDir, id: provider.id });
+    expect(saved.status).toMatchObject({ ok: true, status: 200 });
+    expect(saved.status_checked_at).toEqual(expect.any(Number));
+    expect(saved.last_discovered_at).toEqual(expect.any(Number));
+    const models = listModels({ db, providerId: provider.id });
+    expect(models.find((model) => model.model_name === "priced-model")).toMatchObject({
+      enabled: true,
+      pricing: { input_per_million: 1, output_per_million: 5 },
+    });
+    expect(models.find((model) => model.model_name === "new-model")).toBeTruthy();
+  });
+
   it("keeps omitted pricing but clears explicitly empty pricing updates", () => {
     const provider = createProvider({
       db,
@@ -292,5 +373,124 @@ describe("providers", () => {
       chat: false,
     });
     expect(capabilities.unavailable_reason).toMatch(/embedding-only/i);
+  });
+
+  it("registers opencode-zen as an OpenAI-compatible provider type", () => {
+    expect(isValidProviderType("opencode-zen")).toBe(true);
+    expect(isOpenAICompatibleProviderType("opencode-zen")).toBe(true);
+  });
+
+  it("infers reasoning for OpenCode Zen GPT-5 models and falls back otherwise", () => {
+    expect(inferOpenCodeZenCapabilities({ id: "gpt-5.1" })).toMatchObject({
+      reasoning: true,
+      reasoning_mode: "effort",
+    });
+    expect(inferOpenCodeZenCapabilities({ id: "gpt-4o-mini" })).toMatchObject({
+      reasoning: false,
+      reasoning_mode: "none",
+    });
+  });
+
+  it("discovers OpenCode Zen models from /zen/v1/models with reasoning inference", async () => {
+    const provider = createProvider({
+      db,
+      dataDir,
+      name: "zen",
+      provider_type: "opencode-zen",
+      base_url: "https://opencode.ai/zen/v1",
+      trust_public_url: true,
+    });
+    let calledUrl = null;
+    const models = await discoverModels({
+      db,
+      dataDir,
+      providerId: provider.id,
+      fetchImpl: async (url) => {
+        calledUrl = url;
+        return { ok: true, json: async () => ({ data: [{ id: "gpt-5.1" }] }) };
+      },
+    });
+    expect(calledUrl).toBe("https://opencode.ai/zen/v1/models");
+    expect(models[0]).toMatchObject({ model_name: "gpt-5.1" });
+    expect(models[0].capabilities).toMatchObject({ reasoning: true, reasoning_mode: "effort" });
+  });
+
+  it("seeds curated OpenCode Zen models when discovery returns an empty list", async () => {
+    const provider = createProvider({
+      db,
+      dataDir,
+      name: "zen",
+      provider_type: "opencode-zen",
+      base_url: "https://opencode.ai/zen/v1",
+      trust_public_url: true,
+    });
+    const models = await discoverModels({
+      db,
+      dataDir,
+      providerId: provider.id,
+      fetchImpl: async () => ({ ok: true, json: async () => ({ data: [] }) }),
+    });
+    expect(models.length).toBe(ZEN_SEED_MODELS.length);
+    expect(models.length).toBeGreaterThan(0);
+    expect(models.some((model) => model.model_name.startsWith("gpt-5"))).toBe(true);
+  });
+
+  it("seeds curated OpenCode Zen models when the discovery endpoint is missing (404)", async () => {
+    const provider = createProvider({
+      db,
+      dataDir,
+      name: "zen",
+      provider_type: "opencode-zen",
+      base_url: "https://opencode.ai/zen/v1",
+      trust_public_url: true,
+    });
+    const models = await discoverModels({
+      db,
+      dataDir,
+      providerId: provider.id,
+      fetchImpl: async () => ({ ok: false, status: 404, json: async () => ({}) }),
+    });
+    expect(models.length).toBe(ZEN_SEED_MODELS.length);
+  });
+
+  it("treats OpenCode Zen auth failures as discovery errors instead of seeding", async () => {
+    const provider = createProvider({
+      db,
+      dataDir,
+      name: "zen",
+      provider_type: "opencode-zen",
+      base_url: "https://opencode.ai/zen/v1",
+      trust_public_url: true,
+    });
+    await expect(discoverModels({
+      db,
+      dataDir,
+      providerId: provider.id,
+      fetchImpl: async () => ({ ok: false, status: 401, json: async () => ({}) }),
+    })).rejects.toThrow(/401/);
+    expect(listModels({ db, providerId: provider.id })).toHaveLength(0);
+  });
+
+  it("drops Anthropic models from OpenCode Zen discovery the runtime cannot call", async () => {
+    const provider = createProvider({
+      db,
+      dataDir,
+      name: "zen",
+      provider_type: "opencode-zen",
+      base_url: "https://opencode.ai/zen/v1",
+      trust_public_url: true,
+    });
+    const models = await discoverModels({
+      db,
+      dataDir,
+      providerId: provider.id,
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({ data: [{ id: "gpt-5.1" }, { id: "claude-opus-4" }] }),
+      }),
+    });
+    const names = models.map((model) => model.model_name);
+    expect(names).toContain("gpt-5.1");
+    expect(names).not.toContain("claude-opus-4");
   });
 });

@@ -2,6 +2,12 @@ import { z } from "zod";
 import { DECISIONS, STAGES } from "./decisions.js";
 
 const artifactSchema = z.record(z.string(), z.any()).default({});
+const artifactEntrySchema = z.object({
+  key: z.string().trim().min(1),
+  content: z.string().default(""),
+  description: z.string().optional().default(""),
+  media_type: z.string().optional().default("text/plain"),
+});
 
 const stringListSchema = z.preprocess((value) => {
   if (value == null || value === "") return [];
@@ -82,6 +88,7 @@ export const worklabResultSchema = z.object({
   details: z.string().optional().default(""),
   final_text: z.string().optional().default(""),
   artifacts: artifactSchema,
+  artifact_entries: z.array(artifactEntrySchema).default([]),
   blocking_issues: z.array(z.string()).default([]),
   pending_actions: z.array(z.string()).default([]),
   questions: z.array(pendingQuestionSchema).max(3).default([]),
@@ -102,6 +109,7 @@ export const WORKLAB_RESULT_JSON_SCHEMA = {
     "details",
     "final_text",
     "artifacts",
+    "artifact_entries",
     "blocking_issues",
     "pending_actions",
     "questions",
@@ -118,6 +126,21 @@ export const WORKLAB_RESULT_JSON_SCHEMA = {
     details: { type: "string" },
     final_text: { type: "string" },
     artifacts: { type: "object", additionalProperties: false, properties: {}, required: [] },
+    artifact_entries: {
+      type: "array",
+      description: "Named textual deliverables. Use this for dynamic artifact keys that cannot be expressed as JSON-schema object properties; Worklab normalizes each entry into artifacts[key]. Do not claim artifacts.<key> unless an entry with that key is present.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["key", "content", "description", "media_type"],
+        properties: {
+          key: { type: "string" },
+          content: { type: "string" },
+          description: { type: "string" },
+          media_type: { type: "string" },
+        },
+      },
+    },
     blocking_issues: { type: "array", items: { type: "string" } },
     pending_actions: { type: "array", items: { type: "string" } },
     questions: {
@@ -222,9 +245,29 @@ export const WORKLAB_RESULT_JSON_SCHEMA = {
   },
 };
 
+function isRecord(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function withArtifactEntriesMerged(value) {
+  if (!isRecord(value)) return value;
+  const artifactEntries = Array.isArray(value.artifact_entries) ? value.artifact_entries : [];
+  if (artifactEntries.length === 0) return value;
+  const artifacts = isRecord(value.artifacts) ? { ...value.artifacts } : {};
+  for (const entry of artifactEntries) {
+    if (!isRecord(entry)) continue;
+    const key = typeof entry.key === "string" ? entry.key.trim() : "";
+    if (!key) continue;
+    artifacts[key] = entry.content ?? "";
+  }
+  return { ...value, artifacts };
+}
+
 export function normalizeWorklabResult(value, fallback = {}) {
+  const source = withArtifactEntriesMerged(value || {});
   const parsed = worklabResultSchema.safeParse({
     artifacts: {},
+    artifact_entries: [],
     blocking_issues: [],
     pending_actions: [],
     questions: [],
@@ -232,7 +275,7 @@ export function normalizeWorklabResult(value, fallback = {}) {
     verification_evidence: [],
     final_text: "",
     ...fallback,
-    ...(value || {}),
+    ...source,
   });
   if (!parsed.success) {
     return {
@@ -241,11 +284,62 @@ export function normalizeWorklabResult(value, fallback = {}) {
       result: null,
     };
   }
-  return { ok: true, result: parsed.data, error: null };
+  return { ok: true, result: withArtifactEntriesMerged(parsed.data), error: null };
 }
 
-export function validateWorklabResultSemantics(result) {
-  const value = result?.worklab_result || result;
+const ARTIFACT_REF_RE = /\bartifacts?\.([A-Za-z0-9_-]+)\b/g;
+
+function artifactReferencesInText(text, out) {
+  const raw = String(text || "");
+  let match;
+  ARTIFACT_REF_RE.lastIndex = 0;
+  while ((match = ARTIFACT_REF_RE.exec(raw))) {
+    if (match[1]) out.add(match[1]);
+  }
+}
+
+function parseTodoState(value) {
+  if (isRecord(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function completedTodoArtifactReferences(todoState, out) {
+  const state = parseTodoState(todoState);
+  const todos = Array.isArray(state?.todos) ? state.todos : [];
+  for (const todo of todos) {
+    if (!isRecord(todo) || todo.status !== "completed") continue;
+    artifactReferencesInText(todo.content, out);
+    artifactReferencesInText(todo.active_form, out);
+  }
+}
+
+function hasDeliveredArtifact(artifacts, key) {
+  if (!isRecord(artifacts) || !Object.prototype.hasOwnProperty.call(artifacts, key)) return false;
+  const value = artifacts[key];
+  if (value == null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value).length > 0;
+  return true;
+}
+
+function claimedArtifactKeys(value, { todoState = null } = {}) {
+  const claims = new Set();
+  artifactReferencesInText(value.summary, claims);
+  artifactReferencesInText(value.details, claims);
+  artifactReferencesInText(value.final_text, claims);
+  completedTodoArtifactReferences(todoState, claims);
+  return [...claims].sort();
+}
+
+export function validateWorklabResultSemantics(result, options = {}) {
+  const value = withArtifactEntriesMerged(result?.worklab_result || result);
   if (!value || value.schema !== "worklab.v2") {
     return { ok: false, error: "missing worklab_result" };
   }
@@ -271,6 +365,14 @@ export function validateWorklabResultSemantics(result) {
   }
   if (decision === "delegate" && subtasks.length === 0) {
     return { ok: false, error: "delegate requires at least one subtask" };
+  }
+  const missingArtifact = claimedArtifactKeys(value, options)
+    .find((key) => !hasDeliveredArtifact(value.artifacts, key));
+  if (missingArtifact) {
+    return {
+      ok: false,
+      error: `result claims artifacts.${missingArtifact} but result.artifacts.${missingArtifact} is missing`,
+    };
   }
 
   return { ok: true, error: null };
@@ -522,6 +624,7 @@ const STRUCTURED_RESULT_FIELDS = new Set([
   "details",
   "final_text",
   "artifacts",
+  "artifact_entries",
   "blocking_issues",
   "pending_actions",
   "questions",
@@ -532,6 +635,7 @@ const STRUCTURED_RESULT_FIELDS = new Set([
 
 const STRUCTURED_JSON_FIELDS = new Set([
   "artifacts",
+  "artifact_entries",
   "blocking_issues",
   "pending_actions",
   "questions",
@@ -693,10 +797,12 @@ export function synthesizeWorklabResult({ stage = "execute", decision = "advance
     details,
     final_text,
     artifacts: {},
+    artifact_entries: [],
     blocking_issues: [],
     pending_actions: [],
     questions: [],
     subtasks: [],
     memory_candidates: [],
+    verification_evidence: [],
   };
 }
