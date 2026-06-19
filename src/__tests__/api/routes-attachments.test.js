@@ -1,7 +1,7 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import fs, { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeTestServer } from "../helpers/test-server.js";
 
 const dirs = [];
@@ -276,6 +276,36 @@ describe("task attachments API", () => {
         .expect(404);
 
       expect(res.body.error?.code).toBe("not_found");
+    });
+
+    it("returns 404 when a file disappears after stat", async () => {
+      const workdir = makeTempDir("worklab-read-race-workdir-");
+      const dataDir = makeTempDir("worklab-read-race-data-");
+      const filePath = join(workdir, "vanish.txt");
+      writeFileSync(filePath, "gone soon\n");
+      const resolvedPath = realpathSync(filePath);
+      const originalOpenSync = fs.openSync;
+      const openSpy = vi.spyOn(fs, "openSync").mockImplementation((target, flags, mode) => {
+        if (target === resolvedPath) {
+          throw Object.assign(new Error("file disappeared"), { code: "ENOENT" });
+        }
+        return originalOpenSync.call(fs, target, flags, mode);
+      });
+      const { agent } = makeTestServer({
+        dataDir,
+        config: { dataDir, repoRoot: workdir, workspace: workdir },
+      });
+      const task = await agent.post("/api/tasks").send({ title: "Race" }).expect(201);
+
+      try {
+        const res = await agent
+          .get(`/api/files/read?task_id=${task.body.task.id}&path=vanish.txt`)
+          .expect(404);
+
+        expect(res.body.error?.code).toBe("not_found");
+      } finally {
+        openSpy.mockRestore();
+      }
     });
   });
 });

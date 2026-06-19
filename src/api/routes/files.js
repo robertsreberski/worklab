@@ -156,6 +156,9 @@ export function registerFileRoutes(app, { db, config }) {
           max_bytes: MAX_READ_BYTES,
         });
       } catch (err) {
+        if (err?.code === "ENOENT") {
+          return sendRouteError(res, { status: 404, code: "not_found", message: "file not found" });
+        }
         if (isPermissionError(err)) {
           return sendRouteError(res, { status: 403, code: "forbidden", message: "file is not readable" });
         }
