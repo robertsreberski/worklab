@@ -67,13 +67,13 @@
     "release:publish": "node scripts/release/publish-release.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.19.0"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "^0.74.0",
+    "@earendil-works/pi-ai": "^0.80.3",
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "@mono-agent/agent-runtime": "0.4.1",
     "@slack/bolt": "^4.7.1",
-    "@worklab-ai/agent-runtime": "0.1.10",
     "@worklab-ai/webhooks": "0.1.10",
     "better-sqlite3": "^11.7.0",
     "chokidar": "^4.0.0",

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generateCodexAppResponse } from "@worklab-ai/agent-runtime/ai/providers/codex-app.js";
+import { generateCodexAppResponse } from "@mono-agent/agent-runtime/ai/providers/codex-app.js";
 import { createLiveInputQueue } from "../../core/live-input.js";
 import { extractWorklabResult } from "../../core/worklab-result/contract.js";
 
@@ -107,7 +107,7 @@ function expectedLiveGuidance(text) {
     text,
     "",
     "Apply this guidance before continuing. It may correct, narrow, or override your current approach.",
-    "Keep satisfying the original Worklab task and existing comments except where this live guidance conflicts with them.",
+    "Keep satisfying the original task and existing comments except where this live guidance conflicts with them.",
     "When there is a conflict, the newest human live guidance wins. Do not discard the broader task unless the user explicitly asks to replace it.",
   ].join("\n");
 }

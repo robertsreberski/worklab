@@ -1,6 +1,6 @@
 # echo-agent
 
-Minimal example consumer of [`@worklab-ai/agent-runtime`](../../packages/agent-runtime/). It imports the package, prints the four available provider runtimes, and (when `ANTHROPIC_API_KEY` is set) runs a single Claude SDK turn that calls the `Bash` built-in tool to echo a message and reports back the result.
+Minimal example consumer of `@mono-agent/agent-runtime`. It imports the package, prints the available provider runtimes, and (when `ANTHROPIC_API_KEY` is set) runs a single Claude SDK turn that calls the `Bash` built-in tool to echo a message and reports back the result.
 
 ## Run
 
@@ -16,10 +16,10 @@ ANTHROPIC_API_KEY=sk-ant-... npm --workspace=echo-agent start
 
 ## What it shows
 
-- Importing the package via the workspace dependency `"@worklab-ai/agent-runtime": "*"`.
+- Importing the package via the npm dependency `"@mono-agent/agent-runtime": "0.4.1"`.
 - The `createRuntime({ workspace, repoRoot })` setup pattern.
 - A single-turn `runtime.run(systemPrompt, options)` call.
 - Streaming assistant text via `onEvent`.
 - Reading `result.text`, `result.numTurns`, `result.durationMs`, `result.usage.cost_usd`.
 
-It deliberately does **not** demonstrate structured output, MCP servers, compaction, or live-input steering. See `packages/agent-runtime/README.md` for the full surface.
+It deliberately does **not** demonstrate structured output, MCP servers, compaction, or live-input steering.

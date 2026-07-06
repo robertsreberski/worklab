@@ -15,7 +15,7 @@
 // schedule a fresh `coordinator_resume` continuation that picks up the
 // snapshot rather than starting from scratch.
 
-import { buildTranscriptTailSnapshot } from "@worklab-ai/agent-runtime/agent/transcript.js";
+import { buildTranscriptTailSnapshot } from "@mono-agent/agent-runtime/agent/transcript.js";
 import { readJsonlEventsFromFile } from "../../core/index.js";
 
 function unwrapSdkEvent(event) {

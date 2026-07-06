@@ -4,7 +4,8 @@ import { createInterface } from "node:readline";
 
 import { createLiveInputQueue, loadConfig, normalizeLiveInputBody, openDb } from "./core/index.js";
 import { renderToolSurfaceMarkdown } from "./mcp/agent/tools/index.js";
-import { configureToolRuntime } from "@worklab-ai/agent-runtime/agent/tools/shared/runtime-context.js";
+import { configureToolRuntime } from "@mono-agent/agent-runtime/agent/tools/shared/runtime-context.js";
+import { WORKLAB_RUNTIME_BRAND } from "./core/runtime-brand.js";
 
 const WORKLAB_TOOL_SURFACE_MARKDOWN = renderToolSurfaceMarkdown(null);
 
@@ -115,6 +116,7 @@ async function main() {
     toolArtifactDir: config.dataDir,
     ripgrepPath: process.env.WORKLAB_RIPGREP_PATH || null,
     qaOutputDir: process.env.WORKLAB_QA_OUTPUT_DIR || null,
+    runtimeBrand: WORKLAB_RUNTIME_BRAND,
   });
 
   emit({ type: "started", runId, ts: Date.now() });

@@ -8,7 +8,7 @@ import { resolveModel } from "./ai.js";
 import { WORKLAB_BUILTIN_TOOLS } from "./builtin-tools.js";
 import { extractExecutionFromEvents } from "./review-exec.js";
 import { kbListPinned } from "./kb.js";
-import { parseStoredAllowlist, resolveAllowlist, resolveAllowlistMap, storedAllowlistMode } from "@worklab-ai/agent-runtime/agent/allowlists.js";
+import { parseStoredAllowlist, resolveAllowlist, resolveAllowlistMap, storedAllowlistMode } from "@mono-agent/agent-runtime/agent/allowlists.js";
 import { readSettings } from "./settings.js";
 import { applyPlanningToolPolicy } from "./planning-harness.js";
 import { nextStage } from "./state-machine.js";
@@ -32,7 +32,7 @@ import { taskInstructionAttachments } from "./task-attachments.js";
 import { buildDelegationContext } from "./delegation.js";
 import { buildNativeSubagentContext } from "./native-subagents.js";
 import { formatWorklabResultText } from "./worklab-result/contract.js";
-import { renderResumeSnapshot } from "@worklab-ai/agent-runtime/agent/transcript.js";
+import { renderResumeSnapshot } from "@mono-agent/agent-runtime/agent/transcript.js";
 
 function runInputError(status, code, message) {
   return Object.assign(new Error(message), { status, code });

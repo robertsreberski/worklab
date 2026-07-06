@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateCost, resolvePricing } from "@worklab-ai/agent-runtime/ai/cost.js";
+import { estimateCost, resolvePricing } from "@mono-agent/agent-runtime/ai/cost.js";
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
 import { createProvider, upsertModel } from "../../core/providers.js";
@@ -17,14 +17,18 @@ function withDb(fn) {
 
 describe("cost estimation", () => {
   it("uses pi-ai catalog pricing for built-in Pi providers beyond the static fallback table", () => {
+    const resolveCustomPricing = customPricingResolverFor();
+
     expect(estimateCost({
-      model: "pi:openai-codex:gpt-5.3-codex",
+      resolveCustomPricing,
+      model: "pi:openai:gpt-5.3-codex",
       inputTokens: 1_000_000,
       outputTokens: 1_000_000,
       cachedTokens: 0,
     })).toBeCloseTo(15.75);
 
     expect(estimateCost({
+      resolveCustomPricing,
       model: "pi:google:gemini-2.5-flash",
       inputTokens: 1_000_000,
       outputTokens: 1_000_000,
@@ -33,7 +37,9 @@ describe("cost estimation", () => {
   });
 
   it("prices cache reads and cache writes independently when the catalog exposes both rates", () => {
+    const resolveCustomPricing = customPricingResolverFor();
     const cost = estimateCost({
+      resolveCustomPricing,
       model: "pi:openrouter:anthropic/claude-sonnet-4.5",
       inputTokens: 1_000_000,
       outputTokens: 1_000_000,

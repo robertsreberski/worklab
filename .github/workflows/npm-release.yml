@@ -43,9 +43,8 @@ jobs:
       - name: Validate CLI package contents
         run: npm run pack:check
 
-      - name: Validate workspace package contents
+      - name: Validate webhooks package contents
         run: |
-          npm pack --workspace packages/agent-runtime --dry-run --json
           npm pack --workspace packages/webhooks --dry-run --json
 
       - name: Check whitespace
@@ -69,10 +68,8 @@ jobs:
             "$@"
           }
           VERSION="${GITHUB_REF_NAME#v}"
-          retry npm view "@worklab-ai/agent-runtime@${VERSION}" version --json
           retry npm view "@worklab-ai/webhooks@${VERSION}" version bin dependencies --json
           retry npm view "@worklab-ai/worklab@${VERSION}" version bin dependencies --json
-          retry npm dist-tag ls @worklab-ai/agent-runtime
           retry npm dist-tag ls @worklab-ai/webhooks
           retry npm dist-tag ls @worklab-ai/worklab
 

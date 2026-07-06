@@ -31,9 +31,9 @@ import { Card } from "../components/Card.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { DetailHead, InlineHead, PanelGrid, SectionMarker, SectionStack, Toolbar } from "../components/layout/index.js";
 import { modelDisplayName, modelOptionDescription } from "../lib/display.js";
-import { executionModeIncompatibilityReason } from "@worklab-ai/agent-runtime/ai/runtime/model-refs.js";
-import { claudeModelSupportsOneMillionContext, normalizeContextWindow } from "@worklab-ai/agent-runtime/ai/runtime/context-windows.js";
-import { codexModelSupportsFastMode, normalizeFastMode } from "@worklab-ai/agent-runtime/ai/runtime/fast-mode.js";
+import { executionModeIncompatibilityReason } from "@mono-agent/agent-runtime/ai/runtime/model-refs.js";
+import { claudeModelSupportsOneMillionContext, normalizeContextWindow } from "@mono-agent/agent-runtime/ai/runtime/context-windows.js";
+import { codexModelSupportsFastMode, normalizeFastMode } from "@mono-agent/agent-runtime/ai/runtime/fast-mode.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 import { useAppResume } from "../lib/pageVisibility.js";
 

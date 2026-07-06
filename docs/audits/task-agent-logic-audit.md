@@ -14,7 +14,7 @@ the document from source; do not reintroduce legacy behavior.
 - Coordinator scheduling: `src/coordinator/task-watcher.js` and
   `src/coordinator/watcher/`
 - Worker entry points: `src/worker.js` and `src/worker/`
-- Agent runtime package: `packages/agent-runtime/`
+- Agent runtime package: `@mono-agent/agent-runtime`
 
 ## Current Workflow Model
 
@@ -62,10 +62,10 @@ cycle should exist for the same team/project workstream at a time.
 
 ## Boundary Rules
 
-Runtime-provider code belongs in `packages/agent-runtime` and must not depend on
-Worklab DB, API, coordinator, or UI modules. Worklab domain behavior belongs in
-`src/core`. API, CLI, MCP, coordinator, and UI layers should consume core
-through public seams or documented query helpers.
+Runtime-provider code belongs in the shared `@mono-agent/agent-runtime`
+package and must not depend on Worklab DB, API, coordinator, or UI modules.
+Worklab domain behavior belongs in `src/core`. API, CLI, MCP, coordinator, and
+UI layers should consume core through public seams or documented query helpers.
 
 SQL belongs in `src/core/db/queries/` or schema/migration files. API routes must
 not use `db.prepare()` directly.

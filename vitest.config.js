@@ -9,6 +9,11 @@ export default defineConfig({
     ],
     minWorkers: 1,
     maxWorkers: 4,
+    server: {
+      deps: {
+        inline: ["@mono-agent/agent-runtime"],
+      },
+    },
     coverage: {
       include: ["src/**/*.js", "packages/*/src/**/*.js"],
       exclude: ["src/__tests__/**", "src/ui/**", "packages/*/src/__tests__/**"],

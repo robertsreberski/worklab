@@ -1,4 +1,4 @@
-import { discoverOpencodeProviders } from "@worklab-ai/agent-runtime/ai/providers/opencode-discovery.js";
+import { discoverOpencodeProviders } from "@mono-agent/agent-runtime/ai/providers/opencode-discovery.js";
 import { commandOnPath } from "./credentials.js";
 
 // Discovering OpenCode's providers/models boots a transient `opencode` server, so we

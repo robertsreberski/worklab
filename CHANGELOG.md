@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Prepared the npm launch path for `@worklab-ai/worklab`, including scoped
-  package metadata, a public `@worklab-ai/agent-runtime` workspace dependency,
+  package metadata, a public `@mono-agent/agent-runtime` npm dependency,
   bundled UI startup behavior for global installs, and pack-content validation.
 - Removed obsolete in-repo docs that no longer matched the rapidly changing
   codebase.

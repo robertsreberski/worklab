@@ -6,7 +6,7 @@ import {
   writeMemory,
 } from "../core/index.js";
 import { buildConsolidationSystemPrompt } from "../core/prompts/system-prompt.js";
-import { estimateFirstTurnInput } from "@worklab-ai/agent-runtime/agent/compaction.js";
+import { estimateFirstTurnInput } from "../core/first-turn-estimate.js";
 import { getAgentByName } from "../core/db/queries/agents.js";
 import { createSdkEventCoalescer } from "./event-coalescer.js";
 import { maxTurnsForModel } from "./util.js";

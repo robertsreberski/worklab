@@ -21,10 +21,8 @@ describe("release automation scripts", () => {
     const packages = publishablePackages(discoverPackages());
     const order = sortForPublish(packages).map((pkg) => pkg.name);
 
-    expect(order).toContain("@worklab-ai/agent-runtime");
     expect(order).toContain("@worklab-ai/worklab");
     expect(order).not.toContain("echo-agent");
-    expect(order.indexOf("@worklab-ai/agent-runtime")).toBeLessThan(order.indexOf("@worklab-ai/worklab"));
     expect(order.at(-1)).toBe("@worklab-ai/worklab");
   });
 
@@ -33,9 +31,6 @@ describe("release automation scripts", () => {
     const release = validateRelease({ tag: `v${root.version}`, silent: true });
 
     expect(release.version).toBe(root.version);
-    expect(release.publishablePackages.map((pkg) => `${pkg.name}@${pkg.version}`)).toContain(
-      `@worklab-ai/agent-runtime@${root.version}`,
-    );
     expect(release.publishablePackages.map((pkg) => `${pkg.name}@${pkg.version}`)).toContain(
       `@worklab-ai/worklab@${root.version}`,
     );

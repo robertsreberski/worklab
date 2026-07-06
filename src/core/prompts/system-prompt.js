@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { buildSkillIndex } from "@worklab-ai/agent-runtime/agent/prompt/skill-index.js";
 import { stripWorklabResultJson } from "../worklab-result/contract.js";
 import { formatAttachmentsForPrompt } from "../task-attachments.js";
 import { buildPlanningDirective, formatPlanningHarnessSection } from "../../core/planning-harness.js";
+import { buildSkillIndex } from "../skills.js";
 
 const CADENCE = `Journal as you work — call \`journal_append\` for facts you discover, decisions you make, and corrections you learn. At the end of the task, optionally call \`journal_summary\` if anything rolls up.`;
 

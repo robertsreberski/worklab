@@ -7,10 +7,9 @@ npm install -g @worklab-ai/worklab
 worklab start
 ```
 
-The release workflow publishes every non-private package that has
+The release workflow publishes every non-private Worklab package that has
 `publishConfig`, currently:
 
-- `@worklab-ai/agent-runtime`
 - `@worklab-ai/webhooks`
 - `@worklab-ai/worklab`
 
@@ -37,9 +36,7 @@ Prepare the next version locally:
 ```bash
 VERSION=0.1.6
 npm pkg set version="$VERSION"
-npm pkg set version="$VERSION" --workspace packages/agent-runtime
 npm pkg set version="$VERSION" --workspace packages/webhooks
-npm pkg set "dependencies.@worklab-ai/agent-runtime=$VERSION"
 npm pkg set "dependencies.@worklab-ai/webhooks=$VERSION"
 npm install --package-lock-only
 ```
@@ -51,7 +48,6 @@ npm run release:validate -- --tag "v$(node -p "require('./package.json').version
 npm test
 npm run build:ui
 npm run pack:check
-npm pack --workspace packages/agent-runtime --dry-run --json
 npm pack --workspace packages/webhooks --dry-run --json
 git diff --check
 ```
