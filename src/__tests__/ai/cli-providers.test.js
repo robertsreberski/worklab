@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { buildCliCommand, generateCliResponse } from "@worklab-ai/agent-runtime/ai/providers/claude-cli.js";
+import { buildCliCommand, generateCliResponse } from "@mono-agent/agent-runtime/ai/providers/claude-cli.js";
 import { parseModelReference, canonicalizeLegacyModelReference } from "../../core/ai.js";
 import { WORKLAB_RESULT_JSON_SCHEMA } from "../../core/worklab-result/contract.js";
 import { buildExecuteSystemPrompt } from "../../core/prompts/system-prompt.js";

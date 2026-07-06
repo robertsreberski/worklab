@@ -1,4 +1,4 @@
-import { estimateFirstTurnInput } from "@worklab-ai/agent-runtime/agent/compaction.js";
+import { estimateFirstTurnInput } from "../core/first-turn-estimate.js";
 import {
   buildTaskRunInput,
   generateResponse,

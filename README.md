@@ -10,7 +10,7 @@ into a terminal session.
 
 ## Start Worklab
 
-Requirements: Node.js 20 or newer.
+Requirements: Node.js 22.19.0 or newer.
 
 Install the CLI from npm:
 

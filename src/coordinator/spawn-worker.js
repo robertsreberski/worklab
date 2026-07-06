@@ -13,7 +13,7 @@ const PROCESS_TO_LEGACY_STATUS = {
   running: "running",
 };
 import { normalizeLiveInputBody } from "../core/live-input.js";
-import { classifyFailure, createStderrTail, retryableProviderFailureInfo } from "@worklab-ai/agent-runtime/ai/failure.js";
+import { classifyFailure, createStderrTail, retryableProviderFailureInfo } from "@mono-agent/agent-runtime/ai/failure.js";
 import { insertSystemComment } from "../core/db/queries/comments.js";
 import { newCommentId } from "../core/ids.js";
 import { evaluateRunTurnBudget, loadRunTurnBudget } from "../core/run-turn-budget.js";
@@ -40,7 +40,7 @@ import {
   insertApprovalRequest,
   recordApprovalDecision,
 } from "../core/db/queries/task-run-approvals.js";
-import { buildTranscriptTailSnapshot } from "@worklab-ai/agent-runtime/agent/transcript.js";
+import { buildTranscriptTailSnapshot } from "@mono-agent/agent-runtime/agent/transcript.js";
 import {
   CONTEXT_BLOAT_TOP_EVENTS,
   RAW_RESULT_STORAGE_LIMIT,

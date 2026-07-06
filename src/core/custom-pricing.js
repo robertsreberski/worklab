@@ -1,15 +1,26 @@
 // Worklab's host implementation of `resolveCustomPricing` for the agent runtime.
 // The package's cost helpers are shape converters; the SQL against the
 // `custom_models` / `custom_providers` tables stays here.
+import { getPiModel } from "./pi-model-catalog.js";
 import {
   isPrivateHost,
   normalizePricing,
   pricingHasRates,
   unknownPricing,
   zeroPricing,
-} from "@worklab-ai/agent-runtime/ai/cost.js";
+} from "@mono-agent/agent-runtime/ai/cost.js";
 
 const LOCAL_PROVIDER_TYPES = new Set(["ollama", "lmstudio", "vllm"]);
+
+function piCatalogPricing(parsed) {
+  if (parsed?.sdk !== "pi" || !parsed.provider || !parsed.model) return null;
+  try {
+    const model = getPiModel(parsed.provider, parsed.model);
+    return model?.cost ? normalizePricing(model.cost, { source: "pi-catalog" }) : null;
+  } catch {
+    return null;
+  }
+}
 
 export function customProviderPricing(db, parsed) {
   if (!db || !parsed?.provider || !parsed?.model) return null;
@@ -35,6 +46,5 @@ export function customProviderPricing(db, parsed) {
 }
 
 export function customPricingResolverFor(db) {
-  if (!db) return null;
-  return (parsed) => customProviderPricing(db, parsed);
+  return (parsed) => customProviderPricing(db, parsed) || piCatalogPricing(parsed);
 }

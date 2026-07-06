@@ -4,7 +4,7 @@
 
 Worklab is a local-first, single-user agent orchestration application. It exposes a `worklab` CLI, starts an Express HTTP/SSE server, serves a Preact/Vite UI, persists domain state in a local SQLite database, and spawns child worker processes that run AI agents against tasks, automations, team lead cycles, reviews, and assistant conversations. The runtime package normalizes Claude, Pi, and Codex execution, while Worklab owns task workflow state, persistence, MCP tool surfaces, UI, local service management, and optional Slack and Web Push integrations (`package.json:1-101`, `CLAUDE.md:5-27`, `src/coordinator.js`, `src/coordinator/service-registry.js:73-119`, `src/worker.js:81-168`).
 
-The stack is Node.js 20+ ES modules, Express, better-sqlite3, Preact, Vite, Vitest, the MCP TypeScript SDK, Slack Bolt, `web-push`, `@worklab-ai/agent-runtime`, and `@worklab-ai/webhooks` (`package.json:69-100`). Runtime data defaults to `~/.worklab`, the default workspace is `~/worklab-workspace`, and `WORKLAB_*` environment variables or CLI flags can override host, port, data dir, workspace, and timeout settings (`src/core/config.js:26-45`, `src/core/env.js:47-61`, `AGENTS.md:67-91`).
+The stack is Node.js 22.19.0+ ES modules, Express, better-sqlite3, Preact, Vite, Vitest, the MCP TypeScript SDK, Slack Bolt, `web-push`, `@mono-agent/agent-runtime`, and `@worklab-ai/webhooks` (`package.json:69-100`). Runtime data defaults to `~/.worklab`, the default workspace is `~/worklab-workspace`, and `WORKLAB_*` environment variables or CLI flags can override host, port, data dir, workspace, and timeout settings (`src/core/config.js:26-45`, `src/core/env.js:47-61`, `AGENTS.md:67-91`).
 
 Deployment is multi-process on one host: the CLI starts either a foreground coordinator or a per-user service; the coordinator owns the Express app, SQLite connection, schedulers, and optional services; each agent run is a separate `node src/worker.js` child process whose stdout is interpreted as structured runtime events (`src/cli/index.js:15-60`, `src/cli/start.js:76-93`, `src/coordinator.js:245-345`, `src/coordinator/spawn-worker.js:58-89`).
 
@@ -24,7 +24,7 @@ flowchart TD
   ServiceRegistry["background service registry"]
   Managers["automation, team lead, search, consolidation managers"]
   Worker["src/worker.js child process"]
-  Runtime["@worklab-ai/agent-runtime"]
+  Runtime["@mono-agent/agent-runtime"]
   AgentMCP["src/mcp/agent stdio tools"]
   AdminMCP["src/mcp/admin HTTP + CLI bridge"]
   Webhooks["@worklab-ai/webhooks"]
@@ -70,7 +70,7 @@ flowchart TD
 | Core | Domain layer and persistence boundary. The compatibility barrel remains `src/core/index.js`, while modular public barrels split DB, workflow, runtime, content, and platform helpers. | `src/core/index.js`, `src/core/db/index.js:1-7`, `src/core/workflow/index.js:1-9`, `src/core/runtime/index.js:1-23`, `src/core/content/index.js:1-9`, `src/core/platform/index.js:1-23`, `src/core/README.md:1-34`, `src/core/db/schema/current.js:1-645` | Coordinator, worker, API, MCP, integrations, CLI, and `better-sqlite3` outside `src/core/db/**` (`src/core/README.md:14-18`, `eslint.config.js:175-180`). |
 | Task Watcher | Converts task state into spawn decisions, prevents duplicate active runs, applies state-machine side effects, handles success/failure, schedules recoveries, resumes parents, auto-starts dependents, and emits lifecycle events. Timer/pending auto-start mechanics are isolated from task eligibility. | `src/coordinator/task-watcher.js:79-120`, `src/coordinator/watcher/auto-start-scheduler.js:1-27`, `src/coordinator/task-watcher.js:311-358`, `src/coordinator/task-watcher.js:691-983` | It is one of the documented coordinator carve-outs allowed to deep-import core internals (`eslint.config.js:88-90`, `eslint.config.js:110-143`). |
 | Worker | Child process entrypoint. Reads env and CLI args, configures the runtime tool context, opens the DB, accepts drain/live-input control messages on stdin, dispatches task/review/automation/consolidation/lead-cycle runners, and emits final JSON to stdout. | `src/worker.js:1-168`, `src/worker/task-runner.js:74-162` | It should use core/agent/runtime seams, not API or service control paths (`CLAUDE.md:19-25`, `eslint.config.js:216-228`). |
-| Agent Runtime Package | Generic provider/kernel package. `createRuntime()` resolves a bridge from `options.model` and `executionMode`, configures tool runtime callbacks, and returns normalized text, structured result, events, usage, cost, errors, diagnostics, and provider session IDs. | `packages/agent-runtime/package.json:1-49`, `packages/agent-runtime/README.md:1-190`, `packages/agent-runtime/src/runtime.js:1-73`, `src/core/ai.js:1-10`, `src/core/ai.js:540-608` | Worklab DB/domain/edge layers; boundary lint treats provider and kernel layers as reusable (`eslint.config.js:9-19`, `eslint.config.js:157-167`). |
+| Agent Runtime Package | Shared provider/kernel npm package. `createRuntime()` resolves a bridge from `options.model` and `executionMode`, configures tool runtime callbacks, and returns normalized text, structured result, events, usage, cost, errors, diagnostics, and provider session IDs. Worklab passes its runtime brand from `src/core/runtime-brand.js`. | `package.json:69-100`, `src/core/ai.js:1-10`, `src/core/ai.js:540-608`, `src/core/runtime-brand.js` | Worklab DB/domain/edge layers; boundary lint treats provider and kernel layers as reusable (`eslint.config.js:9-19`, `eslint.config.js:157-167`). |
 | MCP | Admin MCP is a bearer-token HTTP surface and CLI bridge for trusted automation. Agent MCP is a per-run stdio tool surface for journals, memory, task graph, worktrees, agent management, and KB access. | `src/mcp/README.md:1-58`, `src/mcp/admin/server.js:1-88`, `src/mcp/admin/tools/index.js:1-52`, `src/mcp/agent/server.js:1-39`, `src/mcp/agent/tools/index.js:1-53` | Direct DB, API, integrations, CLI, coordinator, and worker imports (`src/mcp/README.md:16-24`, `eslint.config.js:192-199`). |
 | Integrations | Optional external adapters. Slack Bolt listens in socket mode and triages messages through the agent runtime; push notifications subscribe to run lifecycle events and deliver Web Push payloads. | `src/integrations/README.md:1-26`, `src/integrations/slack/service.js:254-675`, `src/integrations/push/service.js:1-88` | Direct DB package imports, API self-calls, CLI, coordinator, worker, and MCP (`src/integrations/README.md:7-15`, `eslint.config.js:201-205`). |
 | Webhooks Package | Reusable helpers and MCP stdio server used by automation webhook ingress and built-in MCP server discovery. Worklab consumes it through a local adapter. | `packages/webhooks/package.json:1-46`, `packages/webhooks/README.md:1-15`, `src/core/webhooks.js:1-36`, `src/api/routes/automations.js:1-13`, `src/core/mcp-config.js:75-86` | It is a workspace package with no Worklab DB dependency in its manifest (`packages/webhooks/package.json:40-45`). |
@@ -487,7 +487,7 @@ sequenceDiagram
   participant SpawnRun as "watcher/spawn-run.js"
   participant SpawnWorker as "spawn-worker.js"
   participant Worker as "src/worker.js"
-  participant Runtime as "@worklab-ai/agent-runtime"
+  participant Runtime as "@mono-agent/agent-runtime"
   participant DB as "SQLite"
   participant SSE as "SSE broker"
 
@@ -510,7 +510,7 @@ sequenceDiagram
   Watcher->>SSE: "broadcast run_ended"
 ```
 
-Sources in call order: `src/api/routes/tasks.js:812-830`, `src/coordinator/task-watcher.js:311-358`, `src/coordinator/watcher/spawn-run.js:42-266`, `src/coordinator/spawn-worker.js:58-160`, `src/coordinator/spawn-worker.js:620-899`, `src/worker.js:81-168`, `src/worker/task-runner.js:74-162`, `src/core/ai.js:540-608`, `packages/agent-runtime/src/runtime.js:50-73`, `src/coordinator/task-watcher.js:691-983`.
+Sources in call order: `src/api/routes/tasks.js:812-830`, `src/coordinator/task-watcher.js:311-358`, `src/coordinator/watcher/spawn-run.js:42-266`, `src/coordinator/spawn-worker.js:58-160`, `src/coordinator/spawn-worker.js:620-899`, `src/worker.js:81-168`, `src/worker/task-runner.js:74-162`, `src/core/ai.js:540-608`, shared `@mono-agent/agent-runtime`, `src/coordinator/task-watcher.js:691-983`.
 
 ### Automation And Webhook Flow
 

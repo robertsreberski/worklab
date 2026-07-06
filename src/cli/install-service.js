@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir, platform, userInfo } from "node:os";
 import { join } from "node:path";
-import { loadConfig } from "../core/index.js";
+import { loadConfig } from "../core/config.js";
 import { applyConfigArgs } from "./args.js";
 import { gracefulStopCoordinator, gracefulStopTimeoutMs } from "./service-drain.js";
 

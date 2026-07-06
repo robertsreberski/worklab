@@ -1,4 +1,4 @@
-import { retryableProviderFailureInfo } from "@worklab-ai/agent-runtime/ai/failure.js";
+import { retryableProviderFailureInfo } from "@mono-agent/agent-runtime/ai/failure.js";
 import { readSettings } from "../../core/settings.js";
 import { agentForTaskStage } from "../../core/task-agents.js";
 import { taskStage } from "../../core/task-side-effects.js";

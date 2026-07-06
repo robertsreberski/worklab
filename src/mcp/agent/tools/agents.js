@@ -16,16 +16,16 @@ import {
   uniqueSlug,
   WORKLAB_BUILTIN_TOOLS,
 } from "../../../core/index.js";
-import { executionModeIncompatibilityReason } from "@worklab-ai/agent-runtime/ai/runtime/model-refs.js";
+import { executionModeIncompatibilityReason } from "@mono-agent/agent-runtime/ai/runtime/model-refs.js";
 import {
   claudeModelSupportsOneMillionContext,
   normalizeContextWindow,
   ONE_MILLION_CONTEXT_WINDOW,
-} from "@worklab-ai/agent-runtime/ai/runtime/context-windows.js";
+} from "@mono-agent/agent-runtime/ai/runtime/context-windows.js";
 import {
   codexModelSupportsFastMode,
   normalizeFastMode,
-} from "@worklab-ai/agent-runtime/ai/runtime/fast-mode.js";
+} from "@mono-agent/agent-runtime/ai/runtime/fast-mode.js";
 
 const allowlistModeSchema = z.enum(["all", "custom"]).optional();
 const effortSchema = z.enum(["none", "low", "medium", "high", "xhigh", "max"]).optional();

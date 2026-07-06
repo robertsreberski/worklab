@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mockRun = vi.fn();
+const mockCreateRuntime = vi.fn(() => ({ run: mockRun }));
+const mockCreateRouterRuntime = vi.fn(() => ({ run: mockRun }));
 
-vi.mock("@worklab-ai/agent-runtime", () => ({
-  createRuntime: () => ({ run: mockRun }),
-  createRouterRuntime: () => ({ run: mockRun }),
+vi.mock("@mono-agent/agent-runtime", () => ({
+  createRuntime: mockCreateRuntime,
+  createRouterRuntime: mockCreateRouterRuntime,
   createMetricsObserver: () => ({ recordEvent: () => {}, snapshot: () => ({}) }),
 }));
 
@@ -12,6 +14,8 @@ const { generateResponse, resolveModel } = await import("../../core/ai.js");
 
 afterEach(() => {
   mockRun.mockReset();
+  mockCreateRuntime.mockClear();
+  mockCreateRouterRuntime.mockClear();
   delete process.env.WORKLAB_CODEX_THREAD_START_TIMEOUT_MS;
   delete process.env.WORKLAB_CODEX_THREAD_START_ATTEMPTS;
   delete process.env.WORKLAB_CODEX_THREAD_START_BACKOFF_MS;
@@ -71,6 +75,28 @@ describe("generateResponse Codex runtime options", () => {
 
     expect(mockRun).toHaveBeenCalledWith("sys", expect.objectContaining({
       piCodexTransport: "websocket-cached",
+    }));
+  });
+
+  it("preserves Worklab runtime brand when creating the mono runtime", async () => {
+    mockRun.mockResolvedValue({ text: "ok" });
+
+    await generateResponse("sys", {
+      model: resolveModel("codex:gpt-5.5"),
+      executionMode: "cli",
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    expect(mockCreateRuntime).toHaveBeenCalledWith(expect.objectContaining({
+      runtimeBrand: expect.objectContaining({
+        schemaPrefix: "worklab",
+        mcpClientName: "worklab",
+        tempdirPrefix: "worklab-cli-",
+        providerModelPrefix: "worklab",
+        doctorCommand: "worklab doctor",
+        serviceName: "worklab",
+        clientInfoTitle: "Worklab",
+      }),
     }));
   });
 

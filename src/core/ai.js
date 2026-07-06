@@ -1,17 +1,19 @@
-import { getModel as getPiModel, getModels as getPiModels, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
-import { getSkillAccessDirs } from "@worklab-ai/agent-runtime/agent/prompt/skill-index.js";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import {
   canonicalizeLegacyModelReference,
   normalizeRuntimeModelReference,
   parseRuntimeModelReference,
-} from "@worklab-ai/agent-runtime/ai/runtime/model-refs.js";
-import { claudeModelSupportsOneMillionContext } from "@worklab-ai/agent-runtime/ai/runtime/context-windows.js";
-import { codexModelSupportsFastMode } from "@worklab-ai/agent-runtime/ai/runtime/fast-mode.js";
-import { createRouterRuntime, createRuntime, createMetricsObserver } from "@worklab-ai/agent-runtime";
+} from "@mono-agent/agent-runtime/ai/runtime/model-refs.js";
+import { claudeModelSupportsOneMillionContext } from "@mono-agent/agent-runtime/ai/runtime/context-windows.js";
+import { codexModelSupportsFastMode } from "@mono-agent/agent-runtime/ai/runtime/fast-mode.js";
+import { createRouterRuntime, createRuntime, createMetricsObserver } from "@mono-agent/agent-runtime";
 import { WORKLAB_BUILTIN_TOOLS } from "./builtin-tools.js";
 import { customPricingResolverFor } from "./custom-pricing.js";
+import { getPiModel, getPiModels } from "./pi-model-catalog.js";
 import { resolvePiApiKey } from "./pi-oauth.js";
 import { compactionRecorderFor } from "./run-compactions.js";
+import { withWorklabRuntimeBrand } from "./runtime-brand.js";
+import { getSkillAccessDirs } from "./skills.js";
 import { createToolOutputSink } from "./tool-artifacts.js";
 import { readSettings } from "./settings.js";
 import {
@@ -585,14 +587,14 @@ export async function generateResponse(systemPrompt, options) {
   // alongside this one.
   const metricsObserver = createMetricsObserver();
   const callObservers = Array.isArray(options.observers) ? options.observers : [];
-  const hostOptions = {
+  const hostOptions = withWorklabRuntimeBrand({
     resolveCustomPricing: options.resolveCustomPricing || customPricingResolverFor(options.db),
     onCompactionRecorded: options.onCompactionRecorded || compactionRecorderFor(options.db),
     persistArtifact: options.persistArtifact || createToolOutputSink(runArtifactDir),
     resolvePiApiKey: options.resolvePiApiKey
       || ((provider) => resolvePiApiKey(provider, { dataDir: options.dataDir })),
     observers: [metricsObserver, ...callObservers],
-  };
+  });
 
   const callerOnEvent = typeof options.onEvent === "function" ? options.onEvent : null;
   const onEvent = callerOnEvent || (() => {});

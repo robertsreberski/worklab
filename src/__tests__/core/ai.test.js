@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getModels as getPiModels } from "@earendil-works/pi-ai";
+import { getPiModels } from "../../core/pi-model-catalog.js";
 import {
   getBuiltinModelByReference,
   getBuiltinModelGroups,

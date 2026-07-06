@@ -16,16 +16,16 @@ import {
   updateAgentMemory,
   uniqueSlug,
 } from "../../core/index.js";
-import { executionModeIncompatibilityReason } from "@worklab-ai/agent-runtime/ai/runtime/model-refs.js";
+import { executionModeIncompatibilityReason } from "@mono-agent/agent-runtime/ai/runtime/model-refs.js";
 import {
   claudeModelSupportsOneMillionContext,
   normalizeContextWindow,
   ONE_MILLION_CONTEXT_WINDOW,
-} from "@worklab-ai/agent-runtime/ai/runtime/context-windows.js";
+} from "@mono-agent/agent-runtime/ai/runtime/context-windows.js";
 import {
   codexModelSupportsFastMode,
   normalizeFastMode,
-} from "@worklab-ai/agent-runtime/ai/runtime/fast-mode.js";
+} from "@mono-agent/agent-runtime/ai/runtime/fast-mode.js";
 import {
   ALLOWLIST_MODE_ALL,
   inferAllowlistMode,
@@ -33,7 +33,7 @@ import {
   normalizeList,
   parseStoredAllowlist,
   storedAllowlistMode,
-} from "@worklab-ai/agent-runtime/agent/allowlists.js";
+} from "@mono-agent/agent-runtime/agent/allowlists.js";
 import {
   agentExists,
   deleteAgentByName,

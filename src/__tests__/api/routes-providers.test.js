@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getModels as getPiModels } from "@earendil-works/pi-ai";
+import { getPiModels } from "../../core/pi-model-catalog.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

@@ -1,3 +1,10 @@
+# Superseded: Worklab runtime package split plan
+
+> **Status: superseded by issue #135 and the shared-kernel decision.** Worklab
+> now consumes `@mono-agent/agent-runtime` from npm instead of carrying a
+> vendored `packages/agent-runtime` workspace. Do not revive or implement this
+> historical `@worklab-ai/agent-runtime` / `@worklab-ai/pi-kernel` split plan.
+
 # Refactor `@worklab-ai/agent-runtime` + extract `@worklab-ai/pi-kernel`
 
 > **Status: parked.** An attempted execution (Commits 1.1 + 1.2 + a partial Commit 1.3) is preserved on the local branch `parked/refactor-7ff02822-39d6-432e-880f-c89aa3d22b5d`. The work landed cleanly through Phase 1 step 1.2 (tests green, lint clean modulo unrelated pre-existing violations) but ran into bundler complications during the public-barrel rewrite — Vite's UI build pulled `node:fs` from `shared/file-change-stats.js` transitively through the consolidated root barrel. The current package surface is healthy as-is; revisit this plan only if the boundary confusion described below starts to bite.
