@@ -37,7 +37,7 @@ describe("getBuiltinProviderAvailability", () => {
   });
 
   it("reports both providers unavailable when no keys are set", () => {
-    const result = getBuiltinProviderAvailability();
+    const result = getBuiltinProviderAvailability({ env: { PATH: "/nonexistent-dir" } });
     expect(result.claude.available).toBe(false);
     expect(result.openai.available).toBe(false);
     expect(result["pi:openai"].available).toBe(false);
@@ -75,9 +75,18 @@ describe("getBuiltinProviderAvailability", () => {
 
   it("returns independent results per provider", () => {
     process.env.OPENAI_API_KEY = "sk-openai";
-    const result = getBuiltinProviderAvailability();
+    const result = getBuiltinProviderAvailability({ env: { OPENAI_API_KEY: "sk-openai", PATH: "/nonexistent-dir" } });
     expect(result.openai.available).toBe(true);
     expect(result.claude.available).toBe(false);
+  });
+
+  it("reports Claude CLI readiness independently from SDK credentials", () => {
+    const result = getBuiltinProviderAvailability({ env: { PATH: fakeCliPath() } });
+    expect(result.claude).toMatchObject({ available: true, runtime_kind: "cli", auth: "claude-cli" });
+    expect(result.claude.execution_modes).toMatchObject({
+      sdk: { available: false },
+      cli: { available: true },
+    });
   });
 
   it("reports Pi Codex auth and active Codex CLI readiness independently", () => {

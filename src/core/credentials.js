@@ -53,6 +53,7 @@ export function getBuiltinProviderAvailability({
   const claudeEnv = !!(env.ANTHROPIC_API_KEY
     || env.ANTHROPIC_AUTH_TOKEN
     || env.CLAUDE_CODE_OAUTH_TOKEN);
+  const claudeCliAvailable = commandOnPath("claude", path);
   const openaiEnv = !!env.OPENAI_API_KEY;
   const probeEnv = { ...process.env, ...env, PATH: path };
   const codexAuth = piAuthAvailable("openai-codex", { env: probeEnv, dataDir });
@@ -80,10 +81,22 @@ export function getBuiltinProviderAvailability({
   }));
   return {
     claude: {
-      available: claudeEnv,
-      reason: claudeEnv ? null : "Set ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or CLAUDE_CODE_OAUTH_TOKEN.",
-      runtime_kind: "sdk",
-      auth: claudeEnv ? "env" : "missing-auth",
+      available: claudeEnv || claudeCliAvailable,
+      reason: claudeEnv || claudeCliAvailable
+        ? null
+        : "Set ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or CLAUDE_CODE_OAUTH_TOKEN, or install the claude CLI.",
+      runtime_kind: claudeEnv ? "sdk" : "cli",
+      auth: claudeEnv ? "env" : claudeCliAvailable ? "claude-cli" : "missing-auth",
+      execution_modes: {
+        sdk: {
+          available: claudeEnv,
+          reason: claudeEnv ? null : "Set ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or CLAUDE_CODE_OAUTH_TOKEN.",
+        },
+        cli: {
+          available: claudeCliAvailable,
+          reason: claudeCliAvailable ? null : "Install or add the claude CLI to PATH.",
+        },
+      },
     },
     openai: {
       available: openaiEnv,

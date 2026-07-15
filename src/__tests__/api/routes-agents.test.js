@@ -7,7 +7,7 @@ import { createProvider, upsertModel } from "../../core/providers.js";
 import { appendJournalEntry, writeMemory } from "../../core/journal.js";
 import { agentJournalHash } from "../../core/memory.js";
 
-const ENV_KEYS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CODEX_API_KEY", "PATH"];
+const ENV_KEYS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CODEX_API_KEY", "PATH"];
 const savedEnv = {};
 const tempDirs = [];
 
@@ -143,6 +143,28 @@ describe("agents CRUD", () => {
     expect(cli.body.agent.execution_mode).toBe("cli");
     const row = db.prepare("SELECT execution_mode FROM agents WHERE name = 'cli-mode'").get();
     expect(row.execution_mode).toBe("cli");
+  });
+
+  it("accepts Fable through authenticated Claude CLI without SDK credentials", async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_AUTH_TOKEN;
+    delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    const { agent } = makeTestServer();
+
+    await agent.post("/api/agents").send({
+      name: "fable-cli",
+      display_name: "Fable CLI",
+      model: "claude:claude-fable-5",
+      execution_mode: "cli",
+    }).expect(201);
+
+    const sdk = await agent.post("/api/agents").send({
+      name: "fable-sdk",
+      display_name: "Fable SDK",
+      model: "claude:claude-fable-5",
+      execution_mode: "sdk",
+    }).expect(400);
+    expect(sdk.body.error.message).toMatch(/ANTHROPIC_API_KEY/);
   });
 
   it("rejects invalid execution_mode on POST", async () => {
