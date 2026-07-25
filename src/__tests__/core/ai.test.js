@@ -136,6 +136,7 @@ describe("explicit model references", () => {
     expect(codexCliValues).toEqual(getPiModels("openai-codex").map((model) => `codex:${model.id}`));
     expect(getBuiltinModels().map((model) => model.value)).toContain("pi:openai-codex:gpt-5.5");
     expect(getBuiltinModels().map((model) => model.value)).toContain("codex:gpt-5.5");
+    expect(getBuiltinModels().map((model) => model.value)).toContain("claude:claude-fable-5");
   });
 
   it("advertises per-model reasoning effort levels", () => {
@@ -143,6 +144,7 @@ describe("explicit model references", () => {
     expect(getBuiltinModelByReference("pi:openai:gpt-5.4-nano").capabilities.reasoning_levels).toEqual(["none", "low", "medium", "high", "xhigh"]);
     expect(getBuiltinModelByReference("claude:claude-sonnet-4-6").capabilities.reasoning_levels).toEqual(["low", "medium", "high", "max"]);
     expect(getBuiltinModelByReference("claude:claude-opus-4-7").capabilities.reasoning_levels).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    expect(getBuiltinModelByReference("claude:claude-fable-5").capabilities.reasoning_levels).toEqual(["low", "medium", "high", "xhigh", "max"]);
   });
 
   it("normalizes stale or unsupported effort to supported values", () => {

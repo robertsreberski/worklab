@@ -29,6 +29,7 @@ export const BUILTIN_CLAUDE_MODELS = [
   "claude-sonnet-4-6",
   "claude-opus-4-6",
   "claude-opus-4-7",
+  "claude-fable-5",
 ];
 
 const FALLBACK_OPENAI_MODELS = [
@@ -149,7 +150,7 @@ function claudeReasoningCapabilities(model, runtime = "sdk") {
     ...common,
     reasoning: true,
     reasoning_mode: "effort",
-    reasoning_levels: model.includes("opus") ? CLAUDE_REASONING_LEVELS : CLAUDE_REASONING_LEVELS.filter((level) => level !== "xhigh"),
+    reasoning_levels: /opus|fable/.test(model) ? CLAUDE_REASONING_LEVELS : CLAUDE_REASONING_LEVELS.filter((level) => level !== "xhigh"),
     reasoning_disable_supported: true,
   };
 }
@@ -303,6 +304,14 @@ const BUILTIN_MODEL_GROUPS = [
         sdk: "claude",
         model: "claude-opus-4-7",
         capabilities: claudeReasoningCapabilities("claude-opus-4-7"),
+      },
+      {
+        value: "claude:claude-fable-5",
+        label: "Claude Fable 5",
+        description: "Frontier reasoning",
+        sdk: "claude",
+        model: "claude-fable-5",
+        capabilities: claudeReasoningCapabilities("claude-fable-5"),
       },
     ],
   },

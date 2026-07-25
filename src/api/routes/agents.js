@@ -183,12 +183,13 @@ function validateFastModeForAgent({ resolved, fastMode, explicit = false, fallba
   return supported ? normalized : false;
 }
 
-function validateModelForAgent({ db, dataDir, model }) {
+function validateModelForAgent({ db, dataDir, model, executionMode = "sdk" }) {
   const resolved = normalizeModelReference(model);
   const builtin = getBuiltinModelByReference(resolved.reference);
   if (builtin) {
     const availabilityKey = resolved.sdk === "pi" ? `pi:${resolved.provider}` : resolved.sdk;
-    const availability = getBuiltinProviderAvailability({ dataDir })[availabilityKey];
+    const providerAvailability = getBuiltinProviderAvailability({ dataDir })[availabilityKey];
+    const availability = providerAvailability?.execution_modes?.[executionMode] || providerAvailability;
     if (availability?.available === false) {
       throw new Error(`${availabilityKey} unavailable: ${availability.reason || "provider unavailable"}`);
     }
@@ -373,10 +374,16 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       agentExists(db, candidate),
       { fallback: "agent" },
     );
+    let executionMode;
+    try {
+      executionMode = normalizeExecutionMode(req.body?.execution_mode, "sdk");
+    } catch (err) {
+      return res.status(400).json({ error: { code: "validation", message: err.message } });
+    }
     let resolved;
     let canonicalModel;
     try {
-      resolved = validateModelForAgent({ db, dataDir, model });
+      resolved = validateModelForAgent({ db, dataDir, model, executionMode });
       canonicalModel = resolved.reference;
     } catch (err) {
       return res.status(400).json({ error: { code: "invalid_model", message: err.message } });
@@ -405,14 +412,12 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     let allowSelfReview;
     let browserToolsReviewOnly;
     let subagentMode;
-    let executionMode;
     let contextWindow;
     let fastMode;
     try {
       allowSelfReview = normalizeBooleanField("allow_self_review", req.body.allow_self_review, true);
       browserToolsReviewOnly = normalizeBooleanField("browser_tools_review_only", req.body.browser_tools_review_only, false);
       subagentMode = normalizeSubagentMode(req.body.subagent_mode, "advisory");
-      executionMode = normalizeExecutionMode(req.body.execution_mode, "sdk");
     } catch (err) {
       return res.status(400).json({ error: { code: "validation", message: err.message } });
     }
@@ -571,6 +576,14 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     const existing = getAgentByName(db, req.params.name);
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
 
+    const existingExecutionMode = existing.execution_mode || "sdk";
+    let targetExecutionMode;
+    try {
+      targetExecutionMode = normalizeExecutionMode(req.body.execution_mode, existingExecutionMode);
+    } catch (err) {
+      return res.status(400).json({ error: { code: "validation", message: err.message } });
+    }
+
     const fields = [];
     const values = [];
     let targetModel = existing.model;
@@ -585,9 +598,9 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
         if (ALLOWLIST_PATCH_KEYS.has(k)) continue;
         if (k === "model") {
           try {
-            const resolved = req.body[k] === existing.model
+            const resolved = req.body[k] === existing.model && targetExecutionMode === existingExecutionMode
               ? normalizeModelReference(req.body[k])
-              : validateModelForAgent({ db, dataDir, model: req.body[k] });
+              : validateModelForAgent({ db, dataDir, model: req.body[k], executionMode: targetExecutionMode });
             targetResolved = resolved;
             targetModel = resolved.reference;
             fields.push("sdk = ?");
@@ -638,11 +651,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
             return res.status(400).json({ error: { code: "validation", message: err.message } });
           }
         } else if (k === "execution_mode") {
-          try {
-            values.push(normalizeExecutionMode(req.body[k], existing.execution_mode || "sdk"));
-          } catch (err) {
-            return res.status(400).json({ error: { code: "validation", message: err.message } });
-          }
+          values.push(targetExecutionMode);
         } else if (k === "subagent_mode") {
           try {
             values.push(normalizeSubagentMode(req.body[k], existing.subagent_mode || "advisory"));
@@ -712,9 +721,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     // the per-field loop so we check the values that will actually be
     // persisted (mix of patch + existing).
     {
-      const effectiveExecutionMode = "execution_mode" in req.body
-        ? normalizeExecutionMode(req.body.execution_mode, existing.execution_mode || "sdk")
-        : (existing.execution_mode || "sdk");
+      const effectiveExecutionMode = targetExecutionMode;
       const effectiveModel = "model" in req.body ? targetModel : existing.model;
       const effectiveContextWindow = "context_window" in req.body
         ? targetContextWindow
@@ -725,6 +732,18 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       let effectiveResolved = targetResolved;
       if (!effectiveResolved && effectiveModel) {
         try { effectiveResolved = normalizeModelReference(effectiveModel); } catch { effectiveResolved = null; }
+      }
+      if (targetExecutionMode !== existingExecutionMode && !("model" in req.body)) {
+        try {
+          effectiveResolved = validateModelForAgent({
+            db,
+            dataDir,
+            model: effectiveModel,
+            executionMode: effectiveExecutionMode,
+          });
+        } catch (err) {
+          return res.status(400).json({ error: { code: "invalid_model", message: err.message } });
+        }
       }
       const reason = effectiveResolved
         ? executionModeIncompatibilityReason(effectiveResolved, effectiveExecutionMode)
