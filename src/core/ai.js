@@ -29,6 +29,7 @@ export const BUILTIN_CLAUDE_MODELS = [
   "claude-sonnet-4-6",
   "claude-opus-4-6",
   "claude-opus-4-7",
+  "claude-opus-5",
   "claude-fable-5",
 ];
 
@@ -121,13 +122,17 @@ function runtimeMetadata({
 }
 
 function claudeReasoningCapabilities(model, runtime = "sdk") {
+  const optionalOneMillionContext = claudeModelSupportsOneMillionContext(model);
+  const oneMillionContext = optionalOneMillionContext
+    || model === "claude-fable-5"
+    || model === "claude-opus-5";
   const common = {
     tool_use: true,
     vision: true,
     json_mode: true,
-    context_window_tokens: claudeModelSupportsOneMillionContext(model) ? 1_000_000 : 200_000,
-    supports_1m_context: claudeModelSupportsOneMillionContext(model),
-    context_windows: claudeModelSupportsOneMillionContext(model) ? ["default", "1m"] : ["default"],
+    context_window_tokens: oneMillionContext ? 1_000_000 : 200_000,
+    supports_1m_context: optionalOneMillionContext,
+    context_windows: optionalOneMillionContext ? ["default", "1m"] : ["default"],
     ...runtimeMetadata({
       runtimeKind: runtime,
       supportsMcp: true,
@@ -304,6 +309,14 @@ const BUILTIN_MODEL_GROUPS = [
         sdk: "claude",
         model: "claude-opus-4-7",
         capabilities: claudeReasoningCapabilities("claude-opus-4-7"),
+      },
+      {
+        value: "claude:claude-opus-5",
+        label: "Claude Opus 5",
+        description: "Advanced reasoning",
+        sdk: "claude",
+        model: "claude-opus-5",
+        capabilities: claudeReasoningCapabilities("claude-opus-5"),
       },
       {
         value: "claude:claude-fable-5",

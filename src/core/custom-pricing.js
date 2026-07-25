@@ -13,11 +13,20 @@ import {
 const LOCAL_PROVIDER_TYPES = new Set(["ollama", "lmstudio", "vllm"]);
 
 function piCatalogPricing(parsed) {
-  if (parsed?.sdk !== "pi" || !parsed.provider || !parsed.model) return null;
+  const provider = parsed?.sdk === "claude"
+    ? "anthropic"
+    : parsed?.sdk === "pi" ? parsed.provider : null;
+  if (!provider || !parsed?.model) return null;
   try {
-    const model = getPiModel(parsed.provider, parsed.model);
+    const model = getPiModel(provider, parsed.model);
     return model?.cost ? normalizePricing(model.cost, { source: "pi-catalog" }) : null;
   } catch {
+    if (parsed?.sdk === "claude" && parsed.model === "claude-opus-5") {
+      return normalizePricing(
+        { input: 5, cacheRead: 0.5, cacheWrite: 6.25, output: 25 },
+        { source: "claude-table" },
+      );
+    }
     return null;
   }
 }
