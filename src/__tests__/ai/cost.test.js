@@ -58,6 +58,15 @@ describe("cost estimation", () => {
       cachedTokens: 100_000,
       cacheWriteTokens: 200_000,
     })).toBeCloseTo(31.3);
+
+    expect(estimateCost({
+      resolveCustomPricing: customPricingResolverFor(),
+      model: "claude:claude-opus-5",
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      cachedTokens: 100_000,
+      cacheWriteTokens: 200_000,
+    })).toBeCloseTo(31.3);
   });
 
   it("uses custom provider pricing and returns null for unknown hosted pricing", () => withDb((db, resolveCustomPricing) => {
