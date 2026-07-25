@@ -206,6 +206,16 @@ describe("agents CRUD", () => {
     expect(row.execution_mode).toBe("cli");
   });
 
+  it("PATCH validates CLI availability when the unchanged model is resent", async () => {
+    const { agent } = makeTestServer();
+    const model = "claude:claude-fable-5";
+    await agent.post("/api/agents").send({ name: "fable-patch", display_name: "Fable", model }).expect(201);
+    process.env.PATH = "/nonexistent-dir";
+
+    const res = await agent.patch("/api/agents/fable-patch").send({ model, execution_mode: "cli" }).expect(400);
+    expect(res.body.error.message).toMatch(/claude CLI/i);
+  });
+
   it("defaults fast_mode on for Codex GPT agents and allows disabling it", async () => {
     const { agent, db } = makeTestServer();
     const created = await agent.post("/api/agents").send({

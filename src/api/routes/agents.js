@@ -576,11 +576,10 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     const existing = getAgentByName(db, req.params.name);
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
 
+    const existingExecutionMode = existing.execution_mode || "sdk";
     let targetExecutionMode;
     try {
-      targetExecutionMode = "execution_mode" in req.body
-        ? normalizeExecutionMode(req.body.execution_mode, existing.execution_mode || "sdk")
-        : (existing.execution_mode || "sdk");
+      targetExecutionMode = normalizeExecutionMode(req.body.execution_mode, existingExecutionMode);
     } catch (err) {
       return res.status(400).json({ error: { code: "validation", message: err.message } });
     }
@@ -599,7 +598,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
         if (ALLOWLIST_PATCH_KEYS.has(k)) continue;
         if (k === "model") {
           try {
-            const resolved = req.body[k] === existing.model
+            const resolved = req.body[k] === existing.model && targetExecutionMode === existingExecutionMode
               ? normalizeModelReference(req.body[k])
               : validateModelForAgent({ db, dataDir, model: req.body[k], executionMode: targetExecutionMode });
             targetResolved = resolved;
@@ -734,7 +733,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       if (!effectiveResolved && effectiveModel) {
         try { effectiveResolved = normalizeModelReference(effectiveModel); } catch { effectiveResolved = null; }
       }
-      if ("execution_mode" in req.body && !("model" in req.body)) {
+      if (targetExecutionMode !== existingExecutionMode && !("model" in req.body)) {
         try {
           effectiveResolved = validateModelForAgent({
             db,

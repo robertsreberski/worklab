@@ -89,7 +89,6 @@ const MODEL_SHORT_LABELS = {
   "claude-sonnet-4-6": "Sonnet 4.6",
   "claude-opus-4-6": "Opus 4.6",
   "claude-opus-4-7": "Opus 4.7",
-  "claude-fable-5": "Fable 5",
   "gpt-5.5": "GPT-5.5",
   "gpt-5.4": "GPT-5.4",
   "gpt-5.4-mini": "GPT-5.4 Mini",
