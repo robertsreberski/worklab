@@ -21,6 +21,12 @@ function piCatalogPricing(parsed) {
     const model = getPiModel(provider, parsed.model);
     return model?.cost ? normalizePricing(model.cost, { source: "pi-catalog" }) : null;
   } catch {
+    if (parsed?.sdk === "claude" && parsed.model === "claude-opus-5") {
+      return normalizePricing(
+        { input: 5, cacheRead: 0.5, cacheWrite: 6.25, output: 25 },
+        { source: "claude-table" },
+      );
+    }
     return null;
   }
 }
