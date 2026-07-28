@@ -3,12 +3,17 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// agent-runtime 0.15.1 exposes RuntimeRunOptions.claudeAgentQuery as the
+// supported test seam. Mocking "@anthropic-ai/claude-agent-sdk" by package name
+// only worked while npm happened to hoist a single copy — the runtime now ships
+// its own Anthropic SDK tree on purpose, and a nested copy silently defeated the
+// mock and let this suite issue real API calls.
 const mockQuery = vi.fn();
-vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
-  query: (...args) => mockQuery(...args),
-}));
 
-const { generateClaudeResponse } = await import("@mono-agent/agent-runtime/ai/providers/claude-sdk.js");
+const { generateClaudeResponse: runClaude } = await import("@mono-agent/agent-runtime/ai/providers/claude-sdk.js");
+
+const generateClaudeResponse = (system, options = {}) =>
+  runClaude(system, { claudeAgentQuery: mockQuery, ...options });
 const { createLiveInputQueue, formatLiveInputGuidance } = await import("../../core/live-input.js");
 const { createToolOutputSink } = await import("../../core/tool-artifacts.js");
 
