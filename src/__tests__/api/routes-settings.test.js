@@ -47,8 +47,10 @@ describe("settings", () => {
     expect(res.body.settings.agent_compaction_keep_recent_tokens).toBeNull();
     expect(res.body.settings.agent_compaction_summary_max_tokens).toBeNull();
     expect(res.body.settings.agent_compaction_min_savings_tokens).toBeNull();
-    expect(res.body.settings.agent_tool_payload_compaction_trigger_chars).toBe(80000);
-    expect(res.body.settings.agent_tool_prune_trigger_tokens).toBe(40000);
+    // Removed in the 0.15.1 adoption: the runtime deleted the policy fields
+    // these fed, so the keys no longer exist at all.
+    expect(res.body.settings).not.toHaveProperty("agent_tool_payload_compaction_trigger_chars");
+    expect(res.body.settings).not.toHaveProperty("agent_tool_prune_trigger_tokens");
     expect(res.body.settings.agent_tool_text_limit_chars).toBe(64000);
     expect(res.body.settings.agent_bash_output_limit_chars).toBe(64000);
     expect(res.body.settings.agent_mcp_text_limit_chars).toBe(48000);

@@ -305,8 +305,6 @@ export function settingsPayload(settings = {}) {
     agent_compaction_keep_recent_tokens: nullableNumber(settings.agent_compaction_keep_recent_tokens),
     agent_compaction_summary_max_tokens: nullableNumber(settings.agent_compaction_summary_max_tokens),
     agent_compaction_min_savings_tokens: nullableNumber(settings.agent_compaction_min_savings_tokens),
-    agent_tool_payload_compaction_trigger_chars: Number(settings.agent_tool_payload_compaction_trigger_chars ?? 0),
-    agent_tool_prune_trigger_tokens: Number(settings.agent_tool_prune_trigger_tokens ?? 40000),
     agent_tool_text_limit_chars: Number(settings.agent_tool_text_limit_chars ?? 16000),
     agent_bash_output_limit_chars: Number(settings.agent_bash_output_limit_chars ?? 20000),
     agent_mcp_text_limit_chars: Number(settings.agent_mcp_text_limit_chars ?? 12000),

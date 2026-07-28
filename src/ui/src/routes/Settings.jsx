@@ -887,12 +887,6 @@ function SettingsGeneral() {
                     </ControlGroup>
 
                     <ControlGroup title="Tool output limits" description="Caps for large tool payloads before pruning, compaction, or artifact fallback.">
-                      <FormField label="Compact chars">
-                        <NumberStepper min={0} max={10485760} step={10000} value={settings.agent_tool_payload_compaction_trigger_chars ?? 0} ariaLabel="Tool payload compaction character trigger" onChange={(value) => setSettings({ ...settings, agent_tool_payload_compaction_trigger_chars: value })} />
-                      </FormField>
-                      <FormField label="Prune tokens">
-                        <NumberStepper min={0} max={500000} step={1000} value={settings.agent_tool_prune_trigger_tokens ?? 40000} ariaLabel="Tool result prune token trigger" onChange={(value) => setSettings({ ...settings, agent_tool_prune_trigger_tokens: value })} />
-                      </FormField>
                       <FormField label="Tool chars">
                         <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_tool_text_limit_chars ?? 16000} ariaLabel="Tool text character limit" onChange={(value) => setSettings({ ...settings, agent_tool_text_limit_chars: value })} />
                       </FormField>

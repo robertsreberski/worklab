@@ -250,8 +250,6 @@ describe("settings UI duration conversions", () => {
       agent_compaction_keep_recent_tokens: 32000,
       agent_compaction_summary_max_tokens: 12000,
       agent_compaction_min_savings_tokens: 18000,
-      agent_tool_payload_compaction_trigger_chars: 0,
-      agent_tool_prune_trigger_tokens: 36000,
       agent_tool_text_limit_chars: 18000,
       agent_bash_output_limit_chars: 22000,
       agent_mcp_text_limit_chars: 16000,
@@ -286,8 +284,8 @@ describe("settings UI duration conversions", () => {
     expect(payload.agent_compaction_trigger_ratio).toBe(0.7);
     expect(payload.agent_compaction_keep_recent_tokens).toBe(32000);
     expect(payload.agent_compaction_min_savings_tokens).toBe(18000);
-    expect(payload.agent_tool_payload_compaction_trigger_chars).toBe(0);
-    expect(payload.agent_tool_prune_trigger_tokens).toBe(36000);
+    expect(payload).not.toHaveProperty("agent_tool_payload_compaction_trigger_chars");
+    expect(payload).not.toHaveProperty("agent_tool_prune_trigger_tokens");
     expect(payload.agent_tool_text_limit_chars).toBe(18000);
     expect(payload.agent_search_result_limit).toBe(90);
     expect(payload.agent_mcp_call_timeout_ms).toBe(90000);

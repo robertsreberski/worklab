@@ -9,10 +9,13 @@ describe("agent compaction policy", () => {
     const policy = resolveAgentCompactionPolicy({}, { contextWindow: 128000 });
 
     expect(policy.triggerRatio).toBe(0.7);
-    expect(policy.toolPayloadCompactionTriggerChars).toBe(0);
-    expect(policy.toolPruneTriggerTokens).toBe(40000);
     expect(policy.compactionMinSavingsTokens).toBe(12800);
     expect(policy.searchResultLimit).toBe(100);
+    // 0.15.1 deleted toolPayloadCompactionTriggerChars / toolPruneTriggerTokens:
+    // they were resolved onto the policy but never read, and had no supported
+    // typed path. Worklab dropped the settings that fed them.
+    expect(policy).not.toHaveProperty("toolPayloadCompactionTriggerChars");
+    expect(policy).not.toHaveProperty("toolPruneTriggerTokens");
   });
 
   // Worklab leaves the four compaction limits unset so the runtime scales them

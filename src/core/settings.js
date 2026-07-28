@@ -47,8 +47,6 @@ export const DEFAULT_SETTINGS = {
   agent_compaction_keep_recent_tokens: null,
   agent_compaction_summary_max_tokens: null,
   agent_compaction_min_savings_tokens: null,
-  agent_tool_payload_compaction_trigger_chars: 80000,
-  agent_tool_prune_trigger_tokens: 40000,
   // intelligence-ramp Phase 3: lifted from 16K/20K/12K to give the agent
   // room to actually read the files / output it just asked for. tool_bloat.js
   // still hard-caps at 256 KB.
@@ -241,10 +239,6 @@ export function validateSetting(key, value) {
       return value === null ? null : integerInRange(key, value, { min: 1000, max: 64000 });
     case "agent_compaction_min_savings_tokens":
       return value === null ? null : integerInRange(key, value, { min: 0, max: 500000 });
-    case "agent_tool_payload_compaction_trigger_chars":
-      return integerInRange(key, value, { min: 0, max: 10 * 1024 * 1024 });
-    case "agent_tool_prune_trigger_tokens":
-      return integerInRange(key, value, { min: 0, max: 500000 });
     case "agent_tool_text_limit_chars":
     case "agent_bash_output_limit_chars":
     case "agent_mcp_text_limit_chars":
