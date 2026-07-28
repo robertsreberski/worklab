@@ -595,13 +595,14 @@ rl.on("line", (line) => {
     }
   });
 
-  // KNOWN GAP (agent-runtime 0.15.0): the same premature close never resolves
-  // when a live-input queue is attached — the bridge keeps awaiting the live
-  // input iterator instead of failing. Worklab attaches a queue to every run
-  // (src/worker.js:24), so a crashed app-server stalls until worker_timeout_ms
-  // (30 min) rather than failing fast into the retryable-provider recovery.
-  // Upstream: https://github.com/robertsreberski/mono-agent/issues/545
-  it.skip("classifies premature app-server close while live input is attached", async () => {
+  // Worklab attaches a live-input queue to every run (src/worker.js:24). Until
+  // agent-runtime 0.15.1 a transport death left the bridge awaiting the live
+  // input iterator forever, so a crashed app-server stalled until
+  // worker_timeout_ms (30 min) instead of failing into retryable-provider
+  // recovery. 0.15.1 terminates the pending read as well
+  // (https://github.com/robertsreberski/mono-agent/issues/545), so this must
+  // settle in milliseconds — a slow pass is the regression to watch for.
+  it("classifies premature app-server close while live input is attached", async () => {
     const dir = mkdtempSync(join(tmpdir(), "worklab-codex-app-"));
     const script = writeFakePrematureCloseServer(dir);
     const liveInput = createLiveInputQueue();
