@@ -13,6 +13,7 @@ import { getPiModel, getPiModels } from "./pi-model-catalog.js";
 import { resolvePiApiKey } from "./pi-oauth.js";
 import { compactionRecorderFor } from "./run-compactions.js";
 import { runtimePoliciesFromSettings } from "./runtime-policies.js";
+import { projectToolPolicy } from "./tool-policy-projection.js";
 import { withWorklabRuntimeBrand } from "./runtime-brand.js";
 import { getSkillAccessDirs } from "./skills.js";
 import { createToolOutputSink } from "./tool-artifacts.js";
@@ -632,6 +633,15 @@ export async function generateResponse(systemPrompt, options) {
   // `options`.
   const { toolLimits, compaction } = runtimePoliciesFromSettings(settings);
 
+  // Direct Codex/OpenCode reject anything but the exact allow-all contract, so
+  // an "allow every builtin" policy has to be spelled `["*"]` for them. This is
+  // the single choke point where the resolved runtime is known, which is why it
+  // lives here rather than in run-input.js.
+  const toolPolicy = projectToolPolicy(resolved, {
+    allowedTools: options.allowedTools,
+    disallowedTools: options.disallowedTools,
+  });
+
   const baseOptions = {
     ...options,
     model: resolved,
@@ -639,6 +649,8 @@ export async function generateResponse(systemPrompt, options) {
     settings,
     toolLimits,
     compaction,
+    allowedTools: toolPolicy.allowedTools,
+    disallowedTools: toolPolicy.disallowedTools,
     runId: options.runId || process.env.WORKLAB_RUN_ID || null,
     providerSessionId: options.providerSessionId || process.env.WORKLAB_PROVIDER_SESSION_ID || null,
     runArtifactDir,
