@@ -12,6 +12,7 @@ import { customPricingResolverFor } from "./custom-pricing.js";
 import { getPiModel, getPiModels } from "./pi-model-catalog.js";
 import { resolvePiApiKey } from "./pi-oauth.js";
 import { compactionRecorderFor } from "./run-compactions.js";
+import { runtimePoliciesFromSettings } from "./runtime-policies.js";
 import { withWorklabRuntimeBrand } from "./runtime-brand.js";
 import { getSkillAccessDirs } from "./skills.js";
 import { createToolOutputSink } from "./tool-artifacts.js";
@@ -621,11 +622,21 @@ export async function generateResponse(systemPrompt, options) {
   const callerOnEvent = typeof options.onEvent === "function" ? options.onEvent : null;
   const onEvent = callerOnEvent || (() => {});
 
+  // Typed policy objects supersede the deprecated `settings` bag as the
+  // runtime's tool-limit / compaction source. Precedence is per-group: a
+  // present typed object wins wholesale and its group's legacy settings keys
+  // are never consulted, so no `deprecated_settings_option` warning fires.
+  // `settings` stays on the bag because other Worklab code reads it off
+  // `options`.
+  const { toolLimits, compaction } = runtimePoliciesFromSettings(settings);
+
   const baseOptions = {
     ...options,
     model: resolved,
     skillDirs,
     settings,
+    toolLimits,
+    compaction,
     runId: options.runId || process.env.WORKLAB_RUN_ID || null,
     providerSessionId: options.providerSessionId || process.env.WORKLAB_PROVIDER_SESSION_ID || null,
     runArtifactDir,
