@@ -10,9 +10,9 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "@mono-agent/agent-runtime": "0.4.1"
+    "@mono-agent/agent-runtime": "0.15.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.19.0"
   }
 }
