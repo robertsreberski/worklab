@@ -6,9 +6,11 @@
 // requires edge layers to consume domain helpers via the public core barrel
 // (src/core/index.js). The carve-outs are documented inline below.
 //
+// The provider layer and agent kernel now live in the external
+// @mono-agent/agent-runtime npm package, so they carry their own boundary
+// rules; only Worklab's own layers are covered here.
+//
 // Layout the rules target:
-//   packages/agent-runtime/src/ai/       provider layer; no DB, no Worklab domain
-//   packages/agent-runtime/src/agent/    agent kernel; may use ai/ only
 //   src/core/      domain; no edge-layer imports; DB only inside src/core/db/**
 //   src/api/       HTTP edge; no direct DB
 //   src/mcp/       MCP edge; no direct DB; no api/integrations/cli imports
@@ -54,21 +56,6 @@ const FORBID_REMOVED_SHIMS = {
     "**/mcp/agent/tools.js",
   ],
   message: "Compatibility shims were removed; import the canonical ai/agent/core/db/mcp module.",
-};
-
-const FORBID_DOMAIN_LAYERS = {
-  group: [
-    "**/core/**",
-    "**/coordinator/**",
-    "**/coordinator.js",
-    "**/api/**",
-    "**/mcp/**",
-    "**/integrations/**",
-    "**/cli/**",
-    "**/worker.js",
-    "**/worker/**",
-  ],
-  message: "Provider/kernel layers must not depend on Worklab domain or edge layers.",
 };
 
 const FORBID_EDGE_FROM_CORE = {
@@ -163,24 +150,6 @@ export default [
       sourceType: "module",
       globals: { ...globals.node },
     },
-  },
-
-  // packages/agent-runtime — provider layer + agent kernel.
-  // Phase 1 of the runtime extraction lifted these out of src/ai and src/agent;
-  // the same module-boundary invariants still apply.
-  {
-    files: ["packages/agent-runtime/src/ai/**/*.js"],
-    rules: restricted(FORBID_DB, FORBID_DOMAIN_LAYERS, FORBID_REMOVED_SHIMS),
-  },
-  {
-    files: ["packages/agent-runtime/src/agent/**/*.js"],
-    rules: restricted(FORBID_DB, FORBID_DOMAIN_LAYERS, FORBID_REMOVED_SHIMS),
-  },
-  // The package's own tests are exempt from boundary rules but not from
-  // the deleted-shim guard.
-  {
-    files: ["packages/agent-runtime/src/__tests__/**/*.js"],
-    rules: { "no-restricted-imports": "off" },
   },
 
   // src/core/ — domain (DB allowed inside src/core/db/**)
