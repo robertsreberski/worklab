@@ -640,7 +640,22 @@ export async function generateResponse(systemPrompt, options) {
   const toolPolicy = projectToolPolicy(resolved, {
     allowedTools: options.allowedTools,
     disallowedTools: options.disallowedTools,
+    // Set by applyPlanningToolPolicy. The read-only planning policy is the one
+    // restriction a non-projecting runtime can honour, via its native plan mode.
+    planning: options.toolPolicy?.planning === true,
+    permissionMode: options.permissionMode,
   });
+  if (toolPolicy.droppedNetworkTools.length) {
+    // Provider-native read-only mode pins networkAccess:false, so tools the
+    // planning policy granted stop working. Surface it rather than letting the
+    // agent discover it as a mid-run tool failure.
+    onEvent({
+      type: "runtime_warning",
+      warning_kind: "tool_policy_downgraded",
+      message: `${resolved.sdk} enforces read-only planning natively, which disables network access: `
+        + `${toolPolicy.droppedNetworkTools.join(", ")} are unavailable for this run.`,
+    });
+  }
 
   const baseOptions = {
     ...options,
@@ -651,6 +666,7 @@ export async function generateResponse(systemPrompt, options) {
     compaction,
     allowedTools: toolPolicy.allowedTools,
     disallowedTools: toolPolicy.disallowedTools,
+    ...(toolPolicy.permissionMode !== undefined ? { permissionMode: toolPolicy.permissionMode } : {}),
     runId: options.runId || process.env.WORKLAB_RUN_ID || null,
     providerSessionId: options.providerSessionId || process.env.WORKLAB_PROVIDER_SESSION_ID || null,
     runArtifactDir,
