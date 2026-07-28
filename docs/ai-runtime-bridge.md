@@ -15,7 +15,7 @@ Active agent runtime references use only these prefixes:
 Current Pi provider examples:
 
 - `pi:openai:gpt-5.5`
-- `pi:openai-codex:gpt-5.5` (Pi SDK, not CLI)
+- `pi:openai-codex:gpt-5.5` (Pi bridge, not CLI)
 - `pi:google:gemini-2.5-pro`
 - `pi:<customProviderId>:<modelName>`
 
@@ -90,7 +90,7 @@ usage, diagnostics, and post-success SDK error handling.
 
 The Codex bridge handles `codex:*` refs through the local Codex CLI app-server
 when the agent uses `execution_mode='cli'`. The Pi `openai-codex` provider
-remains SDK-only and is routed through `pi-sdk`.
+remains SDK-only and is routed through the pi-native bridge.
 
 ## Adding A Runtime
 

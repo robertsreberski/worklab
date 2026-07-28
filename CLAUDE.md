@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Worklab is a single-user, local AI agent orchestration app: an Express API + Preact UI + SQLite (better-sqlite3) backend that spawns worker processes to run agents against tasks through `@mono-agent/agent-runtime` backends: Claude SDK, Claude Code CLI, Pi SDK providers, and the Codex CLI app-server. It also exposes a token-protected admin MCP endpoint with full Worklab API access.
+Worklab is a single-user, local AI agent orchestration app: an Express API + Preact UI + SQLite (better-sqlite3) backend that spawns worker processes to run agents against tasks through `@mono-agent/agent-runtime` backends: Claude SDK, Claude Code CLI, Pi providers (the pi-native bridge), and the Codex CLI app-server. It also exposes a token-protected admin MCP endpoint with full Worklab API access.
 
 The current task/agent workflow is the v2 workflow. The authoritative references are `src/core/state-machine.js` (the deterministic orchestrator that owns every task transition), `src/core/worklab-result/contract.js` (the `worklab.v2` contract), `src/core/worklab-result/decisions.js` (stage/decision vocabulary), and `src/core/worklab-result/lead-cycle-contract.js` (the `worklab.lead_cycle.v1` team-lead contract). Older PRD/architecture/phase-plan docs were intentionally deleted — do **not** reintroduce behaviors from them; treat the source and tests as the ground truth.
 
@@ -29,7 +29,7 @@ Runtime data lives in `~/.worklab` by default (`WORKLAB_DATA_DIR` to override). 
 ## Commands
 
 ```bash
-npm install                # Node 20+ required
+npm install                # Node 22.19+ required
 npm test                   # full Vitest suite
 npx vitest run <path>      # single test file
 npm run test:watch         # watch mode
@@ -78,7 +78,11 @@ Background on runtime behaviour you need when touching the worker, coordinator, 
 - `task_runs.parent_relationship` (`stage_progression | recovery_continuation | manual_retry`) disambiguates the overloaded `parent_run_id`.
 - `tasks.lifetime_*_count` columns are monotonic and survive `reset_failure_count`. `getTaskHealth(db, id)` returns them; the task detail endpoint exposes them as `task.health`.
 - Recovery continuations come in four flavours: `provider_retryable` (default), `schema_correction` (capped at 2), `finalisation` (single shot when the parent ran `journal_summary` and then dropped), and `coordinator_resume` (scheduled at boot for runs the previous coordinator drained cleanly on shutdown — receives the parent's transcript-tail snapshot through `diagnosticsSeed.resume_snapshot`).
-- `WORKLAB_PROVIDER_SESSION_ID` is set by the spawn path for recovery continuations so pi-sdk reuses the parent's session_id (other providers are a follow-up).
+- `context_limit` is the runtime's failure kind for context-window overflows (split out of `usage_limit` in agent-runtime 0.15.0; `usage_limit` now means rate/quota/max-turns only). `recoveryReason` in `watcher/recovery-continuation.js` maps both onto the same `usage_limit` recovery reason, so the compact continuation and its system comment are unchanged.
+- Compaction limits are adaptive: `agent_compaction_{trigger_ratio,keep_recent_tokens,summary_max_tokens,min_savings_tokens}` default to `null` and the runtime scales them to the running model's context window. A number pins the value for every model; `null` clears it back. `src/core/runtime-policies.js` maps the settings bag onto the runtime's typed `toolLimits` / `compaction` objects — passing them is what suppresses the `deprecated_settings_option` warning, and omitting a field is what makes it adaptive.
+- Codex file changes arrive as a flat `{type: "file_change", id, status, changes, summary?, is_error}` event from `normalizeCodexItemEvent`, not a synthetic `file_edit` tool_use/tool_result pair. The Claude SDK bridge no longer emits file-edit events at all; artifacts for those runs come from the workspace-delta and git-diff collectors in `spawn-worker.js`.
+- `@anthropic-ai/claude-agent-sdk` is a devDependency pinned to the runtime's version on purpose: pi-ai pins `@anthropic-ai/sdk` to an exact version that conflicts with the runtime's range, so without the direct dependency npm nests the SDK and `vi.mock` in `src/__tests__/ai/claude-sdk.test.js` stops intercepting it — which makes that suite issue real API calls.
+- `WORKLAB_PROVIDER_SESSION_ID` is set by the spawn path for recovery continuations so the pi-native bridge reuses the parent's session_id (other providers are a follow-up).
 - `POST /api/tasks/:id/cancel` accepts a structured `reason_kind` enum (`wrong_direction | agent_stuck | context_bloat | scope_change | other`) plus an optional `reason_note`.
 
 ## Teams + lead-cycle (v33)
