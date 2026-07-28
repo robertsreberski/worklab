@@ -2,13 +2,15 @@
 // enforce.
 //
 // Worklab always sends an explicit `allowedTools` array — in "all" mode that is
-// the full WORKLAB_BUILTIN_TOOLS list. The Claude SDK, Claude Code CLI, and Pi
-// bridges project that list faithfully. The direct Codex and OpenCode bridges
-// cannot: the app-server exposes its own fixed toolset, so agent-runtime fails
-// the run closed rather than pretend a partial allowlist was applied
-// (`skipped_capability_mismatch` / `codex_tool_policy_unsupported`). It accepts
-// only the exact allow-all contract: `["*"]`, or omitted, with no
-// `disallowedTools`.
+// the full WORKLAB_BUILTIN_TOOLS list. Runtimes advertising
+// `tool_policy: "projected"` (Claude SDK, Claude Code CLI, Pi) apply that list
+// faithfully. Runtimes advertising `"allow_all_only"` (direct Codex, direct
+// OpenCode) cannot: the app-server exposes its own fixed toolset, so
+// agent-runtime fails the run closed rather than pretend a partial allowlist was
+// applied (`skipped_capability_mismatch` / `codex_tool_policy_unsupported`).
+// They accept an omitted allowlist, or any allowlist containing `"*"`, with no
+// `disallowedTools`. A named-only list — which is what Worklab sends — still
+// fails closed.
 //
 // Enumerating every builtin is semantically "no restriction", so for those
 // runtimes we send the wildcard they understand. Nothing is lost — the
@@ -21,16 +23,23 @@
 // toolset — wider than WORKLAB_BUILTIN_TOOLS. Collapsing there would silently
 // hand Claude agents tools Worklab never granted.
 
+import { RUNTIME_CAPABILITIES } from "@mono-agent/agent-runtime/ai/runtime/registry.js";
 import { WORKLAB_BUILTIN_TOOLS } from "./builtin-tools.js";
 
 const WILDCARD = "*";
 
-// Runtimes whose bridges reject anything but exact allow-all. `codex` covers
-// both the app-server bridge and the Codex CLI path in claude-cli.js.
-const NON_PROJECTING_SDKS = new Set(["codex", "opencode"]);
+// agent-runtime 0.15.2 models this as a capability (mono-agent#549), replacing a
+// hardcoded bridge list here. The constant lives in ai/runtime/tool-policy.js,
+// which is not on the package's explicit exports map, so compare the documented
+// value rather than importing it.
+const TOOL_POLICY_ALLOW_ALL_ONLY = "allow_all_only";
 
+// Index RUNTIME_CAPABILITIES directly — runtimeCapabilities() throws on an
+// unknown sdk (same reasoning as core/execenv.js). An absent or unrecognized
+// `tool_policy` reads as projecting, which leaves the policy untouched: that can
+// only fail closed, never silently widen an agent's toolset.
 export function runtimeEnforcesToolPolicy(sdk) {
-  return !NON_PROJECTING_SDKS.has(sdk);
+  return RUNTIME_CAPABILITIES[sdk]?.tool_policy !== TOOL_POLICY_ALLOW_ALL_ONLY;
 }
 
 function coversEveryBuiltin(allowed) {
@@ -51,8 +60,10 @@ export function projectToolPolicy(resolved, { allowedTools, disallowedTools } = 
   const allowed = Array.isArray(allowedTools) ? allowedTools : null;
   const disallowed = Array.isArray(disallowedTools) ? disallowedTools : [];
 
-  // Already the wildcard contract, or no policy at all.
-  if (disallowed.length === 0 && (allowed === null || (allowed.length === 1 && allowed[0] === WILDCARD))) {
+  // Already allow-all, or no policy at all. 0.15.2 unified the sentinel on
+  // `includes("*")`, so a composed list like ["*", "Read"] is allow-all too and
+  // must pass through rather than be reported unenforceable.
+  if (disallowed.length === 0 && (allowed === null || allowed.includes(WILDCARD))) {
     return unchanged;
   }
 

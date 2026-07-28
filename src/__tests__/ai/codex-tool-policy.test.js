@@ -92,6 +92,25 @@ describe("codex tool policy projection", () => {
     }
   }, 20000);
 
+  // agent-runtime 0.15.2 unified the allow-all sentinel on includes("*"), so a
+  // composed list reaches the provider instead of being rejected. This exact
+  // call fails with codex_tool_policy_unsupported on 0.15.1.
+  it("accepts a composed wildcard allowlist", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-codex-policy-wildcard-"));
+    try {
+      const result = await runCodex(dir, {
+        allowedTools: ["*", "Read"],
+        disallowedTools: [],
+      });
+
+      expect(result.diagnostics?.codex_error_code).not.toBe("codex_tool_policy_unsupported");
+      expect(result.failureKind).toBeFalsy();
+      expect(result.text).toContain("worklab.v2");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 20000);
+
   // A partial allowlist is a guarantee direct Codex cannot make, so the run
   // must still fail rather than be silently widened to allow-all.
   it("still refuses a partial allowlist instead of widening it", async () => {

@@ -16,7 +16,7 @@ ANTHROPIC_API_KEY=sk-ant-... npm --workspace=echo-agent start
 
 ## What it shows
 
-- Importing the package via the npm dependency `"@mono-agent/agent-runtime": "0.15.1"`.
+- Importing the package via the npm dependency `"@mono-agent/agent-runtime": "0.15.2"`.
 - The `createRuntime({ workspace, repoRoot })` setup pattern.
 - A single-turn `runtime.run(systemPrompt, options)` call.
 - Streaming assistant text via `onEvent`.
