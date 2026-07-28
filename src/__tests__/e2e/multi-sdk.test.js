@@ -168,7 +168,7 @@ describe("generateResponse pi-backed dispatch", () => {
     expect(result.sdk).toBe("pi");
     expect(result.error).toBe("Your input exceeds the context window of this model. Please adjust your input and try again.");
     expect(result.error).not.toContain("invalid_request_error");
-    expect(result.failureKind).toBe("usage_limit");
+    expect(result.failureKind).toBe("context_limit");
   });
 
   it("captures provider thinking snapshots when no thinking deltas were emitted", async () => {
