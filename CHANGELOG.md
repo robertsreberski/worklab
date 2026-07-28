@@ -2,7 +2,15 @@
 
 ## Unreleased
 
-- Upgraded `@mono-agent/agent-runtime` from 0.4.1 to 0.15.1.
+- Upgraded `@mono-agent/agent-runtime` from 0.4.1 to 0.15.2.
+  - Fixed direct Codex runs, which the upgrade had broken outright. The
+    runtime fails a run closed unless the tool policy is an omitted
+    allowlist or one containing `"*"`, and Worklab always sends an explicit
+    array — every codex run returned `skipped_capability_mismatch` /
+    `codex_tool_policy_unsupported`. `src/core/tool-policy-projection.js`
+    now expresses "allow every builtin" as the wildcard for the runtimes
+    that advertise `tool_policy: "allow_all_only"`, leaving Claude and Pi
+    alone so their agents keep exactly the tools Worklab granted.
   - Context-window overflows now report the runtime's `context_limit` failure
     kind instead of `usage_limit`. Both take the same compact continuation, so
     auto-recovery is unchanged; the UI labels them apart.
