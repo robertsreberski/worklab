@@ -71,7 +71,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@mono-agent/agent-runtime": "0.15.2",
+    "@mono-agent/agent-runtime": "0.15.3",
     "@slack/bolt": "^4.7.1",
     "@worklab-ai/webhooks": "0.1.10",
     "better-sqlite3": "^11.7.0",

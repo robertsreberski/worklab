@@ -23,21 +23,26 @@
 // toolset — wider than WORKLAB_BUILTIN_TOOLS. Collapsing there would silently
 // hand Claude agents tools Worklab never granted.
 //
-// The plan stage therefore has no working route on these runtimes, and that is
-// deliberate rather than an oversight. Translating it to the provider's native
-// `permissionMode: "plan"` looks like the obvious fix — the read-only sandbox is
-// even stricter than the allowlist — but it does not work, so do not re-add it
-// without re-testing. Under that sandbox Codex gates every MCP tool call behind
-// `mcpServer/elicitation/request`, and the runtime refuses all server-initiated
-// requests and kills the turn. Measured with one MCP call, identical except for
-// the sandbox:
+// The planning stage is the one restriction that *is* translatable. It asks for
+// read-only, which these runtimes express as `permissionMode: "plan"` rather
+// than as a tool list. Without the translation a Codex planner cannot run at
+// all: the read-only planning policy adds `disallowedTools: ["Write","Edit"]`,
+// and every non-empty denylist fails closed there.
 //
-//   bypassPermissions -> journal_append returns {"ok":true}, run completes
-//   plan              -> mcpServer/elicitation/request, turn stopped
+// This requires agent-runtime >= 0.15.3 and will break if that floor is lowered.
+// Under Codex's read-only sandbox every MCP tool call is gated behind
+// `mcpServer/elicitation/request`; 0.15.2 refused all server-initiated requests
+// and killed the turn on the planner's first `journal_append`, which is why an
+// earlier attempt at this was reverted (mono-agent#553). 0.15.3 auto-approves
+// that elicitation for MCP servers the host itself configured. Verified live on
+// 0.15.3: plan mode + the worklab MCP server returns `{"ok":true}` with no
+// refusal.
 //
-// Since Worklab agents depend on the worklab MCP tools, a planner that dies on
-// its first journal_append is worse than one that refuses to start. Upstream:
-// https://github.com/robertsreberski/mono-agent/issues/553
+// Note the read-only sandbox bounds Codex's own filesystem and command
+// execution, not what an MCP tool can change — a planner can still reach
+// state-changing worklab tools such as kb_* and agent_create. That is governed
+// by `agents.mcp_allowlist`, not by the planning policy, and is the same on
+// every runtime.
 
 import { RUNTIME_CAPABILITIES } from "@mono-agent/agent-runtime/ai/runtime/registry.js";
 import { WORKLAB_BUILTIN_TOOLS } from "./builtin-tools.js";
@@ -49,6 +54,16 @@ const WILDCARD = "*";
 // which is not on the package's explicit exports map, so compare the documented
 // value rather than importing it.
 const TOOL_POLICY_ALLOW_ALL_ONLY = "allow_all_only";
+
+// Every bridge except pi-native maps this onto its provider's own read-only
+// mode: Codex to sandbox `read-only`, Claude Code to `--sandbox read-only`,
+// OpenCode to its plan permission config.
+const PLAN_PERMISSION_MODE = "plan";
+
+// Tools the planning policy grants that a provider-native read-only mode takes
+// away, because agent-runtime pins `networkAccess: false` there. Kept in sync
+// with READ_ONLY_TOOLS in planning-harness.js.
+const NETWORK_TOOLS = ["WebFetch", "WebSearch"];
 
 // Index RUNTIME_CAPABILITIES directly — runtimeCapabilities() throws on an
 // unknown sdk (same reasoning as core/execenv.js). An absent or unrecognized
@@ -66,11 +81,22 @@ function coversEveryBuiltin(allowed) {
 
 /**
  * @param {{sdk?: string}} resolved Resolved runtime model reference.
- * @param {{allowedTools?: string[], disallowedTools?: string[]}} [policy]
- * @returns {{allowedTools: string[]|undefined, disallowedTools: string[]|undefined, unenforceable: boolean}}
+ * @param {{allowedTools?: string[], disallowedTools?: string[], planning?: boolean, permissionMode?: string}} [policy]
+ * @returns {{allowedTools: string[]|undefined, disallowedTools: string[]|undefined, permissionMode: string|undefined, droppedNetworkTools: string[], unenforceable: boolean}}
  */
-export function projectToolPolicy(resolved, { allowedTools, disallowedTools } = {}) {
-  const unchanged = { allowedTools, disallowedTools, unenforceable: false };
+export function projectToolPolicy(resolved, {
+  allowedTools,
+  disallowedTools,
+  planning = false,
+  permissionMode,
+} = {}) {
+  const unchanged = {
+    allowedTools,
+    disallowedTools,
+    permissionMode,
+    droppedNetworkTools: [],
+    unenforceable: false,
+  };
   if (runtimeEnforcesToolPolicy(resolved?.sdk)) return unchanged;
 
   const allowed = Array.isArray(allowedTools) ? allowedTools : null;
@@ -85,10 +111,30 @@ export function projectToolPolicy(resolved, { allowedTools, disallowedTools } = 
 
   // "Everything Worklab offers" — express it the way the runtime understands.
   if (disallowed.length === 0 && allowed !== null && coversEveryBuiltin(allowed)) {
-    return { allowedTools: [WILDCARD], disallowedTools: [], unenforceable: false };
+    return { ...unchanged, allowedTools: [WILDCARD], disallowedTools: [] };
   }
 
-  // A real restriction the runtime cannot honour. Leave the policy intact so the
-  // bridge reports the mismatch itself; the caller flags it in diagnostics.
-  return { allowedTools, disallowedTools, unenforceable: true };
+  // The planning stage asks for read-only. These runtimes cannot say that with a
+  // tool list, but they enforce it natively through `permissionMode: "plan"` —
+  // which is stricter on the filesystem than the allowlist Worklab asked for,
+  // because it also stops writes issued through a shell.
+  if (planning) {
+    return {
+      allowedTools: [WILDCARD],
+      disallowedTools: [],
+      permissionMode: PLAN_PERMISSION_MODE,
+      // ...but not stricter on network: the runtime pins networkAccess:false in
+      // plan mode. The caller warns so this does not degrade silently.
+      droppedNetworkTools: allowed === null
+        ? [...NETWORK_TOOLS]
+        : NETWORK_TOOLS.filter((tool) => allowed.includes(tool)),
+      unenforceable: false,
+    };
+  }
+
+  // An arbitrary subset has no native equivalent — a read-only sandbox
+  // constrains writes, not *which* tools exist — so there is nothing honest to
+  // translate to. Leave the policy intact and let the bridge report the
+  // mismatch; the caller flags it in diagnostics.
+  return { ...unchanged, unenforceable: true };
 }

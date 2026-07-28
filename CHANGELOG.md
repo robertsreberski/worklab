@@ -11,15 +11,12 @@
     now expresses "allow every builtin" as the wildcard for the runtimes
     that advertise `tool_policy: "allow_all_only"`, leaving Claude and Pi
     alone so their agents keep exactly the tools Worklab granted.
-  - Known gap: Codex and OpenCode agents cannot run the plan stage. The
-    read-only planning policy uses a tool denylist those runtimes reject,
-    and the obvious fix — the provider's native `permissionMode: "plan"` —
-    makes Codex gate every MCP tool call behind an elicitation the runtime
-    refuses, killing the turn on the first `journal_append`. Refusing to
-    start beats dying mid-run, so the stage fails with a clear message.
-    Blocked on
-    [mono-agent#553](https://github.com/robertsreberski/mono-agent/issues/553)
-    and [#552](https://github.com/robertsreberski/mono-agent/issues/552).
+  - Codex agents can run the plan stage. Read-only planning is now routed
+    through the provider's native `permissionMode: "plan"` instead of a
+    tool denylist those runtimes reject, so a Codex planner works rather
+    than failing outright. It costs `WebFetch`/`WebSearch` until
+    [mono-agent#552](https://github.com/robertsreberski/mono-agent/issues/552)
+    lands; the run emits a `tool_policy_downgraded` warning naming them.
   - Context-window overflows now report the runtime's `context_limit` failure
     kind instead of `usage_limit`. Both take the same compact continuation, so
     auto-recovery is unchanged; the UI labels them apart.
