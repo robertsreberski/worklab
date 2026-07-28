@@ -1,4 +1,4 @@
-import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { reasoningLevelsForPiModel } from "@mono-agent/agent-runtime/ai";
 import {
   canonicalizeLegacyModelReference,
   normalizeRuntimeModelReference,
@@ -190,7 +190,9 @@ function piReasoningLevels(model) {
   if (!model?.reasoning) return undefined;
   let levels = [];
   try {
-    levels = getSupportedThinkingLevels(model);
+    // The runtime's façade is pi's getSupportedThinkingLevels() with `off`
+    // spelled `none`; Worklab only inspects the result for `xhigh`.
+    levels = reasoningLevelsForPiModel(model);
   } catch {
     levels = [];
   }
