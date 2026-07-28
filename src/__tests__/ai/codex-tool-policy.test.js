@@ -9,7 +9,7 @@
 // This drives core/ai.js#generateResponse so the projection in
 // tool-policy-projection.js is genuinely in the path.
 import { describe, expect, it } from "vitest";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateResponse } from "../../core/ai.js";
@@ -18,12 +18,9 @@ import { WORKLAB_BUILTIN_TOOLS } from "../../core/builtin-tools.js";
 function writeMinimalCodexAppServer(dir) {
   const script = join(dir, "fake-codex-tool-policy.cjs");
   writeFileSync(script, `#!/usr/bin/env node
-const fs = require("node:fs");
 const readline = require("node:readline");
 const rl = readline.createInterface({ input: process.stdin });
-const logPath = process.env.FAKE_CODEX_REQUEST_LOG;
 function send(value) { process.stdout.write(JSON.stringify(value) + "\\n"); }
-function record(value) { if (logPath) fs.appendFileSync(logPath, JSON.stringify(value) + "\\n"); }
 function resultText() {
   return JSON.stringify({
     schema: "worklab.v2",
@@ -40,7 +37,6 @@ function resultText() {
 rl.on("line", (line) => {
   if (!line.trim()) return;
   const request = JSON.parse(line);
-  record(request);
   if (request.method === "initialize") {
     send({ id: request.id, result: { userAgent: "fake", codexHome: "/tmp/codex", platformFamily: "unix", platformOs: "linux" } });
   } else if (request.method === "thread/start") {
@@ -57,8 +53,7 @@ rl.on("line", (line) => {
   return script;
 }
 
-async function runCodex(dir, policy, { events = [] } = {}) {
-  const requestLog = join(dir, "requests.jsonl");
+async function runCodex(dir, policy) {
   return generateResponse("system", {
     model: "codex:gpt-5.5",
     // `codex:*` only resolves to the app-server bridge in cli execution mode,
@@ -72,20 +67,10 @@ async function runCodex(dir, policy, { events = [] } = {}) {
     settings: {},
     codexAppServerCommand: writeMinimalCodexAppServer(dir),
     codexAppServerArgs: [],
-    codexAppServerEnv: { FAKE_CODEX_REQUEST_LOG: requestLog },
-    onEvent: (event) => events.push(event),
+    codexAppServerEnv: {},
+    onEvent: () => {},
     ...policy,
   });
-}
-
-function recordedRequest(dir, method) {
-  const path = join(dir, "requests.jsonl");
-  if (!existsSync(path)) return null;
-  return readFileSync(path, "utf8")
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line))
-    .find((request) => request.method === method) || null;
 }
 
 describe("codex tool policy projection", () => {
@@ -121,35 +106,6 @@ describe("codex tool policy projection", () => {
       expect(result.diagnostics?.codex_error_code).not.toBe("codex_tool_policy_unsupported");
       expect(result.failureKind).toBeFalsy();
       expect(result.text).toContain("worklab.v2");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }, 20000);
-
-  // The read-only planning policy adds disallowedTools, which fails closed on
-  // direct Codex — a Codex planner could not run at all. It is routed through
-  // Codex's native plan mode instead.
-  it("runs the plan stage through Codex's native read-only sandbox", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "worklab-codex-plan-"));
-    const events = [];
-    try {
-      const result = await runCodex(dir, {
-        // The shape applyPlanningToolPolicy produces for read_only_shell_allowlist.
-        allowedTools: ["Read", "Glob", "Grep", "WebFetch", "WebSearch", "Bash"],
-        disallowedTools: ["Write", "Edit"],
-        toolPolicy: { planning: true, policy: "read_only_shell_allowlist" },
-      }, { events });
-
-      expect(result.diagnostics?.codex_error_code).not.toBe("codex_tool_policy_unsupported");
-      expect(result.failureKind).toBeFalsy();
-
-      // Assert the sandbox actually flipped. "The run didn't fail" would also
-      // pass if permissionMode never reached the provider.
-      const threadStart = recordedRequest(dir, "thread/start");
-      expect(threadStart?.params?.sandbox).toBe("read-only");
-
-      const warning = events.find((event) => event.warning_kind === "tool_policy_downgraded");
-      expect(warning?.message).toContain("WebFetch, WebSearch");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

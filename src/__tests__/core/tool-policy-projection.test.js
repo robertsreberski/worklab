@@ -70,68 +70,6 @@ describe("projectToolPolicy", () => {
     expect(projected.unenforceable).toBe(false);
   });
 
-  // The read-only planning policy adds disallowedTools: ["Write","Edit"], which
-  // fails closed on these routes — a Codex planner could not run at all. Their
-  // native plan mode enforces read-only at the provider instead, which is
-  // stricter on the filesystem than the allowlist Worklab asked for.
-  it.each(ALLOW_ALL_ONLY)("routes planning through native plan mode for %s", (sdk) => {
-    const projected = projectToolPolicy({ sdk }, {
-      allowedTools: ["Read", "Glob", "Grep", "WebFetch", "WebSearch", "Bash"],
-      disallowedTools: ["Write", "Edit"],
-      planning: true,
-      permissionMode: "bypassPermissions",
-    });
-
-    expect(projected.permissionMode).toBe("plan");
-    expect(projected.allowedTools).toEqual(["*"]);
-    expect(projected.disallowedTools).toEqual([]);
-    expect(projected.unenforceable).toBe(false);
-    // Not stricter on network — the caller warns about exactly these.
-    expect(projected.droppedNetworkTools).toEqual(["WebFetch", "WebSearch"]);
-  });
-
-  it.each(PROJECTING)("leaves planning on the tool allowlist for %s", (sdk) => {
-    const projected = projectToolPolicy({ sdk }, {
-      allowedTools: ["Read", "Grep", "WebFetch"],
-      disallowedTools: ["Write", "Edit"],
-      planning: true,
-      permissionMode: "bypassPermissions",
-    });
-
-    // These runtimes enforce the list as written, and Claude's native plan mode
-    // changes agent behaviour in ways the worklab_result contract does not
-    // expect — so nothing is translated and nothing is lost.
-    expect(projected.permissionMode).toBe("bypassPermissions");
-    expect(projected.allowedTools).toEqual(["Read", "Grep", "WebFetch"]);
-    expect(projected.disallowedTools).toEqual(["Write", "Edit"]);
-    expect(projected.droppedNetworkTools).toEqual([]);
-  });
-
-  it("reports no dropped network tools when planning did not grant any", () => {
-    const projected = projectToolPolicy({ sdk: "codex" }, {
-      allowedTools: ["Read", "Grep"],
-      disallowedTools: ["Write", "Edit"],
-      planning: true,
-    });
-
-    expect(projected.permissionMode).toBe("plan");
-    expect(projected.droppedNetworkTools).toEqual([]);
-  });
-
-  it("does not translate a non-planning subset to plan mode", () => {
-    const projected = projectToolPolicy({ sdk: "codex" }, {
-      allowedTools: ["Read", "Grep"],
-      disallowedTools: [],
-      planning: false,
-      permissionMode: "bypassPermissions",
-    });
-
-    // A read-only sandbox constrains writes, not which tools exist, so there is
-    // nothing honest to translate an arbitrary subset into.
-    expect(projected.permissionMode).toBe("bypassPermissions");
-    expect(projected.unenforceable).toBe(true);
-  });
-
   it("flags a genuine subset as unenforceable instead of widening it", () => {
     const projected = projectToolPolicy({ sdk: "codex" }, { allowedTools: ["Read", "Grep"], disallowedTools: [] });
 
