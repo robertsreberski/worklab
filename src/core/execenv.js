@@ -1,6 +1,14 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { backendCapabilities, backendUsesExecenvConfig } from "@mono-agent/agent-runtime/ai/backend.js";
+import { RUNTIME_CAPABILITIES, runtimeCapabilities } from "@mono-agent/agent-runtime/ai/runtime/registry.js";
+
+// The runtime dropped its `ai/backend.js` compatibility wrappers; the bridge
+// registry is now the canonical source. Indexing RUNTIME_CAPABILITIES directly
+// (rather than runtimeCapabilities()) keeps an unknown provider kind falsy
+// instead of throwing, which is what the old wrapper did.
+function usesExecenvConfig(sdk) {
+  return !!RUNTIME_CAPABILITIES[sdk]?.native_runtime_config;
+}
 
 // Per-task isolated artifact directory. Mirrors multica's `execenv`:
 // every run gets its own `runs/{runId}` directory with `workdir`,
@@ -37,7 +45,7 @@ export function prepareExecenv({
   mkdirSync(logsDir, { recursive: true });
 
   let runtimeConfigPath = null;
-  if (providerKind && backendUsesExecenvConfig(providerKind) && systemPrompt) {
+  if (providerKind && usesExecenvConfig(providerKind) && systemPrompt) {
     runtimeConfigPath = writeRuntimeConfig({ workdir, providerKind, agent, task, systemPrompt });
   }
 
@@ -49,8 +57,8 @@ export function prepareExecenv({
 // so the env var is set; the worker calls this once it's built the prompt.
 export function writeRuntimeConfig({ workdir, providerKind, agent, task, systemPrompt }) {
   if (!workdir || !providerKind) return null;
-  if (!backendUsesExecenvConfig(providerKind)) return null;
-  const caps = backendCapabilities(providerKind);
+  if (!usesExecenvConfig(providerKind)) return null;
+  const caps = runtimeCapabilities(providerKind);
   const path = join(workdir, caps.native_runtime_config);
   writeFileSync(path, renderRuntimeConfigMarkdown({ agent, task, systemPrompt, providerKind }), "utf8");
   return path;
