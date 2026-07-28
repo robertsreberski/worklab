@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import process from "node:process";
-import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
+import { loginPiOAuth as runtimeLoginPiOAuth } from "@mono-agent/agent-runtime/ai";
 import { loadConfig, readPiAuthFile } from "../core/index.js";
 import { applyConfigArgs, hasFlag } from "./args.js";
 
@@ -46,6 +46,43 @@ function prompt(rl, question) {
   return new Promise((resolve) => rl.question(question, resolve));
 }
 
+// The runtime façade rejects an incomplete callback contract before it starts
+// provider login: onAuth, onDeviceCode, onPrompt, and onSelect must all be
+// functions. onProgress is optional but Worklab supplies it.
+function loginCallbacks({ rl, stdout }) {
+  return {
+    onAuth: (info) => {
+      out(stdout, "");
+      out(stdout, `Open this URL in your browser: ${info.url}`);
+      if (info.instructions) out(stdout, info.instructions);
+    },
+    onDeviceCode: (info) => {
+      out(stdout, "");
+      out(stdout, `Enter this code at ${info.verificationUri}: ${info.userCode}`);
+      if (info.expiresInSeconds) {
+        out(stdout, `The code expires in ${Math.round(info.expiresInSeconds / 60)} minute(s).`);
+      }
+    },
+    onPrompt: async (request) => {
+      const suffix = request.placeholder ? ` (${request.placeholder})` : "";
+      return prompt(rl, `${request.message}${suffix}: `);
+    },
+    onSelect: async (request) => {
+      const options = Array.isArray(request.options) ? request.options : [];
+      out(stdout, "");
+      out(stdout, request.message);
+      options.forEach((option, index) => out(stdout, `  ${index + 1}) ${option.label}`));
+      const answer = (await prompt(rl, `Choose 1-${options.length}: `)).trim();
+      const index = Number(answer);
+      // The façade's contract allows an undefined choice; the provider decides
+      // whether that aborts the flow or falls back to a default.
+      if (!Number.isInteger(index) || index < 1 || index > options.length) return undefined;
+      return options[index - 1].id;
+    },
+    onProgress: (message) => out(stdout, message),
+  };
+}
+
 export async function loginPiOAuth({
   providerId = "openai-codex",
   dataDir,
@@ -53,7 +90,7 @@ export async function loginPiOAuth({
   stdout = console.log,
   input = process.stdin,
   output = process.stdout,
-  getOAuthProviderImpl = getOAuthProvider,
+  loginPiOAuthImpl = runtimeLoginPiOAuth,
 } = {}) {
   if (providerId !== "openai-codex") throw new Error(`unsupported Pi OAuth provider: ${providerId}`);
   const authPath = join(dataDir, "pi-auth.json");
@@ -63,23 +100,9 @@ export async function loginPiOAuth({
     return { provider: providerId, path: authPath, dryRun: true, wrote: false };
   }
 
-  const provider = getOAuthProviderImpl(providerId);
-  if (!provider?.login) throw new Error(`Pi OAuth provider is unavailable: ${providerId}`);
-
   const rl = createInterface({ input, output });
   try {
-    const credentials = await provider.login({
-      onAuth: (info) => {
-        out(stdout, "");
-        out(stdout, `Open this URL in your browser: ${info.url}`);
-        if (info.instructions) out(stdout, info.instructions);
-      },
-      onPrompt: async (request) => {
-        const suffix = request.placeholder ? ` (${request.placeholder})` : "";
-        return prompt(rl, `${request.message}${suffix}: `);
-      },
-      onProgress: (message) => out(stdout, message),
-    });
+    const credentials = await loginPiOAuthImpl(providerId, loginCallbacks({ rl, stdout }));
     const existing = readPiAuthFile(dataDir).credentials || {};
     const next = { ...existing, [providerId]: { type: "oauth", ...credentials } };
     mkdirSync(dirname(authPath), { recursive: true });
@@ -104,6 +127,6 @@ export async function authCli(args = process.argv.slice(3), deps = {}) {
     stdout: deps.stdout || console.log,
     input: deps.input || process.stdin,
     output: deps.output || process.stdout,
-    getOAuthProviderImpl: deps.getOAuthProviderImpl || getOAuthProvider,
+    loginPiOAuthImpl: deps.loginPiOAuthImpl || runtimeLoginPiOAuth,
   });
 }

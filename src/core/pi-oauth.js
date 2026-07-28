@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getOAuthApiKey } from "@earendil-works/pi-ai/oauth";
+import { resolvePiOAuthApiKey } from "@mono-agent/agent-runtime/ai";
 
 const ENV_API_KEYS = {
   "openai-codex": ["OPENAI_CODEX_API_KEY", "CODEX_API_KEY"],
@@ -46,7 +46,9 @@ export async function resolvePiApiKey(providerId, { dataDir, env = process.env }
 
   const auth = readPiAuthFile(dataDir);
   if (!auth.credentials?.[providerId]) return undefined;
-  const result = await getOAuthApiKey(providerId, auth.credentials);
+  // The runtime façade clones the record before handing it to Pi, so the
+  // refreshed values only ever reach disk through newCredentials below.
+  const result = await resolvePiOAuthApiKey(providerId, auth.credentials);
   if (!result?.apiKey) return undefined;
 
   if (auth.path) {
