@@ -777,27 +777,21 @@ exit 0
         cwd: process.cwd(),
       });
       expect(result.error).toBeNull();
+      // agent-runtime 0.15.0 emits codex file changes as a flat file_change
+      // event instead of a synthetic file_edit tool_use/tool_result pair.
       expect(result.events[0]).toEqual({
-        type: "assistant",
-        message: {
-          content: [{
-            type: "tool_use",
-            id: "item_file",
-            name: "file_edit",
-            input: { changes, status: "in_progress" },
-          }],
-        },
+        type: "file_change",
+        id: "item_file",
+        status: "in_progress",
+        changes,
+        is_error: false,
       });
       expect(result.events[1]).toEqual({
-        type: "user",
-        message: {
-          content: [{
-            type: "tool_result",
-            tool_use_id: "item_file",
-            content: { changes, status: "completed" },
-            is_error: false,
-          }],
-        },
+        type: "file_change",
+        id: "item_file",
+        status: "completed",
+        changes,
+        is_error: false,
       });
     } finally {
       process.env.PATH = originalPath;
@@ -849,29 +843,22 @@ exit 0
       });
       expect(result.error).toBeNull();
       expect(result.events[1]).toMatchObject({
-        type: "user",
-        message: {
-          content: [{
-            type: "tool_result",
-            tool_use_id: "item_file",
-            content: {
-              status: "completed",
-              summary: { files: 1, added_lines: 2, removed_lines: 1, changed_lines: 3, unavailable_count: 0 },
-              changes: [{
-                path: targetFile,
-                kind: "update",
-                line_stats: {
-                  before_lines: 3,
-                  after_lines: 4,
-                  added_lines: 2,
-                  removed_lines: 1,
-                  changed_lines: 3,
-                },
-              }],
-            },
-            is_error: false,
-          }],
-        },
+        type: "file_change",
+        id: "item_file",
+        status: "completed",
+        summary: { files: 1, added_lines: 2, removed_lines: 1, changed_lines: 3, unavailable_count: 0 },
+        changes: [{
+          path: targetFile,
+          kind: "update",
+          line_stats: {
+            before_lines: 3,
+            after_lines: 4,
+            added_lines: 2,
+            removed_lines: 1,
+            changed_lines: 3,
+          },
+        }],
+        is_error: false,
       });
     } finally {
       process.env.PATH = originalPath;
