@@ -40,10 +40,13 @@ export const DEFAULT_SETTINGS = {
   agent_budget_soft_turns: 150,
   agent_budget_hard_turns: 300,
   agent_compaction_enabled: true,
-  agent_compaction_trigger_ratio: 0.85,
-  agent_compaction_keep_recent_tokens: 24000,
-  agent_compaction_summary_max_tokens: 16000,
-  agent_compaction_min_savings_tokens: 20000,
+  // null = adaptive. agent-runtime resolves these against the running model's
+  // real context window (trigger 0.70, keep-recent 10%, summary 4%, min-savings
+  // 10%, each clamped). Set a number to pin the value for every model instead.
+  agent_compaction_trigger_ratio: null,
+  agent_compaction_keep_recent_tokens: null,
+  agent_compaction_summary_max_tokens: null,
+  agent_compaction_min_savings_tokens: null,
   agent_tool_payload_compaction_trigger_chars: 80000,
   agent_tool_prune_trigger_tokens: 40000,
   // intelligence-ramp Phase 3: lifted from 16K/20K/12K to give the agent
@@ -228,14 +231,16 @@ export function validateSetting(key, value) {
     case "delegation_auto_run_children":
       if (typeof value !== "boolean") throw new Error(`${key} must be a boolean`);
       return value;
+    // null clears the override and hands the value back to agent-runtime's
+    // adaptive resolution.
     case "agent_compaction_trigger_ratio":
-      return numberInRange(key, value, { min: 0.2, max: 0.95 });
+      return value === null ? null : numberInRange(key, value, { min: 0.2, max: 0.95 });
     case "agent_compaction_keep_recent_tokens":
-      return integerInRange(key, value, { min: 4000, max: 200000 });
+      return value === null ? null : integerInRange(key, value, { min: 4000, max: 200000 });
     case "agent_compaction_summary_max_tokens":
-      return integerInRange(key, value, { min: 1000, max: 64000 });
+      return value === null ? null : integerInRange(key, value, { min: 1000, max: 64000 });
     case "agent_compaction_min_savings_tokens":
-      return integerInRange(key, value, { min: 0, max: 500000 });
+      return value === null ? null : integerInRange(key, value, { min: 0, max: 500000 });
     case "agent_tool_payload_compaction_trigger_chars":
       return integerInRange(key, value, { min: 0, max: 10 * 1024 * 1024 });
     case "agent_tool_prune_trigger_tokens":

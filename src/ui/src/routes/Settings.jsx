@@ -32,6 +32,8 @@ import {
   SettingsSection,
 } from "./settings/components.jsx";
 import {
+  COMPACTION_OVERRIDE_KEYS,
+  COMPACTION_OVERRIDE_SEED,
   LOG_LEVEL_OPTIONS,
   MCP_TRANSPORT_OPTIONS,
   PI_CODEX_TRANSPORT_OPTIONS,
@@ -40,6 +42,7 @@ import {
   SETTINGS_SECTION_LINKS,
   SLACK_EFFORT_OPTIONS,
   VERIFICATION_ADJUDICATOR_MODE_OPTIONS,
+  compactionIsAdaptive,
   jsonEqual,
   mcpAvailabilitySummary,
   mcpRowsFromServers,
@@ -854,18 +857,33 @@ function SettingsGeneral() {
                     </ControlGroup>
 
                     <ControlGroup title="Context compaction" description="Transcript compaction trigger and retained context size.">
-                      <FormField label="Trigger ratio">
-                        <NumberStepper min={0.2} max={0.95} step={0.01} value={settings.agent_compaction_trigger_ratio ?? 0.85} ariaLabel="Compaction trigger ratio" onChange={(value) => setSettings({ ...settings, agent_compaction_trigger_ratio: value })} />
-                      </FormField>
-                      <FormField label="Keep tokens">
-                        <NumberStepper min={4000} max={200000} step={1000} value={settings.agent_compaction_keep_recent_tokens ?? 24000} ariaLabel="Keep recent tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_keep_recent_tokens: value })} />
-                      </FormField>
-                      <FormField label="Summary tokens">
-                        <NumberStepper min={1000} max={64000} step={1000} value={settings.agent_compaction_summary_max_tokens ?? 16000} ariaLabel="Compaction summary tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_summary_max_tokens: value })} />
-                      </FormField>
-                      <FormField label="Min savings">
-                        <NumberStepper min={0} max={500000} step={1000} value={settings.agent_compaction_min_savings_tokens ?? 20000} ariaLabel="Minimum compaction savings tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_min_savings_tokens: value })} />
-                      </FormField>
+                      <Switch
+                        checked={compactionIsAdaptive(settings)}
+                        onChange={(value) => setSettings({
+                          ...settings,
+                          ...(value
+                            ? Object.fromEntries(COMPACTION_OVERRIDE_KEYS.map((key) => [key, null]))
+                            : COMPACTION_OVERRIDE_SEED),
+                        })}
+                        label="Adaptive"
+                        description="Scale the limits to each model's context window. Turn off to pin fixed values."
+                      />
+                      {!compactionIsAdaptive(settings) && (
+                        <>
+                          <FormField label="Trigger ratio">
+                            <NumberStepper min={0.2} max={0.95} step={0.01} value={settings.agent_compaction_trigger_ratio ?? COMPACTION_OVERRIDE_SEED.agent_compaction_trigger_ratio} ariaLabel="Compaction trigger ratio" onChange={(value) => setSettings({ ...settings, agent_compaction_trigger_ratio: value })} />
+                          </FormField>
+                          <FormField label="Keep tokens">
+                            <NumberStepper min={4000} max={200000} step={1000} value={settings.agent_compaction_keep_recent_tokens ?? COMPACTION_OVERRIDE_SEED.agent_compaction_keep_recent_tokens} ariaLabel="Keep recent tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_keep_recent_tokens: value })} />
+                          </FormField>
+                          <FormField label="Summary tokens">
+                            <NumberStepper min={1000} max={64000} step={1000} value={settings.agent_compaction_summary_max_tokens ?? COMPACTION_OVERRIDE_SEED.agent_compaction_summary_max_tokens} ariaLabel="Compaction summary tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_summary_max_tokens: value })} />
+                          </FormField>
+                          <FormField label="Min savings">
+                            <NumberStepper min={0} max={500000} step={1000} value={settings.agent_compaction_min_savings_tokens ?? COMPACTION_OVERRIDE_SEED.agent_compaction_min_savings_tokens} ariaLabel="Minimum compaction savings tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_min_savings_tokens: value })} />
+                          </FormField>
+                        </>
+                      )}
                     </ControlGroup>
 
                     <ControlGroup title="Tool output limits" description="Caps for large tool payloads before pruning, compaction, or artifact fallback.">

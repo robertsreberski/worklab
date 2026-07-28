@@ -8,11 +8,30 @@ describe("agent compaction policy", () => {
   it("uses pruning-first defaults for long sessions", () => {
     const policy = resolveAgentCompactionPolicy({}, { contextWindow: 128000 });
 
-    expect(policy.triggerRatio).toBe(0.85);
+    expect(policy.triggerRatio).toBe(0.7);
     expect(policy.toolPayloadCompactionTriggerChars).toBe(0);
     expect(policy.toolPruneTriggerTokens).toBe(40000);
-    expect(policy.compactionMinSavingsTokens).toBe(20000);
+    expect(policy.compactionMinSavingsTokens).toBe(12800);
     expect(policy.searchResultLimit).toBe(100);
+  });
+
+  // Worklab leaves the four compaction limits unset so the runtime scales them
+  // to the model actually serving the request; a bigger window must widen the
+  // token budgets rather than reuse a fixed 128k-shaped policy.
+  it("scales the unset token budgets to the model context window", () => {
+    const small = resolveAgentCompactionPolicy({}, { contextWindow: 128000 });
+    const large = resolveAgentCompactionPolicy({}, { contextWindow: 1000000 });
+
+    expect(small).toMatchObject({
+      triggerTokens: 89600,
+      keepRecentTokens: 12800,
+      summaryMaxTokens: 5120,
+    });
+    expect(large).toMatchObject({
+      triggerTokens: 700000,
+      keepRecentTokens: 20000,
+      summaryMaxTokens: 12000,
+    });
   });
 
   it("normalizes Worklab settings into runtime compaction limits", () => {

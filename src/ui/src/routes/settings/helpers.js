@@ -20,6 +20,30 @@ export const PI_CODEX_TRANSPORT_OPTIONS = [
   { value: "websocket", label: "WebSocket" },
   { value: "websocket-cached", label: "WebSocket cached" },
 ];
+// Compaction limits are adaptive by default: agent-runtime resolves them
+// against the running model's real context window. These four settings are
+// null in that mode; a number pins the value for every model.
+export const COMPACTION_OVERRIDE_KEYS = [
+  "agent_compaction_trigger_ratio",
+  "agent_compaction_keep_recent_tokens",
+  "agent_compaction_summary_max_tokens",
+  "agent_compaction_min_savings_tokens",
+];
+
+// Seed values shown when an operator switches adaptive off — the runtime's own
+// adaptive result for its 128k fallback window, so toggling off starts from
+// what was already in effect rather than an arbitrary number.
+export const COMPACTION_OVERRIDE_SEED = {
+  agent_compaction_trigger_ratio: 0.7,
+  agent_compaction_keep_recent_tokens: 12800,
+  agent_compaction_summary_max_tokens: 5120,
+  agent_compaction_min_savings_tokens: 12800,
+};
+
+export function compactionIsAdaptive(settings = {}) {
+  return COMPACTION_OVERRIDE_KEYS.every((key) => settings[key] == null);
+}
+
 export const MCP_TRANSPORT_OPTIONS = [
   { value: "stdio", label: "stdio" },
   { value: "http", label: "HTTP" },
@@ -239,6 +263,10 @@ export function runtimePayload(runtimeDraft = {}) {
   };
 }
 
+function nullableNumber(value) {
+  return value == null ? null : Number(value);
+}
+
 export function settingsPayload(settings = {}) {
   return {
     consolidation_hour: Number(settings.consolidation_hour),
@@ -271,10 +299,12 @@ export function settingsPayload(settings = {}) {
     delegation_max_parallel_children: Number(settings.delegation_max_parallel_children ?? 3),
     delegation_auto_run_children: settings.delegation_auto_run_children !== false,
     agent_compaction_enabled: settings.agent_compaction_enabled !== false,
-    agent_compaction_trigger_ratio: Number(settings.agent_compaction_trigger_ratio ?? 0.85),
-    agent_compaction_keep_recent_tokens: Number(settings.agent_compaction_keep_recent_tokens ?? 24000),
-    agent_compaction_summary_max_tokens: Number(settings.agent_compaction_summary_max_tokens ?? 16000),
-    agent_compaction_min_savings_tokens: Number(settings.agent_compaction_min_savings_tokens ?? 20000),
+    // null (adaptive) must survive the round trip — coercing it to a number
+    // would silently pin the value for every model.
+    agent_compaction_trigger_ratio: nullableNumber(settings.agent_compaction_trigger_ratio),
+    agent_compaction_keep_recent_tokens: nullableNumber(settings.agent_compaction_keep_recent_tokens),
+    agent_compaction_summary_max_tokens: nullableNumber(settings.agent_compaction_summary_max_tokens),
+    agent_compaction_min_savings_tokens: nullableNumber(settings.agent_compaction_min_savings_tokens),
     agent_tool_payload_compaction_trigger_chars: Number(settings.agent_tool_payload_compaction_trigger_chars ?? 0),
     agent_tool_prune_trigger_tokens: Number(settings.agent_tool_prune_trigger_tokens ?? 40000),
     agent_tool_text_limit_chars: Number(settings.agent_tool_text_limit_chars ?? 16000),
