@@ -80,7 +80,9 @@ warnings, diagnostics, failure kind, and error details.
 ## Current Bridges
 
 The Pi bridge handles all `pi:*` refs. Built-in Pi providers are resolved through
-`@earendil-works/pi-ai`; Worklab custom providers are resolved from the provider
+the runtime's Pi façade on `@mono-agent/agent-runtime/ai` — Worklab never imports
+`@earendil-works/pi-ai` directly, so pi-ai's version pin and mutable registry stay
+inside the runtime. Worklab custom providers are resolved from the provider
 database and converted to Pi-compatible OpenAI-style model descriptors before
 execution.
 

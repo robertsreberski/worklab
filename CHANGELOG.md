@@ -2,10 +2,10 @@
 
 ## Unreleased
 
-- Upgraded `@mono-agent/agent-runtime` from 0.4.1 to 0.15.0.
-  - Context-window overflows now report the runtime's new `context_limit`
-    failure kind instead of `usage_limit`. Both take the same compact
-    continuation, so auto-recovery is unchanged; the UI labels them apart.
+- Upgraded `@mono-agent/agent-runtime` from 0.4.1 to 0.15.1.
+  - Context-window overflows now report the runtime's `context_limit` failure
+    kind instead of `usage_limit`. Both take the same compact continuation, so
+    auto-recovery is unchanged; the UI labels them apart.
   - Compaction limits are adaptive by default — the four
     `agent_compaction_*` numeric settings default to `null` and the runtime
     scales them to each model's context window. Existing explicit values keep
@@ -16,14 +16,24 @@
   - Adapted to the runtime's flat codex `file_change` event and the removal of
     `ai/backend.js`, the Claude file-edit hooks, and the effort-derived
     `thinking` option.
-  - Pinned `@earendil-works/pi-ai` to 0.80.6 and added
-    `@anthropic-ai/claude-agent-sdk` as a devDependency so both dedupe to a
-    single copy; without the latter the Claude test suite issued real API
-    calls instead of using its mock.
-  - Known gap: a codex app-server that dies mid-turn does not fail fast while
-    live input is attached (upstream
-    [mono-agent#545](https://github.com/robertsreberski/mono-agent/issues/545));
-    the run stalls until `worker_timeout_ms`.
+  - The runtime now owns the Pi dependency. Worklab reads the Pi model catalog
+    and runs Pi OAuth through the runtime façade
+    (`listPiBuiltinModels`, `getPiBuiltinModel`, `reasoningLevelsForPiModel`,
+    `resolvePiOAuthApiKey`, `loginPiOAuth`); `@earendil-works/pi-ai` is a
+    devDependency for test fixtures only, and a lint rule keeps it out of
+    production code. `worklab auth pi` gained device-code and selection
+    prompts, which the façade requires.
+  - Claude provider tests inject `RuntimeRunOptions.claudeAgentQuery` instead
+    of mocking `@anthropic-ai/claude-agent-sdk` by package name. The parallel
+    Anthropic SDK copies in the dependency tree are intentional and must not be
+    force-deduplicated.
+  - A codex app-server that dies mid-turn now fails fast even with live input
+    attached, instead of stalling until `worker_timeout_ms`
+    ([mono-agent#545](https://github.com/robertsreberski/mono-agent/issues/545)).
+  - Removed `agent_tool_payload_compaction_trigger_chars` and
+    `agent_tool_prune_trigger_tokens`. The runtime deleted the policy fields
+    they fed, which nothing had ever read; stored values go inert with no
+    migration.
 
 - Prepared the npm launch path for `@worklab-ai/worklab`, including scoped
   package metadata, a public `@mono-agent/agent-runtime` npm dependency,
