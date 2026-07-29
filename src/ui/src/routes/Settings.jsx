@@ -317,16 +317,11 @@ function SettingsGeneral() {
     { label: "", options: [{ value: "", label: "(select a provider model)" }] },
     ...modelSelectOptions(verificationAdjudicatorGroups, currentAdjudicatorModel),
   ];
+  const currentEmbeddingLabel = indexStatus?.model === currentEmbedding ? indexStatus.model_label : currentEmbedding;
   const embeddingOptions = [
     { label: "", options: [{ value: "", label: "(disabled - no embeddings)" }] },
     ...(currentEmbedding && !allEmbeddingValues.includes(currentEmbedding)
-      ? [{
-          label: "Current",
-          options: [{
-            value: currentEmbedding,
-            label: indexStatus?.model === currentEmbedding ? indexStatus.model_label : currentEmbedding,
-          }],
-        }]
+      ? [{ label: "Current", options: [{ value: currentEmbedding, label: currentEmbeddingLabel }] }]
       : []),
     ...embeddingGroups.map((g) => ({
       label: g.available === false ? `${g.label} (credentials not set)` : g.label,
@@ -357,20 +352,12 @@ function SettingsGeneral() {
   async function testEmbedding() {
     setEmbeddingTestBusy(true);
     try {
-      const response = await api.testEmbeddingBackend();
-      const test = response.test;
+      const { test } = await api.testEmbeddingBackend();
       if (!test?.ok) throw new Error(test?.error || "Embedding backend did not return a vector");
-      pushToast(
-        `${test.label || test.model} is ready (${test.dimensions} dimensions, ${test.duration_ms}ms).`,
-        { variant: "success" },
-      );
-      const status = await api.searchStatus();
-      setIndexStatus(status.status);
-    } catch (err) {
-      pushToast(`Embedding test failed: ${err.message}`, { variant: "error" });
-    } finally {
-      setEmbeddingTestBusy(false);
-    }
+      pushToast(`${test.label || test.model} is ready (${test.dimensions} dimensions, ${test.duration_ms}ms).`, { variant: "success" });
+      setIndexStatus((await api.searchStatus()).status);
+    } catch (err) { pushToast(`Embedding test failed: ${err.message}`, { variant: "error" }); }
+    finally { setEmbeddingTestBusy(false); }
   }
 
   async function refreshUpdateStatus() {
@@ -1071,26 +1058,12 @@ function SettingsGeneral() {
                   onChange={(value) => setSettings({ ...settings, default_embedding_model: value })}
                 />
               </FormField>
-              <Toolbar>
-                <Button
-                  size="sm"
-                  loading={embeddingTestBusy}
-                  disabled={!indexStatus?.model}
-                  onClick={testEmbedding}
-                >
-                  Test
-                </Button>
-              </Toolbar>
+              <Toolbar><Button size="sm" loading={embeddingTestBusy} disabled={!indexStatus?.model} onClick={testEmbedding}>Test</Button></Toolbar>
               <div class={`settings-index-status ${indexStatus?.errors ? "has-errors" : ""}`}>
                 <FieldNote label="Chunks" value={indexStatus ? indexStatus.total : "-"} />
                 <FieldNote label="Vectorized" value={indexStatus ? indexStatus.vectorized : "-"} />
                 <FieldNote label="Errors" value={indexStatus ? indexStatus.errors : "-"} />
-                <FieldNote
-                  label="Model"
-                  value={indexStatus?.model_label || indexStatus?.model || "-"}
-                  title={indexStatus?.model || undefined}
-                  mono
-                />
+                <FieldNote label="Model" value={indexStatus?.model_label || indexStatus?.model || "-"} title={indexStatus?.model || undefined} mono />
               </div>
               {indexStatus?.model && !indexStatus.ready && (
                 <div class="settings-inline-warning">Paused: {indexStatus.reason || "provider not configured"}</div>
