@@ -70,6 +70,7 @@ describe("provider system event filtering", () => {
     coalescer.emit(cliEvent({ type: "system", subtype: "init", cwd: "/repo" }));
     coalescer.emit(cliEvent({ type: "system", subtype: "status", status: "requesting" }));
     coalescer.emit(cliEvent({ type: "system", subtype: "hook_response", hook: "PreToolUse" }));
+    coalescer.emit(cliEvent({ type: "system", subtype: "commands_changed", commands: [] }));
     coalescer.emit(cliEvent({ type: "rate_limit_event", rate_limit_info: { status: "allowed" } }));
     coalescer.emit(cliEvent({ type: "hook_started", hook: "PreToolUse" }));
     coalescer.flush();

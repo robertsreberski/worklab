@@ -14,6 +14,7 @@ const DROPPED_PROVIDER_EVENT_TYPES = new Set([
   "rate_limit_event",
 ]);
 const DROPPED_SYSTEM_SUBTYPES = new Set([
+  "commands_changed",
   "hook_started",
   "hook_response",
   "init",
