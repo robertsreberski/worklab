@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 47;
+export const SCHEMA_VERSION = 48;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;

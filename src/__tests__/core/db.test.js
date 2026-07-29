@@ -675,6 +675,41 @@ describe("openDb + runMigrations", () => {
       .toBe("pi:openai:gpt-5.5");
   });
 
+  it("canonicalizes provider-backed embedding and adjudicator references without re-embedding", () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+    const now = Date.now();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")
+      .run("default_embedding_model", JSON.stringify("vercel:lm-studio:text-embedding-bge-m3"));
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")
+      .run("agent_verification_adjudicator_model", JSON.stringify("vercel:lm-studio:guard-model"));
+    db.prepare(`
+      INSERT INTO embeddings
+        (id, kind, ref, source_ref, chunk_text, model, content_hash, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "embedding-legacy",
+      "kb",
+      "knowledge/example.md#chunk-0",
+      "knowledge/example.md#chunk-0",
+      "Example",
+      "vercel:lm-studio:text-embedding-bge-m3",
+      "hash",
+      now,
+      now,
+    );
+
+    runMigrations(db);
+    runMigrations(db);
+
+    expect(JSON.parse(db.prepare("SELECT value FROM settings WHERE key = ?")
+      .get("default_embedding_model").value)).toBe("provider:lm-studio:text-embedding-bge-m3");
+    expect(JSON.parse(db.prepare("SELECT value FROM settings WHERE key = ?")
+      .get("agent_verification_adjudicator_model").value)).toBe("provider:lm-studio:guard-model");
+    expect(db.prepare("SELECT model FROM embeddings WHERE id = ?").get("embedding-legacy").model)
+      .toBe("provider:lm-studio:text-embedding-bge-m3");
+  });
+
   it("does not rewrite historical agent log model snapshots during canonical runtime migration", () => {
     const db = openDb(":memory:");
     runMigrations(db);
