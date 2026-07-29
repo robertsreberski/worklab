@@ -70,14 +70,14 @@ function targetFromProvider({ provider, modelName, modelRow = null }) {
     modelName,
     modelRow,
     capabilities,
-    reference: `vercel:${provider.id}:${modelName}`,
+    reference: `provider:${provider.id}:${modelName}`,
   };
 }
 
 export function resolveVerificationAdjudicatorTarget({ db, dataDir, modelRef }) {
   if (!db) throw new Error("verification adjudicator database is unavailable");
   const parsed = parseVerificationAdjudicatorModelReference(modelRef);
-  if (parsed.kind === "vercel") {
+  if (parsed.kind === "provider") {
     const provider = getProvider({ db, dataDir, id: parsed.providerId, includeKey: true });
     if (!provider) throw new Error(`verification adjudicator provider not found: ${parsed.providerId}`);
     const modelRow = getModelByProviderAndName({ db, providerId: parsed.providerId, modelName: parsed.model });

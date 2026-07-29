@@ -126,10 +126,10 @@ describe("provider routes", () => {
 
     const res = await agent.get("/api/models/verification-adjudicators").expect(200);
     const options = res.body.groups.flatMap((group) => group.models);
-    expect(options.map((m) => m.value)).toContain(`vercel:${p.body.provider.id}:gpt-oss-safeguard:20b`);
-    expect(options.map((m) => m.value)).toContain(`vercel:${p.body.provider.id}:disabled-chat`);
-    expect(options.map((m) => m.value)).not.toContain(`vercel:${p.body.provider.id}:nomic-embed-text:v1.5`);
-    expect(options.find((m) => m.value === `vercel:${p.body.provider.id}:disabled-chat`)).toMatchObject({
+    expect(options.map((m) => m.value)).toContain(`provider:${p.body.provider.id}:gpt-oss-safeguard:20b`);
+    expect(options.map((m) => m.value)).toContain(`provider:${p.body.provider.id}:disabled-chat`);
+    expect(options.map((m) => m.value)).not.toContain(`provider:${p.body.provider.id}:nomic-embed-text:v1.5`);
+    expect(options.find((m) => m.value === `provider:${p.body.provider.id}:disabled-chat`)).toMatchObject({
       available: false,
       disabled: true,
       unavailable_reason: "Model is disabled in Providers.",
@@ -633,7 +633,7 @@ describe("provider routes", () => {
 
       const embeddingModels = await agent.get("/api/models/embeddings").expect(200);
       expect(embeddingModels.body.groups.flatMap((group) => group.models).map((m) => m.value))
-        .toContain(`vercel:${id}:nomic-embed-text:v1.5`);
+        .toContain(`provider:${id}:nomic-embed-text:v1.5`);
 
       const disabled = await agent.patch(`/api/providers/${id}/models/${model.id}`).send({ enabled: false }).expect(200);
       expect(disabled.body.model.enabled).toBe(false);
@@ -668,7 +668,7 @@ describe("provider routes", () => {
       const embeddingModels = await agent.get("/api/models/embeddings").expect(200);
       const option = embeddingModels.body.groups
         .flatMap((group) => group.models)
-        .find((modelOption) => modelOption.value === `vercel:${id}:nomic-embed-text:v1.5`);
+        .find((modelOption) => modelOption.value === `provider:${id}:nomic-embed-text:v1.5`);
       expect(option).toMatchObject({
         available: false,
         disabled: true,

@@ -22,7 +22,7 @@ export function parseEmbeddingReference(value) {
   if (!value || typeof value !== "string") throw new Error("embedding model reference required");
   const i = value.indexOf(":");
   if (i <= 0 || i === value.length - 1) {
-    throw new Error("invalid embedding model reference; expected ollama:<model>, openai:<model>, or vercel:<providerId>:<model>");
+    throw new Error("invalid embedding model reference; expected ollama:<model>, openai:<model>, or provider:<providerId>:<model>");
   }
   const kind = value.slice(0, i);
   const rest = value.slice(i + 1);
@@ -33,11 +33,11 @@ export function parseEmbeddingReference(value) {
   }
   if (kind === "vercel" || kind === "provider") {
     const j = rest.indexOf(":");
-    if (j <= 0 || j === rest.length - 1) throw new Error("invalid custom embedding reference; expected vercel:<providerId>:<model>");
+    if (j <= 0 || j === rest.length - 1) throw new Error("invalid custom embedding reference; expected provider:<providerId>:<model>");
     const providerId = cleanPart(rest.slice(0, j), "provider id required");
     const model = cleanPart(rest.slice(j + 1), "embedding model id required");
     if (TIER_ALIASES.has(model)) throw new Error("tier aliases are not valid embedding model references; use an exact model id");
-    return { kind: "vercel", providerId, model, reference: `vercel:${providerId}:${model}`, rawReference: value };
+    return { kind: "provider", providerId, model, reference: `provider:${providerId}:${model}`, rawReference: value };
   }
   throw new Error(`unknown embedding provider: ${kind}`);
 }

@@ -52,7 +52,7 @@ function seedAdjudicatorModel(db, {
     capabilities: { chat: true, json_mode: true },
     enabled: true,
   });
-  return { provider, modelRef: `vercel:${provider.id}:${modelName}` };
+  return { provider, modelRef: `provider:${provider.id}:${modelName}` };
 }
 
 describe("crossCheckVerificationEvidence", () => {

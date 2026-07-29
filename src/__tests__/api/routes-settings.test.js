@@ -128,7 +128,7 @@ describe("settings", () => {
     expect(res.body.settings.agent_provider_recovery_base_delay_ms).toBe(1000);
     expect(res.body.settings.agent_pi_codex_transport).toBe("websocket");
     expect(res.body.settings.agent_verification_adjudicator_mode).toBe("on");
-    expect(res.body.settings.agent_verification_adjudicator_model).toBe("vercel:ollama-local:gpt-oss-safeguard:20b");
+    expect(res.body.settings.agent_verification_adjudicator_model).toBe("provider:ollama-local:gpt-oss-safeguard:20b");
     expect(res.body.settings).not.toHaveProperty("agent_verification_adjudicator_base_url");
     expect(res.body.settings.agent_verification_adjudicator_timeout_ms).toBe(45000);
     expect(res.body.settings.planning_harness).toBe("execplan_deep");
@@ -217,13 +217,13 @@ describe("settings", () => {
     await agent.patch("/api/settings").send({ default_embedding_model: "sonnet" }).expect(400);
   });
 
-  it("PATCH accepts vercel embedding references and canonicalizes legacy provider syntax", async () => {
+  it("PATCH accepts legacy vercel embedding references and canonicalizes them", async () => {
     const { agent } = makeTestServer();
     await agent.patch("/api/settings").send({
-      default_embedding_model: "provider:local:text-embedding-3-small",
+      default_embedding_model: "vercel:local:text-embedding-3-small",
     }).expect(200);
     const res = await agent.get("/api/settings").expect(200);
-    expect(res.body.settings.default_embedding_model).toBe("vercel:local:text-embedding-3-small");
+    expect(res.body.settings.default_embedding_model).toBe("provider:local:text-embedding-3-small");
   });
 
   it("GET runtime settings returns effective config and service status", async () => {

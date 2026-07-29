@@ -323,7 +323,7 @@ describe("task-watcher", () => {
     writeSettings(db, {
       agent_verification_gate_mode: "block",
       agent_verification_adjudicator_mode: "on",
-      agent_verification_adjudicator_model: `vercel:${adjudicatorProvider.id}:gpt-oss-safeguard:20b`,
+      agent_verification_adjudicator_model: `provider:${adjudicatorProvider.id}:gpt-oss-safeguard:20b`,
       agent_verification_adjudicator_timeout_ms: 1000,
     });
     const taskId = seedTask(db, { owner: "coder", reviewer: "checker" });

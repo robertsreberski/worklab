@@ -17,11 +17,11 @@ export function parseVerificationAdjudicatorModelReference(value) {
     if (kind === "vercel" || kind === "provider") {
       const j = rest.indexOf(":");
       if (j <= 0 || j === rest.length - 1) {
-        throw new Error("invalid verification adjudicator model reference; expected vercel:<providerId>:<model>");
+        throw new Error("invalid verification adjudicator model reference; expected provider:<providerId>:<model>");
       }
       const providerId = cleanPart(rest.slice(0, j), "provider id required");
       const model = cleanPart(rest.slice(j + 1), "verification adjudicator model id required");
-      return { kind: "vercel", providerId, model, reference: `vercel:${providerId}:${model}`, rawReference: text };
+      return { kind: "provider", providerId, model, reference: `provider:${providerId}:${model}`, rawReference: text };
     }
   }
   return { kind: "legacy", model: text, reference: text };

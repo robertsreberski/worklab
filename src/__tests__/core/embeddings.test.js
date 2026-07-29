@@ -33,15 +33,16 @@ describe("embedding references", () => {
       model: "text-embedding-3-small",
     });
     expect(parseEmbeddingReference("vercel:local:text-embedding-3-small")).toMatchObject({
-      kind: "vercel",
+      kind: "provider",
       providerId: "local",
       model: "text-embedding-3-small",
+      reference: "provider:local:text-embedding-3-small",
     });
     expect(parseEmbeddingReference("provider:local:text-embedding-3-small")).toMatchObject({
-      kind: "vercel",
+      kind: "provider",
       providerId: "local",
       model: "text-embedding-3-small",
-      reference: "vercel:local:text-embedding-3-small",
+      reference: "provider:local:text-embedding-3-small",
     });
 
     expect(() => parseEmbeddingReference("sonnet")).toThrow(/invalid embedding model reference/);

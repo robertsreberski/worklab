@@ -167,7 +167,7 @@ export function registerModelRoutes(app, { db, dataDir }) {
         disabled: false,
         unavailable_reason: null,
         models: embeddingModels.map((m) => ({
-          value: `vercel:${provider.id}:${m.model_name}`,
+          value: `provider:${provider.id}:${m.model_name}`,
           label: m.display_name || m.model_name,
           description: m.enabled ? `${provider.name} / ${m.model_name}` : "Enable this model in Providers to select it.",
           available: !!m.enabled,
@@ -188,7 +188,7 @@ export function registerModelRoutes(app, { db, dataDir }) {
         const capabilities = buildModelCapabilities(provider.provider_type, model.model_name, model.capabilities);
         if (!capabilities.runnable_for_agent) return [];
         return [{
-          value: `vercel:${provider.id}:${model.model_name}`,
+          value: `provider:${provider.id}:${model.model_name}`,
           label: model.display_name || model.model_name,
           description: model.enabled
             ? `${provider.name} / ${model.model_name}`
