@@ -5444,6 +5444,10 @@ html.assistant-resizing * {
   cursor: pointer;
   width: 100%;
 }
+.agentlog-thinking-static {
+  cursor: default;
+  align-items: center;
+}
 .agentlog-thinking-glyph {
   flex: 0 0 auto;
   color: var(--status-review);
