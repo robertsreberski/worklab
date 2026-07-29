@@ -13,11 +13,13 @@ import {
   getIndexStatus,
   indexAllSources,
   indexSource,
+  isEmbeddingBackendReady,
   parseEmbeddingReference,
   resolveEmbeddingTimeoutMs,
   search,
 } from "../../core/embeddings.js";
 import { kbCreate } from "../../core/kb.js";
+import { createProvider, upsertModel } from "../../core/providers.js";
 
 describe("embedding references", () => {
   it("requires exact provider:model references", () => {
@@ -128,6 +130,40 @@ describe("embedding transport", () => {
       "Ollama (http://localhost:11434/api/embed) did not respond within 12345ms — the model may still be loading",
     );
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("checks the referenced provider model without blocking stale discovery", () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+    const provider = createProvider({
+      db,
+      name: "LM Studio",
+      provider_type: "lmstudio",
+      base_url: "http://localhost:1234",
+    });
+    upsertModel({
+      db,
+      providerId: provider.id,
+      modelName: "disabled-embedding",
+      capabilities: { embedding: true },
+      enabled: false,
+    });
+
+    expect(isEmbeddingBackendReady({
+      db,
+      modelRef: `vercel:${provider.id}:disabled-embedding`,
+    })).toEqual({
+      ready: false,
+      reason: "model disabled-embedding is disabled in Providers",
+    });
+    expect(isEmbeddingBackendReady({
+      db,
+      modelRef: `vercel:${provider.id}:new-embedding`,
+    })).toEqual({
+      ready: true,
+      reason: null,
+      warning: "new-embedding was not found in the last discovery — run Discover",
+    });
   });
 });
 

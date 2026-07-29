@@ -4,7 +4,7 @@ import { basename, join, relative, sep } from "node:path";
 import { newEmbeddingId } from "./ids.js";
 import { kbList, kbRead } from "./kb.js";
 import { agentJournalPath, agentMemoryPath } from "./journal.js";
-import { getProvider, isPrivateBaseUrl } from "./providers.js";
+import { getModelByProviderAndName, getProvider, isPrivateBaseUrl } from "./providers.js";
 import { getSettingValue } from "./db/queries/settings.js";
 
 const MAX_CHUNK_CHARS = 1800;
@@ -201,6 +201,17 @@ export function isEmbeddingBackendReady({ db, dataDir, modelRef }) {
   if (!provider.enabled) return { ready: false, reason: `provider ${provider.name} is disabled` };
   if (!provider.has_api_key && !isPrivateBaseUrl(provider.base_url)) {
     return { ready: false, reason: `provider ${provider.name} needs an API key` };
+  }
+  const model = getModelByProviderAndName({ db, providerId: parsed.providerId, modelName: parsed.model });
+  if (model && !model.enabled) {
+    return { ready: false, reason: `model ${parsed.model} is disabled in Providers` };
+  }
+  if (!model) {
+    return {
+      ready: true,
+      reason: null,
+      warning: `${parsed.model} was not found in the last discovery — run Discover`,
+    };
   }
   return { ready: true, reason: null };
 }
@@ -671,7 +682,16 @@ export function getIndexStatus(db, { dataDir } = {}) {
   const errors = db.prepare("SELECT COUNT(*) AS count FROM embeddings WHERE indexing_error IS NOT NULL").get().count;
   const model = getEmbeddingModel(db);
   const readiness = model ? isEmbeddingBackendReady({ db, dataDir, modelRef: model }) : { ready: false, reason: null };
-  return { total, byKind, vectorized, errors, model: model || null, ready: readiness.ready, reason: readiness.reason };
+  return {
+    total,
+    byKind,
+    vectorized,
+    errors,
+    model: model || null,
+    ready: readiness.ready,
+    reason: readiness.reason,
+    warning: readiness.warning || null,
+  };
 }
 
 export async function testEmbeddingBackend({ db, dataDir, fetchImpl = fetch } = {}) {
