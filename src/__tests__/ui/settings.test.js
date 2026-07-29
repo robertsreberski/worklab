@@ -381,6 +381,12 @@ describe("settings UI duration conversions", () => {
     expect(searchIndexMeta({ errors: 0, ready: true, model: "openai:text-embedding-3-small" })).toEqual({ status: "enabled", label: "Ready" });
   });
 
+  it("renders the resolved embedding label while retaining the raw reference", () => {
+    const source = readFileSync(settingsSourcePath, "utf8");
+    expect(source).toContain("indexStatus?.model_label || indexStatus?.model");
+    expect(source).toContain("title={indexStatus?.model || undefined}");
+  });
+
   it("summarizes browser and PWA notification modes", () => {
     expect(notificationStatus({ mode: "browser", supported: true, permission: "granted", enabled: true })).toEqual({ status: "enabled", label: "On" });
     expect(notificationDescription({ mode: "browser", supported: true, permission: "granted", enabled: true })).toBe("Task run starts, completions, and errors in background tabs.");

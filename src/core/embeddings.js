@@ -224,6 +224,38 @@ export function getEmbeddingModel(db) {
   return value || "";
 }
 
+export function describeEmbeddingModel({ db, dataDir, modelRef }) {
+  const reference = typeof modelRef === "string" ? modelRef : "";
+  try {
+    const parsed = parseEmbeddingReference(reference);
+    if (parsed.kind === "ollama" || parsed.kind === "openai") {
+      const providerName = parsed.kind === "ollama" ? "Ollama" : "OpenAI";
+      return {
+        reference: parsed.reference,
+        kind: parsed.kind,
+        provider_id: null,
+        provider_name: providerName,
+        provider_type: parsed.kind,
+        model_name: parsed.model,
+        label: `${providerName} / ${parsed.model}`,
+      };
+    }
+    const provider = getProvider({ db, dataDir, id: parsed.providerId });
+    const providerName = provider?.name || parsed.providerId;
+    return {
+      reference: parsed.reference,
+      kind: parsed.kind,
+      provider_id: parsed.providerId,
+      provider_name: provider?.name || null,
+      provider_type: provider?.provider_type || null,
+      model_name: parsed.model,
+      label: `${providerName} / ${parsed.model}`,
+    };
+  } catch {
+    return { reference, label: reference };
+  }
+}
+
 export function chunkMarkdown(text, maxChars = MAX_CHUNK_CHARS) {
   const raw = String(text || "").trim();
   if (!raw) return [];
@@ -682,12 +714,16 @@ export function getIndexStatus(db, { dataDir } = {}) {
   const errors = db.prepare("SELECT COUNT(*) AS count FROM embeddings WHERE indexing_error IS NOT NULL").get().count;
   const model = getEmbeddingModel(db);
   const readiness = model ? isEmbeddingBackendReady({ db, dataDir, modelRef: model }) : { ready: false, reason: null };
+  const description = model ? describeEmbeddingModel({ db, dataDir, modelRef: model }) : null;
   return {
     total,
     byKind,
     vectorized,
     errors,
     model: model || null,
+    model_label: description?.label || null,
+    provider_name: description?.provider_name || null,
+    model_name: description?.model_name || null,
     ready: readiness.ready,
     reason: readiness.reason,
     warning: readiness.warning || null,
@@ -698,6 +734,7 @@ export async function testEmbeddingBackend({ db, dataDir, fetchImpl = fetch } = 
   const modelRef = getEmbeddingModel(db);
   if (!modelRef) return { ok: false, model: null, kind: null, error: "embedding model not configured", dimensions: 0 };
   const parsed = parseEmbeddingReference(modelRef);
+  const description = describeEmbeddingModel({ db, dataDir, modelRef });
   const result = await generateEmbedding({
     db,
     dataDir,
@@ -709,6 +746,7 @@ export async function testEmbeddingBackend({ db, dataDir, fetchImpl = fetch } = 
   return {
     ok: !!result.vector,
     model: modelRef,
+    label: description.label,
     kind: parsed.kind,
     error: result.error || null,
     dimensions: result.vector?.length || 0,

@@ -521,6 +521,7 @@ export {
   bufferToFloatArray,
   chunkMarkdown,
   cosineSimilarity,
+  describeEmbeddingModel,
   floatArrayToBuffer,
   generateEmbedding,
   getEmbeddingModel,

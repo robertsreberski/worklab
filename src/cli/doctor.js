@@ -80,7 +80,7 @@ export async function doctor(args = []) {
   if (db) {
     try {
       const embedding = await testEmbeddingBackend({ db, dataDir: config.dataDir });
-      if (!embedding.ok) problems.push(`embedding backend unreachable (${embedding.model}): ${embedding.error}`);
+      if (!embedding.ok) problems.push(`embedding backend unreachable (${embedding.label || embedding.model}): ${embedding.error}`);
     } catch (err) {
       problems.push(`embedding backend check failed: ${err.message}`);
     } finally {

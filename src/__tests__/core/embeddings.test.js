@@ -7,6 +7,7 @@ import { runMigrations } from "../../core/db/migrations/runner.js";
 import {
   chunkMarkdown,
   cosineSimilarity,
+  describeEmbeddingModel,
   floatArrayToBuffer,
   bufferToFloatArray,
   generateEmbedding,
@@ -163,6 +164,32 @@ describe("embedding transport", () => {
       ready: true,
       reason: null,
       warning: "new-embedding was not found in the last discovery — run Discover",
+    });
+  });
+
+  it("describes provider-backed models without exposing opaque references", () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+    const provider = createProvider({
+      db,
+      name: "LM Studio",
+      provider_type: "lmstudio",
+      base_url: "http://localhost:1234",
+    });
+
+    expect(describeEmbeddingModel({
+      db,
+      modelRef: `vercel:${provider.id}:text-embedding-bge-m3`,
+    })).toMatchObject({
+      provider_id: provider.id,
+      provider_name: "LM Studio",
+      provider_type: "lmstudio",
+      model_name: "text-embedding-bge-m3",
+      label: "LM Studio / text-embedding-bge-m3",
+    });
+    expect(describeEmbeddingModel({ db, modelRef: "garbage" })).toEqual({
+      reference: "garbage",
+      label: "garbage",
     });
   });
 });

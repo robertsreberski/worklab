@@ -319,7 +319,13 @@ function SettingsGeneral() {
   const embeddingOptions = [
     { label: "", options: [{ value: "", label: "(disabled - no embeddings)" }] },
     ...(currentEmbedding && !allEmbeddingValues.includes(currentEmbedding)
-      ? [{ label: "Current", options: [{ value: currentEmbedding, label: `${currentEmbedding} (custom)` }] }]
+      ? [{
+          label: "Current",
+          options: [{
+            value: currentEmbedding,
+            label: indexStatus?.model === currentEmbedding ? indexStatus.model_label : currentEmbedding,
+          }],
+        }]
       : []),
     ...embeddingGroups.map((g) => ({
       label: g.available === false ? `${g.label} (credentials not set)` : g.label,
@@ -1049,7 +1055,12 @@ function SettingsGeneral() {
                 <FieldNote label="Chunks" value={indexStatus ? indexStatus.total : "-"} />
                 <FieldNote label="Vectorized" value={indexStatus ? indexStatus.vectorized : "-"} />
                 <FieldNote label="Errors" value={indexStatus ? indexStatus.errors : "-"} />
-                <FieldNote label="Model" value={indexStatus?.model || "-"} mono />
+                <FieldNote
+                  label="Model"
+                  value={indexStatus?.model_label || indexStatus?.model || "-"}
+                  title={indexStatus?.model || undefined}
+                  mono
+                />
               </div>
               {indexStatus?.model && !indexStatus.ready && (
                 <div class="settings-inline-warning">Paused: {indexStatus.reason || "provider not configured"}</div>
