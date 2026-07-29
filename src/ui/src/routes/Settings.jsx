@@ -122,6 +122,7 @@ function SettingsGeneral() {
   const [runtimeBaseline, setRuntimeBaseline] = useState(null);
   const [runtimeError, setRuntimeError] = useState(null);
   const [indexStatus, setIndexStatus] = useState(null);
+  const [embeddingTestBusy, setEmbeddingTestBusy] = useState(false);
   const [embeddingGroups, setEmbeddingGroups] = useState([]);
   const [verificationAdjudicatorGroups, setVerificationAdjudicatorGroups] = useState([]);
   const [modelGroups, setModelGroups] = useState([]);
@@ -350,6 +351,25 @@ function SettingsGeneral() {
       pushToast(`Restart failed: ${err.message}`, { variant: "error" });
     } finally {
       setRestarting(false);
+    }
+  }
+
+  async function testEmbedding() {
+    setEmbeddingTestBusy(true);
+    try {
+      const response = await api.testEmbeddingBackend();
+      const test = response.test;
+      if (!test?.ok) throw new Error(test?.error || "Embedding backend did not return a vector");
+      pushToast(
+        `${test.label || test.model} is ready (${test.dimensions} dimensions, ${test.duration_ms}ms).`,
+        { variant: "success" },
+      );
+      const status = await api.searchStatus();
+      setIndexStatus(status.status);
+    } catch (err) {
+      pushToast(`Embedding test failed: ${err.message}`, { variant: "error" });
+    } finally {
+      setEmbeddingTestBusy(false);
     }
   }
 
@@ -1051,6 +1071,16 @@ function SettingsGeneral() {
                   onChange={(value) => setSettings({ ...settings, default_embedding_model: value })}
                 />
               </FormField>
+              <Toolbar>
+                <Button
+                  size="sm"
+                  loading={embeddingTestBusy}
+                  disabled={!indexStatus?.model}
+                  onClick={testEmbedding}
+                >
+                  Test
+                </Button>
+              </Toolbar>
               <div class={`settings-index-status ${indexStatus?.errors ? "has-errors" : ""}`}>
                 <FieldNote label="Chunks" value={indexStatus ? indexStatus.total : "-"} />
                 <FieldNote label="Vectorized" value={indexStatus ? indexStatus.vectorized : "-"} />

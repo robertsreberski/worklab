@@ -732,9 +732,20 @@ export function getIndexStatus(db, { dataDir } = {}) {
 
 export async function testEmbeddingBackend({ db, dataDir, fetchImpl = fetch } = {}) {
   const modelRef = getEmbeddingModel(db);
-  if (!modelRef) return { ok: false, model: null, kind: null, error: "embedding model not configured", dimensions: 0 };
+  if (!modelRef) {
+    return {
+      ok: false,
+      model: null,
+      label: null,
+      kind: null,
+      error: "embedding model not configured",
+      dimensions: 0,
+      duration_ms: 0,
+    };
+  }
   const parsed = parseEmbeddingReference(modelRef);
   const description = describeEmbeddingModel({ db, dataDir, modelRef });
+  const startedAt = Date.now();
   const result = await generateEmbedding({
     db,
     dataDir,
@@ -750,5 +761,6 @@ export async function testEmbeddingBackend({ db, dataDir, fetchImpl = fetch } = 
     kind: parsed.kind,
     error: result.error || null,
     dimensions: result.vector?.length || 0,
+    duration_ms: Date.now() - startedAt,
   };
 }

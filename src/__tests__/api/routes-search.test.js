@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +13,7 @@ describe("search routes", () => {
   afterEach(() => {
     if (oldOllamaBase === undefined) delete process.env.WORKLAB_OLLAMA_BASE_URL;
     else process.env.WORKLAB_OLLAMA_BASE_URL = oldOllamaBase;
+    vi.unstubAllGlobals();
     for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
     dirs.length = 0;
   });
@@ -32,6 +33,51 @@ describe("search routes", () => {
       errors: 0,
       model: null,
     });
+  });
+
+  it("returns provider-qualified status and tests the configured embedding backend", async () => {
+    const { agent, db } = server();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")
+      .run("default_embedding_model", JSON.stringify("ollama:nomic-embed-text"));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ embeddings: [[1, 0, 0]] }),
+    }));
+
+    const status = await agent.get("/api/search/status").expect(200);
+    expect(status.body.status).toMatchObject({
+      model: "ollama:nomic-embed-text",
+      model_label: "Ollama / nomic-embed-text",
+      provider_name: "Ollama",
+      model_name: "nomic-embed-text",
+    });
+
+    const result = await agent.get("/api/search/embedding-test").expect(200);
+    expect(result.body.test).toMatchObject({
+      ok: true,
+      model: "ollama:nomic-embed-text",
+      label: "Ollama / nomic-embed-text",
+      kind: "ollama",
+      dimensions: 3,
+      error: null,
+    });
+    expect(result.body.test.duration_ms).toEqual(expect.any(Number));
+  });
+
+  it("surfaces embedding backend test failures", async () => {
+    const { agent, db } = server();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")
+      .run("default_embedding_model", JSON.stringify("ollama:missing"));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+
+    const result = await agent.get("/api/search/embedding-test").expect(200);
+    expect(result.body.test).toMatchObject({
+      ok: false,
+      model: "ollama:missing",
+      label: "Ollama / missing",
+      dimensions: 0,
+    });
+    expect(result.body.test.error).toContain("returned 404");
   });
 
   it("searches indexed knowledge with offline FTS fallback", async () => {

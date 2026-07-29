@@ -385,6 +385,8 @@ describe("settings UI duration conversions", () => {
     const source = readFileSync(settingsSourcePath, "utf8");
     expect(source).toContain("indexStatus?.model_label || indexStatus?.model");
     expect(source).toContain("title={indexStatus?.model || undefined}");
+    expect(source).toContain("api.testEmbeddingBackend()");
+    expect(source).toContain("loading={embeddingTestBusy}");
   });
 
   it("summarizes browser and PWA notification modes", () => {
