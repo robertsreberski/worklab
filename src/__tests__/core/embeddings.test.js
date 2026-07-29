@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,11 +9,15 @@ import {
   cosineSimilarity,
   floatArrayToBuffer,
   bufferToFloatArray,
+  generateEmbedding,
   getIndexStatus,
+  indexAllSources,
   indexSource,
   parseEmbeddingReference,
+  resolveEmbeddingTimeoutMs,
   search,
 } from "../../core/embeddings.js";
+import { kbCreate } from "../../core/kb.js";
 
 describe("embedding references", () => {
   it("requires exact provider:model references", () => {
@@ -40,6 +44,90 @@ describe("embedding references", () => {
     expect(() => parseEmbeddingReference("sonnet")).toThrow(/invalid embedding model reference/);
     expect(() => parseEmbeddingReference("openai:sonnet")).toThrow(/tier aliases/);
     expect(() => parseEmbeddingReference("vercel:local:haiku")).toThrow(/tier aliases/);
+  });
+});
+
+describe("embedding transport", () => {
+  const originalTimeout = process.env.WORKLAB_EMBEDDING_TIMEOUT_MS;
+  const originalQueryTimeout = process.env.WORKLAB_EMBEDDING_QUERY_TIMEOUT_MS;
+
+  afterEach(() => {
+    if (originalTimeout === undefined) delete process.env.WORKLAB_EMBEDDING_TIMEOUT_MS;
+    else process.env.WORKLAB_EMBEDDING_TIMEOUT_MS = originalTimeout;
+    if (originalQueryTimeout === undefined) delete process.env.WORKLAB_EMBEDDING_QUERY_TIMEOUT_MS;
+    else process.env.WORKLAB_EMBEDDING_QUERY_TIMEOUT_MS = originalQueryTimeout;
+  });
+
+  it("gives local providers a cold-start budget and keeps queries bounded", () => {
+    expect(resolveEmbeddingTimeoutMs({
+      parsed: { kind: "provider" },
+      provider: { base_url: "http://localhost:1234" },
+      purpose: "index",
+    })).toBe(60_000);
+    expect(resolveEmbeddingTimeoutMs({
+      parsed: { kind: "provider" },
+      provider: { base_url: "https://embeddings.example.com" },
+      purpose: "index",
+    })).toBe(15_000);
+    expect(resolveEmbeddingTimeoutMs({
+      parsed: { kind: "ollama" },
+      purpose: "query",
+    })).toBe(10_000);
+
+    process.env.WORKLAB_EMBEDDING_TIMEOUT_MS = "70000";
+    process.env.WORKLAB_EMBEDDING_QUERY_TIMEOUT_MS = "12000";
+    expect(resolveEmbeddingTimeoutMs({
+      parsed: { kind: "ollama" },
+      purpose: "test",
+    })).toBe(70_000);
+    expect(resolveEmbeddingTimeoutMs({
+      parsed: { kind: "ollama" },
+      purpose: "query",
+    })).toBe(12_000);
+  });
+
+  it("retries one transport failure but not an HTTP error", async () => {
+    const fetchImpl = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error("cold start"), { name: "TimeoutError" }))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ embeddings: [[1, 2]] }),
+      });
+    const retried = await generateEmbedding({
+      modelRef: "ollama:nomic-embed-text",
+      text: "hello",
+      fetchImpl,
+      timeoutMs: 10,
+    });
+    expect([...retried.vector]).toEqual([1, 2]);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+
+    fetchImpl.mockReset();
+    fetchImpl.mockResolvedValue({ ok: false, status: 404 });
+    const failed = await generateEmbedding({
+      modelRef: "ollama:missing",
+      text: "hello",
+      fetchImpl,
+      timeoutMs: 10,
+    });
+    expect(failed.error).toContain("returned 404");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("turns repeated timeouts into an actionable target-specific error", async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(
+      Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" }),
+    );
+    const result = await generateEmbedding({
+      modelRef: "ollama:nomic-embed-text",
+      text: "hello",
+      fetchImpl,
+      timeoutMs: 12_345,
+    });
+    expect(result.error).toBe(
+      "Ollama (http://localhost:11434/api/embed) did not respond within 12345ms — the model may still be loading",
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -207,5 +295,53 @@ describe("embedding index", () => {
     });
     expect(results[0]).toMatchObject({ agent: "bob", title: "Memory: bob" });
     expect(getIndexStatus(db).vectorized).toBe(2);
+  });
+
+  it("keeps vectorizing after one failure and disables after three consecutive failures", async () => {
+    const first = fixture();
+    first.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")
+      .run("default_embedding_model", JSON.stringify("ollama:nomic-embed-text"));
+    kbCreate({
+      dataDir: first.dataDir,
+      slug: "retryable-index",
+      title: "Retryable index",
+      body: "# One\nfirst\n# Two\nsecond\n# Three\nthird\n# Four\nfourth",
+      author: "test",
+    });
+    const intermittentFetch = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 503 })
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({ embeddings: [[1, 0]] }),
+      });
+
+    const recovered = await indexAllSources({
+      db: first.db,
+      dataDir: first.dataDir,
+      fetchImpl: intermittentFetch,
+    });
+    expect(recovered).not.toHaveProperty("vector_disabled_reason");
+    expect(first.db.prepare("SELECT COUNT(*) AS count FROM embeddings WHERE vector_present = 1").get().count).toBe(3);
+    expect(first.db.prepare("SELECT COUNT(*) AS count FROM embeddings WHERE indexing_error IS NOT NULL").get().count).toBe(1);
+
+    const second = fixture();
+    second.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")
+      .run("default_embedding_model", JSON.stringify("ollama:nomic-embed-text"));
+    kbCreate({
+      dataDir: second.dataDir,
+      slug: "broken-index",
+      title: "Broken index",
+      body: "# One\nfirst\n# Two\nsecond\n# Three\nthird\n# Four\nfourth",
+      author: "test",
+    });
+    const failedFetch = vi.fn().mockResolvedValue({ ok: false, status: 503 });
+
+    const disabled = await indexAllSources({
+      db: second.db,
+      dataDir: second.dataDir,
+      fetchImpl: failedFetch,
+    });
+    expect(disabled.vector_disabled_reason).toContain("returned 503");
+    expect(failedFetch).toHaveBeenCalledTimes(3);
   });
 });

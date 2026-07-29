@@ -532,6 +532,7 @@ export {
   isEmbeddingBackendReady,
   parseEmbeddingReference,
   removeSource,
+  resolveEmbeddingTimeoutMs,
   scanSources,
   search,
   testEmbeddingBackend,

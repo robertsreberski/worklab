@@ -9,6 +9,7 @@ import { getSettingValue } from "./db/queries/settings.js";
 
 const MAX_CHUNK_CHARS = 1800;
 const MAX_EMBED_CHARS = 8000;
+const MAX_CONSECUTIVE_VECTOR_FAILURES = 3;
 const TIER_ALIASES = new Set(["haiku", "sonnet", "opus"]);
 export const DEFAULT_EMBEDDING_MODEL = "";
 
@@ -81,6 +82,23 @@ function authHeaders(apiKey) {
   return apiKey ? { authorization: `Bearer ${apiKey}` } : {};
 }
 
+function parseNonNegativeInt(value, fallback, name) {
+  if (value == null || value === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative integer, got ${JSON.stringify(value)}`);
+  }
+  return parsed;
+}
+
+export function resolveEmbeddingTimeoutMs({ parsed, provider, purpose = "index" }) {
+  const query = purpose === "query";
+  const local = parsed.kind === "ollama" || (provider && isPrivateBaseUrl(provider.base_url));
+  const name = query ? "WORKLAB_EMBEDDING_QUERY_TIMEOUT_MS" : "WORKLAB_EMBEDDING_TIMEOUT_MS";
+  const fallback = query ? 10_000 : (local ? 60_000 : 15_000);
+  return parseNonNegativeInt(process.env[name], fallback, name);
+}
+
 async function postJson(url, body, { headers = {}, fetchImpl = fetch, timeoutMs = 1500 } = {}) {
   const signal = AbortSignal.timeout ? AbortSignal.timeout(timeoutMs) : undefined;
   const resp = await fetchImpl(url, {
@@ -101,42 +119,67 @@ function firstEmbedding(data) {
   return new Float32Array(vector.map(Number));
 }
 
-export async function generateEmbedding({ db, dataDir, modelRef, text, fetchImpl = fetch }) {
+function isRetryableTransportError(err) {
+  return err?.name === "AbortError"
+    || err?.name === "TimeoutError"
+    || err?.code === "ECONNRESET"
+    || /fetch failed/i.test(err?.message || "");
+}
+
+function isTimeoutError(err) {
+  return err?.name === "AbortError" || err?.name === "TimeoutError" || /timed out|timeout/i.test(err?.message || "");
+}
+
+export async function generateEmbedding({
+  db,
+  dataDir,
+  modelRef,
+  text,
+  fetchImpl = fetch,
+  purpose = "index",
+  timeoutMs,
+}) {
   const parsed = parseEmbeddingReference(modelRef);
   const input = String(text || "").slice(0, MAX_EMBED_CHARS);
   if (!input.trim()) return { vector: null, error: "empty input" };
 
+  let provider = null;
+  let label;
+  let url;
+  let headers = {};
   try {
     if (parsed.kind === "ollama") {
-      const data = await postJson(
-        `${process.env.WORKLAB_OLLAMA_BASE_URL || "http://localhost:11434"}/api/embed`,
-        { model: parsed.model, input },
-        { fetchImpl },
-      );
-      return { vector: firstEmbedding(data), error: null };
-    }
-    if (parsed.kind === "openai") {
+      label = "Ollama";
+      url = `${process.env.WORKLAB_OLLAMA_BASE_URL || "http://localhost:11434"}/api/embed`;
+    } else if (parsed.kind === "openai") {
       if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY not set");
-      const data = await postJson(
-        "https://api.openai.com/v1/embeddings",
-        { model: parsed.model, input },
-        { fetchImpl, headers: authHeaders(process.env.OPENAI_API_KEY), timeoutMs: 5000 },
-      );
-      return { vector: firstEmbedding(data), error: null };
+      label = "OpenAI";
+      url = "https://api.openai.com/v1/embeddings";
+      headers = authHeaders(process.env.OPENAI_API_KEY);
+    } else {
+      provider = getProvider({ db, dataDir, id: parsed.providerId, includeKey: true });
+      if (!provider) throw new Error(`provider not found: ${parsed.providerId}`);
+      if (!provider.enabled) throw new Error(`provider disabled: ${parsed.providerId}`);
+      label = provider.name || parsed.providerId;
+      url = provider.provider_type === "ollama"
+        ? `${rootUrl(provider.base_url)}/api/embed`
+        : `${v1Url(provider.base_url)}/embeddings`;
+      headers = authHeaders(provider.api_key);
     }
 
-    const provider = getProvider({ db, dataDir, id: parsed.providerId, includeKey: true });
-    if (!provider) throw new Error(`provider not found: ${parsed.providerId}`);
-    if (!provider.enabled) throw new Error(`provider disabled: ${parsed.providerId}`);
-    const url = provider.provider_type === "ollama"
-      ? `${rootUrl(provider.base_url)}/api/embed`
-      : `${v1Url(provider.base_url)}/embeddings`;
-    const data = await postJson(
-      url,
-      { model: parsed.model, input },
-      { fetchImpl, headers: authHeaders(provider.api_key), timeoutMs: 5000 },
-    );
-    return { vector: firstEmbedding(data), error: null };
+    const budget = timeoutMs ?? resolveEmbeddingTimeoutMs({ parsed, provider, purpose });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const data = await postJson(url, { model: parsed.model, input }, { fetchImpl, headers, timeoutMs: budget });
+        return { vector: firstEmbedding(data), error: null };
+      } catch (err) {
+        if (attempt === 0 && isRetryableTransportError(err)) continue;
+        if (isTimeoutError(err)) {
+          throw new Error(`${label} (${url}) did not respond within ${budget}ms — the model may still be loading`);
+        }
+        throw err;
+      }
+    }
   } catch (err) {
     return { vector: null, error: err.message || String(err) };
   }
@@ -303,11 +346,19 @@ function upsertChunk(db, chunk, { vector, model, error }) {
   return id;
 }
 
-export async function indexSource({ db, dataDir, source, modelRef = getEmbeddingModel(db), fetchImpl = fetch, allowVector = true }) {
+export async function indexSource({
+  db,
+  dataDir,
+  source,
+  modelRef = getEmbeddingModel(db),
+  fetchImpl = fetch,
+  allowVector = true,
+  vectorState = { consecutiveFailures: 0, disabledReason: null },
+}) {
   const chunks = sourceToChunks(source);
   const keepRefs = new Set(chunks.map((chunk) => chunk.source_ref));
   const out = [];
-  let vectorEnabled = allowVector;
+  let vectorEnabled = allowVector && vectorState.consecutiveFailures < MAX_CONSECUTIVE_VECTOR_FAILURES;
   for (const chunk of chunks) {
     let vector = null;
     let error = null;
@@ -318,10 +369,25 @@ export async function indexSource({ db, dataDir, source, modelRef = getEmbedding
       continue;
     }
     if (vectorEnabled) {
-      const embedded = await generateEmbedding({ db, dataDir, modelRef, text: chunk.chunk_text, fetchImpl });
+      const embedded = await generateEmbedding({
+        db,
+        dataDir,
+        modelRef,
+        text: chunk.chunk_text,
+        fetchImpl,
+        purpose: "index",
+      });
       vector = embedded.vector;
       error = embedded.error;
-      if (error) vectorEnabled = false;
+      if (error) {
+        vectorState.consecutiveFailures += 1;
+        if (vectorState.consecutiveFailures >= MAX_CONSECUTIVE_VECTOR_FAILURES) {
+          vectorState.disabledReason = error;
+          vectorEnabled = false;
+        }
+      } else {
+        vectorState.consecutiveFailures = 0;
+      }
     }
     out.push(upsertChunk(db, chunk, { vector, model: vector ? modelRef : null, error }));
     if (out.length % 25 === 0) await yieldToEventLoop();
@@ -397,14 +463,20 @@ export async function indexAllSources({ db, dataDir, fetchImpl = fetch, shouldSt
   const readiness = isEmbeddingBackendReady({ db, dataDir, modelRef });
   const stats = { sources: 0, chunks: 0, model: modelRef || null, ready: readiness.ready, reason: readiness.reason };
   let allowVector = !!modelRef && readiness.ready;
+  const vectorState = { consecutiveFailures: 0, disabledReason: null };
   for (const source of sources) {
     if (shouldStop()) { stats.aborted = true; break; }
-    const ids = await indexSource({ db, dataDir, source, modelRef: modelRef || null, fetchImpl, allowVector });
-    if (modelRef) {
-      const errored = db.prepare("SELECT COUNT(*) AS count FROM embeddings WHERE kind = ? AND source_ref LIKE ? AND indexing_error IS NOT NULL")
-        .get(source.kind, `${source.source_ref}#%`).count;
-      if (errored > 0) allowVector = false;
-    }
+    const ids = await indexSource({
+      db,
+      dataDir,
+      source,
+      modelRef: modelRef || null,
+      fetchImpl,
+      allowVector,
+      vectorState,
+    });
+    allowVector = allowVector && vectorState.consecutiveFailures < MAX_CONSECUTIVE_VECTOR_FAILURES;
+    if (!allowVector && vectorState.disabledReason) stats.vector_disabled_reason = vectorState.disabledReason;
     stats.sources += 1;
     stats.chunks += ids.length;
     await yieldToEventLoop();
@@ -546,7 +618,14 @@ export async function search({
   // similarity for FTS-candidate chunks rather than every chunk in the DB.
   const ftsIds = [...scores.keys()];
   if (modelRef && ftsIds.length) {
-    const queryEmbedding = await generateEmbedding({ db, dataDir, modelRef, text: query, fetchImpl });
+    const queryEmbedding = await generateEmbedding({
+      db,
+      dataDir,
+      modelRef,
+      text: query,
+      fetchImpl,
+      purpose: "query",
+    });
     if (queryEmbedding.vector) {
       const idList = ftsIds.map(() => "?").join(",");
       const vecRows = db.prepare(`
@@ -599,7 +678,14 @@ export async function testEmbeddingBackend({ db, dataDir, fetchImpl = fetch } = 
   const modelRef = getEmbeddingModel(db);
   if (!modelRef) return { ok: false, model: null, kind: null, error: "embedding model not configured", dimensions: 0 };
   const parsed = parseEmbeddingReference(modelRef);
-  const result = await generateEmbedding({ db, dataDir, modelRef, text: "worklab embedding health check", fetchImpl });
+  const result = await generateEmbedding({
+    db,
+    dataDir,
+    modelRef,
+    text: "worklab embedding health check",
+    fetchImpl,
+    purpose: "test",
+  });
   return {
     ok: !!result.vector,
     model: modelRef,
