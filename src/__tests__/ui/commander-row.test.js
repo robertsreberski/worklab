@@ -94,6 +94,39 @@ describe("commander row live preview", () => {
     ]);
   });
 
+  it("shows a single thinking row for redacted thinking and progress estimates", () => {
+    const preview = commanderLivePreviewEvents([
+      { type: "thinking_progress", estimated_tokens: 50, estimated_tokens_delta: 50 },
+      { type: "thinking_progress", estimated_tokens: 300, estimated_tokens_delta: 250 },
+      { type: "assistant", message: { content: [{ type: "thinking", text: "", redacted: true, estimated_tokens: 300 }] } },
+    ]);
+
+    expect(preview).toEqual([
+      { type: "thinking", text: "Thinking… ~300 tokens", redacted: true, estimated_tokens: 300 },
+    ]);
+  });
+
+  it("labels historical redacted thinking blocks that carry no token estimate", () => {
+    const preview = commanderLivePreviewEvents([
+      { type: "assistant", message: { content: [{ type: "thinking", thinking: "", signature: "sig-1" }] } },
+    ]);
+
+    expect(preview).toEqual([
+      { type: "thinking", text: "Thinking…", thinking: "", signature: "sig-1", redacted: true },
+    ]);
+  });
+
+  it("lets a redacted marker supersede the preceding thinking preview", () => {
+    const preview = commanderLivePreviewEvents([
+      { type: "thinking", text: "Reading the coalescer" },
+      { type: "assistant", message: { content: [{ type: "thinking", text: "", redacted: true, estimated_tokens: 120 }] } },
+    ]);
+
+    expect(preview).toEqual([
+      { type: "thinking", text: "Thinking… ~120 tokens", redacted: true, estimated_tokens: 120 },
+    ]);
+  });
+
   it("coalesces consecutive text fragments", () => {
     const preview = commanderLivePreviewEvents([
       { type: "assistant", message: { content: [{ type: "text", text: "Lo" }] } },
