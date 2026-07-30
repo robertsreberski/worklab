@@ -2464,6 +2464,57 @@ a.badge-token:focus-visible {
 }
 .drawer-head h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; color: var(--text); }
 .drawer-body { padding: var(--sp-5); overflow: auto; overscroll-behavior: contain; flex: 1; }
+.file-preview-drawer .drawer-head h2 {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drawer-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+.drawer-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
+  touch-action: none;
+  background: transparent;
+  z-index: 1;
+}
+.drawer-resize-handle:hover,
+.drawer-resize-handle:active {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.file-preview-view-toggle {
+  display: inline-flex;
+  gap: var(--sp-1);
+}
+.file-preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.file-preview-path {
+  word-break: break-all;
+}
+.file-preview-drawer .file-preview-code .code-block-pre {
+  max-height: none;
+}
+.file-preview-markdown {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
 
 /* §4.12–4.14 EmptyState / LoadingState / ErrorState */
 .empty-state,
@@ -10236,6 +10287,25 @@ button.settings-overview-card:focus-visible,
   color: var(--text);
   background: color-mix(in srgb, var(--status-review) 10%, transparent);
 }
+button.skill-file-tree-row.is-clickable {
+  width: 100%;
+  background: transparent;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+button.skill-file-tree-row.is-clickable:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
+}
+button.skill-file-tree-row.is-clickable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .knowledge-detail-icon,
 .knowledge-detail-icon.pinned {
   color: var(--accent);
@@ -13117,7 +13187,7 @@ button.settings-overview-card:focus-visible,
   top: 0;
   right: 0;
   bottom: 0;
-  width: min(360px, 100%);
+  width: 100%;
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--border);
