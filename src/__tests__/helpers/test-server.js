@@ -32,6 +32,12 @@ export function makeTestServer({ watcher, dataDir, consolidation, automationMana
     acpControls,
     acpOperationManager,
   });
+  const rawAgent = supertest(app);
+  const agent = supertest.agent(app).set({
+    host: "127.0.0.1",
+    origin: "http://127.0.0.1",
+    "sec-fetch-site": "same-origin",
+  });
   return {
     app,
     broker,
@@ -39,6 +45,7 @@ export function makeTestServer({ watcher, dataDir, consolidation, automationMana
     watcher: stubWatcher,
     assistant: serverAssistant,
     acpOperationManager: serverAcpOperationManager,
-    agent: supertest(app),
+    agent,
+    rawAgent,
   };
 }

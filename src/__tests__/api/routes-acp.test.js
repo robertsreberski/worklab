@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readMcpToken } from "../../core/service-token.js";
 import { newAcpInteractionId } from "../../core/ids.js";
 import {
   claimAcpInteractionResponse,
@@ -61,6 +62,57 @@ async function createGeneric(agent, cwd, body = {}) {
 }
 
 describe("ACP API", () => {
+  it("rejects cross-site and unauthenticated process controls before launching anything", async () => {
+    const cwd = workspace();
+    const dataDir = workspace();
+    const probe = vi.fn(async () => ({ status: "ready" }));
+    const { agent, rawAgent, db } = makeTestServer({ dataDir, acpControls: { probe } });
+    const profileBody = {
+      agentName: "cross-site-process",
+      displayName: "Cross-site process",
+      command: "/bin/sh",
+      args: ["-c", "touch should-never-run"],
+      cwd,
+    };
+
+    await rawAgent.post("/api/acp/profiles")
+      .set("origin", "https://evil.example")
+      .set("sec-fetch-site", "cross-site")
+      .send(profileBody)
+      .expect(403);
+    await rawAgent.post("/api/acp/profiles")
+      .set("host", "evil.example")
+      .set("origin", "http://evil.example")
+      .set("sec-fetch-site", "same-origin")
+      .send(profileBody)
+      .expect(403);
+    await rawAgent.post("/api/acp/profiles")
+      .set("host", "worklab.example.ts.net")
+      .set("sec-fetch-site", "same-origin")
+      .send(profileBody)
+      .expect(401);
+    await rawAgent.post("/api/acp/profiles").send(profileBody).expect(401);
+    expect(db.prepare("SELECT COUNT(*) AS count FROM acp_profiles").get().count).toBe(0);
+
+    const created = await agent.post("/api/acp/profiles").send({
+      ...profileBody,
+      agentName: "approved-process",
+      displayName: "Approved process",
+    }).expect(201);
+    await rawAgent.post(`/api/acp/profiles/${created.body.profile.id}/probe`)
+      .set("origin", "https://evil.example")
+      .set("sec-fetch-site", "cross-site")
+      .send({})
+      .expect(403);
+    expect(probe).not.toHaveBeenCalled();
+
+    await rawAgent.post(`/api/acp/profiles/${created.body.profile.id}/probe`)
+      .set("authorization", `Bearer ${readMcpToken(dataDir)}`)
+      .send({})
+      .expect(202);
+    await vi.waitFor(() => expect(probe).toHaveBeenCalledTimes(1));
+  });
+
   it("returns canonical mono discovery and imports a sourceId-only profile", async () => {
     const cwd = workspace();
     const descriptor = monoDescriptor(cwd, { ignoredToken: "do-not-expose" });

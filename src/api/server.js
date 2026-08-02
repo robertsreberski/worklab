@@ -27,6 +27,7 @@ import { registerAssistantRoutes } from "./routes/assistant.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
 import { registerUpdateRoutes } from "./routes/update.js";
 import { registerAcpRoutes } from "./routes/acp.js";
+import { createAcpRequestBoundary } from "./acp-request-boundary.js";
 import { registerAdminMcpRoutes } from "../mcp/admin/server.js";
 import { createAcpOperationManager } from "../coordinator/acp-operation-manager.js";
 
@@ -114,6 +115,12 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
     logger,
   });
 
+  // Register this before permissive legacy CORS so hostile preflights are
+  // rejected before they receive cross-origin authorization.
+  app.use("/api/acp", createAcpRequestBoundary({
+    dataDir: dataDir || config?.dataDir,
+    config,
+  }));
   app.use(cors());
   registerAutomationWebhookRoutes(app, { db, broker, automationManager });
   app.use(express.json({ limit: "10mb" }));
