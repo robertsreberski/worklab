@@ -403,6 +403,39 @@ describe("openDb + runMigrations", () => {
     expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'projects'").get()).toBeUndefined();
   });
 
+  it.each([
+    "not-a-version",
+    "1.5",
+    "-1",
+    "9007199254740992",
+  ])("refuses invalid schema metadata %j before performing migrations", (storedVersion) => {
+    const db = openDb(":memory:");
+    db.exec(`
+      CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE future_only (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+      INSERT INTO future_only (id, payload) VALUES ('sentinel', 'keep');
+    `);
+    db.prepare("INSERT INTO schema_meta (key, value) VALUES ('version', ?)").run(storedVersion);
+    const before = schemaSnapshot(db);
+
+    let error;
+    try {
+      runMigrations(db);
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toMatchObject({
+      code: "schema_version_invalid",
+      supportedSchemaVersion: SCHEMA_VERSION,
+    });
+    expect(error.message).toMatch(/schema metadata is invalid/i);
+    expect(schemaSnapshot(db)).toEqual(before);
+    expect(db.prepare("SELECT value FROM schema_meta WHERE key = 'version'").get().value)
+      .toBe(storedVersion);
+    expect(db.prepare("SELECT payload FROM future_only WHERE id = 'sentinel'").get().payload).toBe("keep");
+  });
+
   it("migrates assistant run diagnostics columns", () => {
     const db = openDb(":memory:");
     db.exec(`

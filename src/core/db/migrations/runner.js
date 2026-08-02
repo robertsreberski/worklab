@@ -55,10 +55,20 @@ function tableExists(db, table) {
 
 function assertSupportedSchemaVersion(db) {
   if (!tableExists(db, "schema_meta")) return;
-  const stored = db.prepare("SELECT value FROM schema_meta WHERE key = 'version'").get()?.value;
-  if (stored == null || stored === "") return;
+  const row = db.prepare("SELECT value FROM schema_meta WHERE key = 'version'").get();
+  if (!row) return;
+  const stored = String(row.value);
   const version = Number(stored);
-  if (!Number.isSafeInteger(version) || version <= SCHEMA_VERSION) return;
+  if (!/^(?:0|[1-9]\d*)$/u.test(stored) || !Number.isSafeInteger(version)) {
+    const error = new Error(
+      "Worklab database schema metadata is invalid. "
+        + "Upgrade Worklab or restore a backup created by a compatible version; the database was not changed.",
+    );
+    error.code = "schema_version_invalid";
+    error.supportedSchemaVersion = SCHEMA_VERSION;
+    throw error;
+  }
+  if (version <= SCHEMA_VERSION) return;
 
   const error = new Error(
     `Worklab database schema v${version} is newer than this binary supports (v${SCHEMA_VERSION}). `
