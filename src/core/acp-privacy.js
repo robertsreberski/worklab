@@ -8,12 +8,7 @@ const MAX_ACP_RAW_SESSION_ID_CHARS = 16 * 1024;
 const ACP_SESSION_ID_KEYS = new Set(["sessionId", "session_id"]);
 const ACP_PROVIDER_SESSION_ID_KEYS = new Set(["providerSessionId", "provider_session_id"]);
 
-/**
- * Accept only the canonical opaque ID emitted for the expected ACP profile.
- * normalizeAcpProviderSessionId enforces the public envelope; the base64url
- * round trip rejects decoder-tolerated aliases and empty payloads.
- */
-export function validateAcpProviderSessionId(value, profileId) {
+function decodedAcpProviderSessionId(value, profileId) {
   if (typeof profileId !== "string" || profileId.length === 0) return null;
   let normalized;
   try {
@@ -24,12 +19,23 @@ export function validateAcpProviderSessionId(value, profileId) {
   const prefix = `acp:v1:${profileId}:`;
   const encoded = normalized.slice(prefix.length);
   try {
-    const decoded = Buffer.from(encoded, "base64url");
-    if (decoded.length === 0 || decoded.toString("base64url") !== encoded) return null;
+    const bytes = Buffer.from(encoded, "base64url");
+    if (bytes.length === 0 || bytes.length > 4096 || bytes.toString("base64url") !== encoded) return null;
+    const sessionId = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    if (!sessionId || sessionId.trim() !== sessionId || sessionId.includes("\0")) return null;
+    return { providerSessionId: normalized, sessionId };
   } catch {
     return null;
   }
-  return normalized;
+}
+
+/**
+ * Accept only the canonical opaque ID emitted for the expected ACP profile.
+ * normalizeAcpProviderSessionId enforces the public envelope; the base64url
+ * round trip rejects decoder-tolerated aliases and empty payloads.
+ */
+export function validateAcpProviderSessionId(value, profileId) {
+  return decodedAcpProviderSessionId(value, profileId)?.providerSessionId || null;
 }
 
 /**
@@ -81,8 +87,10 @@ export function createAcpEventPrivacyBoundary({ profileId, failureValue = null }
         continue;
       }
       if (ACP_PROVIDER_SESSION_ID_KEYS.has(key)) {
-        if (!validateAcpProviderSessionId(entry, profileId)
-          && !collectRawSessionId(entry, collected)) return false;
+        const decoded = decodedAcpProviderSessionId(entry, profileId);
+        if (decoded) {
+          if (!collectRawSessionId(decoded.sessionId, collected)) return false;
+        } else if (!collectRawSessionId(entry, collected)) return false;
       }
       if (!scan(entry, state, collected, depth + 1)) return false;
     }

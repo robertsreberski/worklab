@@ -57,6 +57,27 @@ describe("ACP event privacy boundary", () => {
     expect(JSON.stringify([first, second])).not.toMatch(/RAW_REMOTE_SESSION|RAW_PROVIDER_SESSION/u);
   });
 
+  it("decodes a valid opaque handle only to redact copied raw session values", () => {
+    const rawSessionId = "RAW_FROM_OPAQUE_HANDLE";
+    const providerSessionId = opaqueSessionId(rawSessionId);
+    const boundary = createAcpEventPrivacyBoundary({ profileId: PROFILE_ID });
+
+    const sanitized = boundary.sanitizeEvent({
+      type: "final",
+      text: `completed ${rawSessionId}`,
+      diagnostics: { message: rawSessionId },
+      provider_session_id: providerSessionId,
+    });
+
+    expect(sanitized).toEqual({
+      type: "final",
+      text: "completed [redacted]",
+      diagnostics: { message: "[redacted]" },
+      provider_session_id: providerSessionId,
+    });
+    expect(JSON.stringify(sanitized)).not.toContain(rawSessionId);
+  });
+
   it("stays failed closed after an event exceeds the depth budget", () => {
     const failure = { type: "privacy_failure" };
     const boundary = createAcpEventPrivacyBoundary({
