@@ -146,6 +146,20 @@ sanitized discovery descriptor and launches the exact bridge argv without a
 shell. Set `WORKLAB_MONO_AGENT_BIN` when the `mono-agent` executable is not on
 the Worklab service `PATH`.
 
+Discovery lists compatible running sources and leaves older, incompatible
+sources visible as **Upgrade required**. A mono-agent process advertises its
+bridge contract when that source starts, so a legacy source must be upgraded
+and restarted before Worklab can import it. Worklab does not restart or alter
+the discovered source. Import is also blocked for stopped or unhealthy
+sources.
+
+A generic profile stores an absolute executable path, argv, working directory,
+environment-variable names, ownership choices, session resume strategy, and a
+bounded probe timeout. It never stores environment values and launches the
+executable directly rather than through a shell. Obvious secret-bearing argv
+flags are rejected, but positional arguments are not a credential store;
+provide credentials through named environment variables instead.
+
 The ACP client lives in the shared `@mono-agent/agent-runtime` package. Worklab
 owns profile persistence, task scheduling, and the browser interaction inbox.
 Permission choices, non-secret elicitation forms, and browser continuation URLs
@@ -157,13 +171,45 @@ Agent-owned ACP turns receive task-owned context and file attachments as
 `resource_link` blocks. Worklab instructions, memory, knowledge, skills, MCP
 servers, tools, repository instructions, and delegation policy are withheld so
 the external agent remains authoritative for its own runtime. The current
-Worklab client does not provide ACP filesystem, terminal, or client-MCP
-services.
+Worklab client does not provide ACP filesystem, terminal, network, or
+client-MCP services, and a generic profile that requests them is rejected.
+This is an ACP client-service policy, not an operating-system sandbox: the
+external process still has the filesystem, network, and process access granted
+to the user account that runs Worklab.
 
 The mono-agent integration is an ACP v1 core-session profile: initialization,
 sessions, prompts, typed updates, cancellation, text, resource links, and
 elicitation are supported. Client-supplied MCP servers remain unsupported, so
 the bridge is not described as a generally conformant ACP Agent.
+
+Probe, authentication, logout, session-list, and session-delete controls run as
+asynchronous operations, with at most one active operation per profile. The
+profile timeout bounds startup and active operation work; it pauses while the
+operation is waiting for a browser interaction and is rearmed when work
+resumes. Cancellation aborts the operation and uses a bounded cleanup wait. On
+startup, Worklab marks queued, running, or interaction-waiting operations left
+by the previous process as failed with `coordinator_restarted` and expires
+their unresolved interactions instead of silently resuming them.
+
+Provider session identifiers are opaque, profile-bound handles. Worklab may
+persist and return the opaque handle for resume, listing, and deletion, but raw
+remote session IDs are removed from operation results, task-run events, logs,
+and backups. A handle from one profile cannot be used against another.
+
+### Browser And Network Boundary
+
+State-changing `/api` requests, plus the process-starting mono-agent discovery
+read, must come from the Worklab browser UI with a trusted `Origin`/`Referer` or
+use the local service bearer token. If a reverse proxy or split UI needs an
+additional browser origin, set `WORKLAB_ACP_ALLOWED_ORIGINS` to a comma-separated
+list of exact HTTP(S) origins, including scheme and port when non-default. Paths
+and wildcard origins are not supported.
+
+This check is CSRF and browser-source protection, not network authentication or
+a user login. It does not make a non-loopback Worklab listener safe for public
+exposure, and read-only API routes are not made private by the absence of CORS
+headers. Keep the service on loopback or enforce the intended users and devices
+at a trusted reverse proxy or tailnet boundary.
 
 ## Daily Use
 
@@ -240,6 +286,7 @@ WORKLAB_DATA_DIR=/tmp/worklab-dev
 WORKLAB_WORKSPACE=/tmp/worklab-workspace
 WORKLAB_LOG_LEVEL=info
 WORKLAB_MONO_AGENT_BIN=/absolute/path/to/mono-agent
+WORKLAB_ACP_ALLOWED_ORIGINS=https://worklab.example.ts.net
 ```
 
 CLI flags are passed after the command:
@@ -284,6 +331,13 @@ tailscale serve status
 
 Use the MagicDNS URL shown by `tailscale serve status`. Raw Tailscale IP
 requests can return a Serve 404 because Serve routes by hostname.
+
+Tailscale Serve changes how Worklab is reached; it does not add a Worklab user
+authentication layer. A browser that can open the same-origin MagicDNS UI can
+also submit Worklab mutations, including starting tool-capable local or ACP
+agents. Restrict access with Tailscale ACLs/grants and device/user controls, and
+do not treat `WORKLAB_ACP_ALLOWED_ORIGINS` as a substitute for that access
+policy.
 
 Disable the proxy with:
 

@@ -83,6 +83,22 @@ id or let one profile delete another profile's session. Cancellation is
 semantic: task aborts reach `session/cancel`, pending interactions settle
 fail-closed, and late protocol updates remain bounded and typed.
 
+Profile controls are asynchronous operations. One operation may be active for
+a profile at a time. The profile's bounded timeout applies while a control is
+starting or running, pauses for an explicit user interaction, and is rearmed
+when the operation resumes. Cancellation aborts the runtime request and gives
+its handler a bounded cleanup interval. During coordinator startup, queued,
+running, and interaction-waiting operations left by the previous process are
+atomically failed as `coordinator_restarted`; unresolved interactions for
+terminal operations are expired so profiles do not remain permanently busy.
+
+Generic ACP profiles launch a canonical absolute executable directly, without
+a shell, and project only the values of explicitly named host environment
+variables. Their persisted client capability policy must keep filesystem,
+terminal, network, and client-MCP services disabled. Those flags describe
+services Worklab will provide over ACP; they do not sandbox the child process
+from resources available to the Worklab OS user.
+
 ## Team Lead Cycles
 
 Team leads run as `task_runs.kind = 'lead_cycle'` against synthetic team-root
@@ -103,6 +119,14 @@ UI layers should consume core through public seams or documented query helpers.
 
 SQL belongs in `src/core/db/queries/` or schema/migration files. API routes must
 not use `db.prepare()` directly.
+
+All state-changing `/api` routes and active reads that can start a process use
+the API mutation boundary. Browser calls need an accepted `Origin`/`Referer`;
+non-browser automation needs the local service bearer token.
+`WORKLAB_ACP_ALLOWED_ORIGINS` adds exact HTTP(S) browser origins for trusted
+proxy layouts. This boundary mitigates cross-site request triggering but is not
+network authentication: listener exposure and tailnet membership remain an
+operator-owned trust decision.
 
 ## Audit Checklist
 

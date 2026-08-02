@@ -14,6 +14,19 @@
   services; mono-agent is documented as a core-session profile rather than a
   generally conformant ACP Agent.
 
+- Added bounded ACP operation lifecycles: one active control per profile,
+  cancellable startup/operation deadlines, startup reconciliation for orphaned
+  operations and interactions, and profile-bound opaque session handles that
+  keep raw remote session IDs out of persistence and broadcasts. Legacy
+  running mono-agent sources remain visible but cannot be imported until they
+  are upgraded and restarted with a compatible advertised bridge.
+
+- Added a browser-source boundary for state-changing API requests and the
+  process-starting mono-agent discovery read. Same-origin UI calls, exact
+  `WORKLAB_ACP_ALLOWED_ORIGINS`, or the local service token can authorize the
+  request. This is CSRF protection rather than network authentication; direct
+  listener and tailnet access still require an operator-managed trust boundary.
+
 - Upgraded `@mono-agent/agent-runtime` from 0.4.1 to 0.17.1.
   - Non-empty skill sets now carry an explicit `skillsRoot`, as required by
     the runtime's indexed-skill contract, while `skillDirs` continues to bound
