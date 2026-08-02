@@ -14,10 +14,14 @@ afterEach(() => {
   for (const directory of cleanup.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
-function setup(agentRuntime, { loadAgentRuntime } = {}) {
+function setup(agentRuntime, { loadAgentRuntime, agentOwnedWorkspace = false } = {}) {
   const db = makeTestDb();
   const cwd = mkdtempSync(join(tmpdir(), "worklab-acp-controls-"));
   cleanup.push(cwd);
+  const canonicalWorkspace = agentOwnedWorkspace
+    ? mkdtempSync(join(tmpdir(), "worklab-acp-workspace-"))
+    : null;
+  if (canonicalWorkspace) cleanup.push(canonicalWorkspace);
   const profile = createAcpProfile({
     db,
     id: PROFILE_ID,
@@ -27,6 +31,10 @@ function setup(agentRuntime, { loadAgentRuntime } = {}) {
       command: process.execPath,
       cwd,
       envKeys: [],
+      ...(agentOwnedWorkspace ? {
+        workspaceOwner: "agent",
+        canonicalWorkspace,
+      } : {}),
     },
   });
   const controls = createWorklabAcpControls({
@@ -87,7 +95,7 @@ describe("createWorklabAcpControls", () => {
         signal,
       })).resolves.toMatchObject({
         sessions: [],
-        request: { cwd: profile.cwd, cursor },
+        request: { cursor },
       });
       const opaque = `acp:v1:${PROFILE_ID}:cmVtb3RlLTE`;
       await expect(controls.deleteSession({ profile, providerSessionId: opaque, signal }))
@@ -104,12 +112,32 @@ describe("createWorklabAcpControls", () => {
       );
       expect(runtime.listAcpSessions).toHaveBeenCalledWith(
         PROFILE_ID,
-        { cwd: profile.cwd, cursor },
+        { cursor },
         expect.objectContaining({ resolveAcpProfile: expect.any(Function), signal }),
       );
       expect(runtime.deleteAcpSession).toHaveBeenCalledWith(
         opaque,
         expect.objectContaining({ resolveAcpProfile: expect.any(Function), signal }),
+      );
+    } finally {
+      db.close();
+    }
+  });
+
+  it("filters agent-owned session lists by canonical workspace, not process cwd", async () => {
+    const runtime = {
+      listAcpSessions: vi.fn(async (_id, request) => ({ sessions: [], request })),
+    };
+    const { db, profile, controls } = setup(runtime, { agentOwnedWorkspace: true });
+    try {
+      expect(profile.canonicalWorkspace).not.toBe(profile.cwd);
+      await expect(controls.listSessions({ profile })).resolves.toMatchObject({
+        request: { cwd: profile.canonicalWorkspace },
+      });
+      expect(runtime.listAcpSessions).toHaveBeenCalledWith(
+        PROFILE_ID,
+        { cwd: profile.canonicalWorkspace },
+        expect.objectContaining({ resolveAcpProfile: expect.any(Function) }),
       );
     } finally {
       db.close();

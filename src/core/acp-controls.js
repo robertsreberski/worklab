@@ -173,10 +173,13 @@ export function createWorklabAcpControls({
       throwIfAborted(signal);
       const boundProfile = await resolveAcpProfile(id);
       throwIfAborted(signal);
+      const sessionCwd = boundProfile.workspaceOwner === "agent"
+        ? boundProfile.workspacePath
+        : null;
       return requiredRuntimeMethod(client, "listAcpSessions")(
         id,
         {
-          ...(boundProfile.cwd ? { cwd: boundProfile.cwd } : {}),
+          ...(sessionCwd ? { cwd: sessionCwd } : {}),
           ...(sessionCursor ? { cursor: sessionCursor } : {}),
         },
         runtimeOptions({ signal, onInteraction }),
