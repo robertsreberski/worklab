@@ -266,6 +266,55 @@ describe("ui API client", () => {
       controller.signal,
     ]);
   });
+
+  it("uses named ACP profile, operation, and mono discovery helpers", async () => {
+    const controller = new AbortController();
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    }));
+
+    await api.listAcpProfiles({ signal: controller.signal });
+    await api.getAcpProfile("profile/1");
+    await api.createAcpProfile({ driver: "generic", command: "/usr/local/bin/agent" });
+    await api.patchAcpProfile("profile/1", { cwd: "/workspace" });
+    await api.probeAcpProfile("profile/1");
+    await api.getAcpOperation("operation/1");
+    await api.discoverMonoAgents({ signal: controller.signal });
+
+    expect(global.fetch.mock.calls.map(([url]) => url)).toEqual([
+      "/api/acp/profiles",
+      "/api/acp/profiles/profile%2F1",
+      "/api/acp/profiles",
+      "/api/acp/profiles/profile%2F1",
+      "/api/acp/profiles/profile%2F1/probe",
+      "/api/acp/operations/operation%2F1",
+      "/api/acp/discovery/mono",
+    ]);
+    expect(global.fetch.mock.calls.map(([, options]) => options.method)).toEqual([
+      "GET", "GET", "POST", "PATCH", "POST", "GET", "GET",
+    ]);
+    expect(global.fetch.mock.calls[0][1].signal).toBe(controller.signal);
+    expect(global.fetch.mock.calls[6][1].signal).toBe(controller.signal);
+  });
+
+  it("imports mono-agent discovery by source id only", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 201,
+      json: async () => ({ profile: { id: "profile-1" } }),
+    }));
+
+    await api.importMonoAgent("mono-source-1");
+
+    expect(global.fetch).toHaveBeenCalledWith("/api/acp/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceId: "mono-source-1" }),
+      signal: undefined,
+    });
+  });
 });
 
 describe("ui API call sites", () => {
