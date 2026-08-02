@@ -92,7 +92,11 @@ describe("backup command", () => {
         },
       },
     });
-    const operation = manager.start({ profileId: profile.id, kind: "authenticate" });
+    const operation = manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "backup-login",
+    });
     let interaction;
     await vi.waitFor(() => {
       interaction = sourceDb.prepare(`

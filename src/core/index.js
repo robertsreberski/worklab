@@ -154,6 +154,7 @@ export {
 
 export {
   acpInteractionDisposition,
+  normalizeAcpAuthMethodId,
   rowToAcpInteraction,
   rowToAcpOperation,
   sanitizeAcpInteractionSchema,

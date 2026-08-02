@@ -193,7 +193,17 @@ describe("ACP API", () => {
     const cwd = workspace();
     let deletedSession;
     const controls = {
-      probe: async () => ({ ok: true, status: "ready", apiKey: "probe-secret" }),
+      probe: async () => ({
+        ok: true,
+        status: "ready",
+        apiKey: "probe-secret",
+        authMethods: [{
+          id: "browser-login",
+          name: "Browser login",
+          type: "agent",
+          accessToken: "method-secret",
+        }],
+      }),
       deleteSession: async ({ remoteSessionId }) => {
         deletedSession = remoteSessionId;
         return { deleted: true, sessionId: remoteSessionId, token: "delete-secret" };
@@ -208,8 +218,12 @@ describe("ACP API", () => {
       expect(acpOperationManager.get(started.body.operation.id)?.state).toBe("succeeded");
     });
     const fetched = await agent.get(`/api/acp/operations/${started.body.operation.id}`).expect(200);
-    expect(fetched.body.operation.result).toEqual({ ok: true, status: "ready" });
-    expect(JSON.stringify(fetched.body)).not.toContain("probe-secret");
+    expect(fetched.body.operation.result).toEqual({
+      ok: true,
+      status: "ready",
+      authMethods: [{ id: "browser-login", name: "Browser login", type: "agent" }],
+    });
+    expect(JSON.stringify(fetched.body)).not.toMatch(/probe-secret|method-secret/u);
 
     const deleted = await agent.delete(`/api/acp/profiles/${profile.id}/sessions/session%2Fone`).expect(202);
     await vi.waitFor(() => {
@@ -224,8 +238,10 @@ describe("ACP API", () => {
   it("responds to operation interactions without persisting or echoing form answers", async () => {
     const cwd = workspace();
     let delivered;
+    let selectedMethod;
     const controls = {
-      authenticate: async ({ onInteraction }) => {
+      authenticate: async ({ authMethodId, onInteraction }) => {
+        selectedMethod = authMethodId;
         delivered = await onInteraction({
           requestId: "login-form",
           kind: "form",
@@ -239,8 +255,10 @@ describe("ACP API", () => {
     };
     const { agent, db, acpOperationManager } = makeTestServer({ acpControls: controls });
     const profile = (await createGeneric(agent, cwd)).body.profile;
-    const operation = (await agent.post(`/api/acp/profiles/${profile.id}/authenticate`).expect(202))
-      .body.operation;
+    const operation = (await agent.post(`/api/acp/profiles/${profile.id}/authenticate`)
+      .send({ authMethodId: "browser-login" })
+      .expect(202)).body.operation;
+    expect(operation.request).toEqual({ authMethodId: "browser-login" });
     let interaction;
     await vi.waitFor(async () => {
       const result = await agent.get(`/api/acp/operations/${operation.id}/interactions`).expect(200);
@@ -258,11 +276,34 @@ describe("ACP API", () => {
       expect(acpOperationManager.get(operation.id)?.state).toBe("succeeded");
     });
     expect(delivered.values.password).toBe("actual-form-secret");
+    expect(selectedMethod).toBe("browser-login");
     expect(JSON.stringify({
       profiles: db.prepare("SELECT * FROM acp_profiles").all(),
       operations: db.prepare("SELECT * FROM acp_operations").all(),
       interactions: db.prepare("SELECT * FROM acp_interactions").all(),
     })).not.toMatch(/actual-form-secret|schema-secret/u);
+  });
+
+  it("requires exactly one bounded authMethodId for authentication", async () => {
+    const cwd = workspace();
+    const authenticate = vi.fn(async () => ({ authenticated: true }));
+    const { agent } = makeTestServer({ acpControls: { authenticate } });
+    const profile = (await createGeneric(agent, cwd)).body.profile;
+
+    await agent.post(`/api/acp/profiles/${profile.id}/authenticate`)
+      .send({})
+      .expect(400, {
+        error: { code: "validation", message: "authenticate accepts exactly one field: authMethodId" },
+      });
+    await agent.post(`/api/acp/profiles/${profile.id}/authenticate`)
+      .send({ authMethodId: "browser-login", chooseFirst: true })
+      .expect(400);
+    await agent.post(`/api/acp/profiles/${profile.id}/authenticate`)
+      .send({ authMethodId: "x".repeat(501) })
+      .expect(400, {
+        error: { code: "validation", message: "authMethodId is invalid" },
+      });
+    expect(authenticate).not.toHaveBeenCalled();
   });
 
   it("injects task-run interaction responses through the watcher without route-level value persistence", async () => {
