@@ -60,7 +60,12 @@ describe("createWorklabAcpControls", () => {
       }),
       authenticateAcpProfile: vi.fn(async (id, methodId) => ({ profileId: id, methodId, authenticated: true })),
       logoutAcpProfile: vi.fn(async (id) => ({ profileId: id, loggedOut: true })),
-      listAcpSessions: vi.fn(async (id) => ({ profileId: id, sessions: [] })),
+      listAcpSessions: vi.fn(async (id, request) => ({
+        profileId: id,
+        sessions: [],
+        request,
+        nextCursor: null,
+      })),
       decodeAcpProviderSessionId: vi.fn(() => ({ profileId: PROFILE_ID, sessionId: "remote-1" })),
       deleteAcpSession: vi.fn(async (id) => ({ profileId: PROFILE_ID, providerSessionId: id, deleted: true })),
     };
@@ -75,8 +80,15 @@ describe("createWorklabAcpControls", () => {
         .resolves.toMatchObject({ authenticated: true, methodId: "browser" });
       await expect(controls.logout({ profile, signal }))
         .resolves.toMatchObject({ loggedOut: true, status: "logged_out" });
-      await expect(controls.listSessions({ profile, signal }))
-        .resolves.toMatchObject({ sessions: [] });
+      const cursor = "opaque/page-2?state=keep+exact==";
+      await expect(controls.listSessions({
+        profile: { ...profile, cwd: "/client/must-not-control-cwd" },
+        cursor,
+        signal,
+      })).resolves.toMatchObject({
+        sessions: [],
+        request: { cwd: profile.cwd, cursor },
+      });
       const opaque = `acp:v1:${PROFILE_ID}:cmVtb3RlLTE`;
       await expect(controls.deleteSession({ profile, providerSessionId: opaque, signal }))
         .resolves.toMatchObject({ deleted: true, providerSessionId: opaque });
@@ -92,13 +104,27 @@ describe("createWorklabAcpControls", () => {
       );
       expect(runtime.listAcpSessions).toHaveBeenCalledWith(
         PROFILE_ID,
-        {},
+        { cwd: profile.cwd, cursor },
         expect.objectContaining({ resolveAcpProfile: expect.any(Function), signal }),
       );
       expect(runtime.deleteAcpSession).toHaveBeenCalledWith(
         opaque,
         expect.objectContaining({ resolveAcpProfile: expect.any(Function), signal }),
       );
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rejects malformed page cursors before invoking the ACP runtime", async () => {
+    const runtime = { listAcpSessions: vi.fn() };
+    const { db, profile, controls } = setup(runtime);
+    try {
+      await expect(controls.listSessions({ profile, cursor: " page-2" }))
+        .rejects.toMatchObject({ code: "validation", safeMessage: "cursor is invalid" });
+      await expect(controls.listSessions({ profile, cursor: "x".repeat(2_001) }))
+        .rejects.toMatchObject({ code: "validation", safeMessage: "cursor is invalid" });
+      expect(runtime.listAcpSessions).not.toHaveBeenCalled();
     } finally {
       db.close();
     }

@@ -4,6 +4,7 @@ const MAX_ITEMS = 200;
 const MAX_DEPTH = 8;
 const MAX_AUTH_METHOD_ID_CHARS = 500;
 const MAX_PROVIDER_SESSION_ID_CHARS = 5_600;
+const MAX_SESSION_CURSOR_CHARS = MAX_TEXT_CHARS;
 const PROVIDER_SESSION_ID_RE = /^acp:v1:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([A-Za-z0-9_-]+)$/u;
 const SENSITIVE_KEY_RE = /(?:secret|password|passphrase|token|api[_-]?key|credential|authorization|cookie|answer|form[_-]?values?)/iu;
 const SCHEMA_VALUE_KEYS = new Set([
@@ -179,6 +180,22 @@ export function normalizeAcpProviderSessionId(value, profileId = null) {
   return value;
 }
 
+export function normalizeAcpSessionCursor(value) {
+  if (value == null) return null;
+  if (typeof value !== "string"
+    || value.length === 0
+    || value.trim() !== value
+    || value.length > MAX_SESSION_CURSOR_CHARS
+    || /[\u0000-\u001f\u007f]/u.test(value)) {
+    throw Object.assign(new Error("cursor is invalid"), {
+      code: "validation",
+      status: 400,
+      safeMessage: "cursor is invalid",
+    });
+  }
+  return value;
+}
+
 export function sanitizeAcpOperationResult(kind, value) {
   const source = isPlainObject(value) ? value : {};
   if (kind === "authenticate" || kind === "logout") {
@@ -192,7 +209,17 @@ export function sanitizeAcpOperationResult(kind, value) {
   if (kind === "list_sessions") {
     const candidates = Array.isArray(source.sessions) ? source.sessions.slice(0, MAX_ITEMS) : [];
     const sessions = candidates.map(sanitizeSession).filter(Boolean);
-    return boundedObject({ sessions, truncated: source.sessions?.length > sessions.length });
+    const rawNextCursor = source.nextCursor ?? source.next_cursor ?? null;
+    let nextCursor = null;
+    try {
+      nextCursor = normalizeAcpSessionCursor(rawNextCursor);
+    } catch { /* omit an unusable remote cursor without corrupting it */ }
+    return boundedObject({
+      sessions,
+      ...(nextCursor ? { nextCursor } : {}),
+      truncated: source.sessions?.length > sessions.length
+        || (typeof rawNextCursor === "string" && rawNextCursor.length > 0),
+    });
   }
   if (kind === "delete_session") {
     const result = picked(source, {

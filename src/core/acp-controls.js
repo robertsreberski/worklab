@@ -2,6 +2,7 @@ import {
   createMonoAcpDiscoveryControls,
   createWorklabAcpProfileResolver,
 } from "./acp-runtime-profile.js";
+import { normalizeAcpSessionCursor } from "./acp-operations.js";
 
 function controlError(code, message) {
   return Object.assign(new Error(message), {
@@ -159,12 +160,19 @@ export function createWorklabAcpControls({
       return { ...result, status: result?.loggedOut === false ? "logout_failed" : "logged_out" };
     },
 
-    async listSessions({ profile, signal, onInteraction } = {}) {
+    async listSessions({ profile, cursor, signal, onInteraction } = {}) {
+      const id = profileId(profile);
+      const sessionCursor = normalizeAcpSessionCursor(cursor);
       const client = await runtime();
       throwIfAborted(signal);
+      const boundProfile = await resolveAcpProfile(id);
+      throwIfAborted(signal);
       return requiredRuntimeMethod(client, "listAcpSessions")(
-        profileId(profile),
-        {},
+        id,
+        {
+          ...(boundProfile.cwd ? { cwd: boundProfile.cwd } : {}),
+          ...(sessionCursor ? { cursor: sessionCursor } : {}),
+        },
         runtimeOptions({ signal, onInteraction }),
       );
     },
