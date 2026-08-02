@@ -280,7 +280,11 @@ describe("ui API client", () => {
     await api.createAcpProfile({ driver: "generic", command: "/usr/local/bin/agent" });
     await api.patchAcpProfile("profile/1", { cwd: "/workspace" });
     await api.probeAcpProfile("profile/1");
+    await api.listAcpProfileSessions("profile/1");
     await api.getAcpOperation("operation/1");
+    await api.listAcpOperationInteractions("operation/1");
+    await api.listAcpInteractions({ state: "pending" });
+    await api.respondAcpInteraction("interaction/1", { optionId: "allow" });
     await api.discoverMonoAgents({ signal: controller.signal });
 
     expect(global.fetch.mock.calls.map(([url]) => url)).toEqual([
@@ -289,14 +293,18 @@ describe("ui API client", () => {
       "/api/acp/profiles",
       "/api/acp/profiles/profile%2F1",
       "/api/acp/profiles/profile%2F1/probe",
+      "/api/acp/profiles/profile%2F1/sessions:list",
       "/api/acp/operations/operation%2F1",
+      "/api/acp/operations/operation%2F1/interactions",
+      "/api/acp/interactions?state=pending",
+      "/api/acp/interactions/interaction%2F1/respond",
       "/api/acp/discovery/mono",
     ]);
     expect(global.fetch.mock.calls.map(([, options]) => options.method)).toEqual([
-      "GET", "GET", "POST", "PATCH", "POST", "GET", "GET",
+      "GET", "GET", "POST", "PATCH", "POST", "POST", "GET", "GET", "GET", "POST", "GET",
     ]);
     expect(global.fetch.mock.calls[0][1].signal).toBe(controller.signal);
-    expect(global.fetch.mock.calls[6][1].signal).toBe(controller.signal);
+    expect(global.fetch.mock.calls[10][1].signal).toBe(controller.signal);
   });
 
   it("imports mono-agent discovery by source id only", async () => {
