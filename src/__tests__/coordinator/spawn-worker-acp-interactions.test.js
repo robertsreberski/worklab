@@ -497,6 +497,8 @@ describe("spawnWorker ACP interactions", () => {
       await vi.waitFor(() => expect(controlMessage?.delivery_id).toBe("delivery-scalars"));
       expect(controls.redactWorkerEvent({ pin: 654321, remember: false, count: 7, ok: true }))
         .toEqual({ pin: "[redacted]", remember: "[redacted]", count: 7, ok: true });
+      expect(controls.redactText("pin=654321 remember=false count=7 ok=true"))
+        .toBe("pin=[redacted] remember=[redacted] count=7 ok=true");
       controls.handleWorkerEvent({
         type: "acp_interaction_acknowledged",
         interaction_id: "interaction-scalars",

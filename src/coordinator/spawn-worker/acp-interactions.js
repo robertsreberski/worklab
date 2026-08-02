@@ -202,8 +202,15 @@ export function createAcpInteractionControls({
   function redactText(value) {
     let result = String(value ?? "");
     for (const privateValue of privateValues) {
-      if (typeof privateValue !== "string") continue;
-      result = result.split(privateValue).join("[redacted]");
+      if (typeof privateValue === "string") {
+        result = result.split(privateValue).join("[redacted]");
+        continue;
+      }
+      const token = String(privateValue).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+      result = result.replace(
+        new RegExp(`(^|[^A-Za-z0-9_.-])${token}(?=$|[^A-Za-z0-9_.-])`, "gu"),
+        "$1[redacted]",
+      );
     }
     return result;
   }
