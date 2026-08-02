@@ -165,6 +165,8 @@ export {
 
 export { createWorklabAcpControls } from "./acp-controls.js";
 
+export { createWorklabAcpProfileResolver } from "./acp-runtime-profile.js";
+
 // ---------- Settings + runtime ----------
 export {
   DEFAULT_SETTINGS,
