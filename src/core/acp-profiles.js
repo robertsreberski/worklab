@@ -575,7 +575,13 @@ function bindAgent(db, profile, profileId, now) {
     return;
   }
   const otherProfile = getAcpProfileByAgentName(db, profile.agentName);
-  if (otherProfile && otherProfile.id !== profileId) {
+  if (!otherProfile) {
+    throw acpError("agent name already exists and cannot be adopted by an ACP profile", {
+      code: "conflict",
+      status: 409,
+    });
+  }
+  if (otherProfile.id !== profileId) {
     throw acpError("agent is already bound to another ACP profile", { code: "conflict", status: 409 });
   }
   updateAgentFields(db, [

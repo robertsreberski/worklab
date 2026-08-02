@@ -133,6 +133,80 @@ describe("ACP profile persistence", () => {
     expect(db.prepare("SELECT COUNT(*) AS count FROM acp_profiles").get().count).toBe(0);
   });
 
+  it("rejects an ordinary-agent name collision without rewriting the agent or its task and team references", () => {
+    const db = makeTestDb();
+    const cwd = tempDir();
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO agents (
+        name, display_name, description, sdk, model, execution_mode, enabled,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "existing-worker",
+      "Existing Worker",
+      "Original ordinary agent",
+      "pi",
+      "pi:openai:gpt-5.5",
+      "sdk",
+      1,
+      now,
+      now,
+    );
+    db.prepare(`
+      INSERT INTO teams (id, slug, name, lead_agent, created_at, updated_at)
+      VALUES ('team-existing', 'team-existing', 'Existing Team', 'existing-worker', ?, ?)
+    `).run(now, now);
+    db.prepare(`
+      INSERT INTO team_members (team_id, agent_name, role_description, created_at)
+      VALUES ('team-existing', 'existing-worker', 'Original member', ?)
+    `).run(now);
+    db.prepare(`
+      INSERT INTO tasks (
+        id, team_id, title, delegated_to_agent, owner_agent, planner_agent,
+        reviewer_agent, created_at, updated_at
+      ) VALUES (
+        'task-existing', 'team-existing', 'Existing task', 'existing-worker',
+        'existing-worker', 'existing-worker', 'existing-worker', ?, ?
+      )
+    `).run(now, now);
+
+    const beforeAgent = db.prepare("SELECT * FROM agents WHERE name = 'existing-worker'").get();
+    let error;
+    try {
+      createAcpProfile({
+        db,
+        input: {
+          agentName: "existing-worker",
+          displayName: "Replacement ACP Agent",
+          description: "Must not replace the ordinary agent",
+          command: process.execPath,
+          cwd,
+        },
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toMatchObject({ code: "conflict", status: 409 });
+    expect(error.message).toMatch(/agent name already exists/i);
+    expect(db.prepare("SELECT * FROM agents WHERE name = 'existing-worker'").get()).toEqual(beforeAgent);
+    expect(db.prepare(`
+      SELECT delegated_to_agent, owner_agent, planner_agent, reviewer_agent
+      FROM tasks WHERE id = 'task-existing'
+    `).get()).toEqual({
+      delegated_to_agent: "existing-worker",
+      owner_agent: "existing-worker",
+      planner_agent: "existing-worker",
+      reviewer_agent: "existing-worker",
+    });
+    expect(db.prepare("SELECT lead_agent FROM teams WHERE id = 'team-existing'").get())
+      .toEqual({ lead_agent: "existing-worker" });
+    expect(db.prepare("SELECT agent_name FROM team_members WHERE team_id = 'team-existing'").get())
+      .toEqual({ agent_name: "existing-worker" });
+    expect(db.prepare("SELECT COUNT(*) AS count FROM acp_profiles").get()).toEqual({ count: 0 });
+  });
+
   it("imports only a sanitized compatible mono descriptor and forces agent ownership", () => {
     const db = makeTestDb();
     const workspace = tempDir("mono-workspace");
