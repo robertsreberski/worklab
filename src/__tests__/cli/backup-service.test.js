@@ -1,18 +1,25 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { backup } from "../../cli/backup.js";
 import { launchdPlist, serviceParams, systemdUnit } from "../../cli/install-service.js";
+import { createAcpProfile } from "../../core/acp-profiles.js";
+import { openDb } from "../../core/db/open.js";
+import { runMigrations } from "../../core/db/migrations/runner.js";
+import { createAcpOperationManager } from "../../coordinator/acp-operation-manager.js";
 
 describe("backup command", () => {
   const dirs = [];
   const oldDataDir = process.env.WORKLAB_DATA_DIR;
+  const oldBackupToken = process.env.ACP_BACKUP_TOKEN;
 
   afterEach(() => {
     if (oldDataDir === undefined) delete process.env.WORKLAB_DATA_DIR;
     else process.env.WORKLAB_DATA_DIR = oldDataDir;
+    if (oldBackupToken === undefined) delete process.env.ACP_BACKUP_TOKEN;
+    else process.env.ACP_BACKUP_TOKEN = oldBackupToken;
     vi.restoreAllMocks();
     for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
     dirs.length = 0;
@@ -44,6 +51,114 @@ describe("backup command", () => {
     expect(listing).toContain("./knowledge/note.md");
     expect(listing).not.toContain("logs/worklab.out.log");
     expect(lines.find((line) => line.startsWith("restore: "))).toContain(dataDir);
+  });
+
+  it("restores ACP profiles, operations, and sanitized interactions without secret values", async () => {
+    const dataDir = tmp("backup-acp-data");
+    const outDir = tmp("backup-acp-out");
+    const restoredDir = tmp("backup-acp-restored");
+    const workspace = tmp("backup-acp-workspace");
+    process.env.WORKLAB_DATA_DIR = dataDir;
+    process.env.ACP_BACKUP_TOKEN = "backup-environment-secret";
+
+    const sourceDb = openDb(join(dataDir, "worklab.db"));
+    runMigrations(sourceDb);
+    const profile = createAcpProfile({
+      db: sourceDb,
+      input: {
+        agentName: "backup-acp",
+        displayName: "Backup ACP",
+        command: process.execPath,
+        cwd: workspace,
+        envKeys: ["ACP_BACKUP_TOKEN"],
+      },
+    });
+    let delivered;
+    const manager = createAcpOperationManager({
+      db: sourceDb,
+      controls: {
+        authenticate: async ({ onInteraction }) => {
+          delivered = await onInteraction({
+            requestId: "backup-login-form",
+            kind: "form",
+            schema: {
+              title: "Sign in",
+              properties: {
+                password: { type: "string", default: "backup-schema-secret" },
+              },
+            },
+          });
+          return { authenticated: true, accessToken: "backup-result-secret" };
+        },
+      },
+    });
+    const operation = manager.start({ profileId: profile.id, kind: "authenticate" });
+    let interaction;
+    await vi.waitFor(() => {
+      interaction = sourceDb.prepare(`
+        SELECT * FROM acp_interactions WHERE operation_id = ? AND state = 'pending'
+      `).get(operation.id);
+      expect(interaction).toBeTruthy();
+    });
+    manager.respond({
+      operationId: operation.id,
+      interactionId: interaction.id,
+      response: {
+        disposition: "accept",
+        values: { password: "backup-form-answer-secret" },
+      },
+    });
+    await vi.waitFor(() => {
+      expect(manager.get(operation.id)?.state).toBe("succeeded");
+      expect(manager.isActive(operation.id)).toBe(false);
+    });
+    expect(delivered.values.password).toBe("backup-form-answer-secret");
+    sourceDb.close();
+
+    const lines = [];
+    vi.spyOn(console, "log").mockImplementation((line) => lines.push(String(line)));
+    await backup(["--out", outDir]);
+    const archive = lines.find((line) => line.startsWith("backup: ")).replace("backup: ", "");
+    execFileSync("tar", ["-xzf", archive, "-C", restoredDir]);
+
+    const restoredDbPath = join(restoredDir, "worklab.db");
+    const restoredDb = openDb(restoredDbPath);
+    try {
+      expect(restoredDb.prepare("SELECT value FROM schema_meta WHERE key = 'version'").get().value)
+        .toBe("49");
+      expect(restoredDb.prepare("SELECT agent_name, env_keys_json FROM acp_profiles WHERE id = ?")
+        .get(profile.id)).toEqual({
+        agent_name: "backup-acp",
+        env_keys_json: "[\"ACP_BACKUP_TOKEN\"]",
+      });
+      expect(restoredDb.prepare("SELECT kind, state, result_json FROM acp_operations WHERE id = ?")
+        .get(operation.id)).toEqual({
+        kind: "authenticate",
+        state: "succeeded",
+        result_json: "{\"authenticated\":true}",
+      });
+      expect(restoredDb.prepare(`
+        SELECT kind, state, disposition, request_schema_json
+        FROM acp_interactions WHERE id = ?
+      `).get(interaction.id)).toEqual({
+        kind: "form",
+        state: "submitted",
+        disposition: "accept",
+        request_schema_json: "{\"title\":\"Sign in\",\"properties\":{\"password\":{\"type\":\"string\"}}}",
+      });
+    } finally {
+      restoredDb.close();
+    }
+
+    const restoredBytes = readFileSync(restoredDbPath);
+    for (const secret of [
+      "backup-environment-secret",
+      "backup-schema-secret",
+      "backup-form-answer-secret",
+      "backup-result-secret",
+    ]) {
+      expect(restoredBytes.includes(Buffer.from(secret))).toBe(false);
+    }
   });
 });
 
