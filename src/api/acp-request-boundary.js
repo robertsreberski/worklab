@@ -3,7 +3,15 @@ import { isIP } from "node:net";
 import { ensureMcpToken, tokenMatches } from "../core/index.js";
 
 const WILDCARD_HOSTS = new Set(["0.0.0.0", "::", "[::]"]);
-const ACTIVE_READ_PATHS = new Set(["/acp/discovery/mono"]);
+const ACTIVE_READ_PATHS = new Set([
+  "/acp/discovery/mono",
+  "/models/available",
+  "/models/opencode",
+  "/search",
+  "/search/embedding-test",
+  "/settings/runtime",
+  "/update",
+]);
 const CORS_METHODS = "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS";
 const CORS_HEADERS = "Authorization, Content-Type, Last-Event-ID, X-Attachment-Filename, X-Skill-Filename";
 const ACP_URL_OPEN_PATH = /^\/acp\/interactions\/[^/]+\/url:open$/iu;
