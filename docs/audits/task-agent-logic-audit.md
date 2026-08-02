@@ -15,6 +15,11 @@ the document from source; do not reintroduce legacy behavior.
   `src/coordinator/watcher/`
 - Worker entry points: `src/worker.js` and `src/worker/`
 - Agent runtime package: `@mono-agent/agent-runtime`
+- ACP profiles and runtime resolution: `src/core/acp-profiles.js`,
+  `src/core/acp-runtime-profile.js`, and `src/core/acp-controls.js`
+- ACP operations and interactions: `src/coordinator/acp-operation-manager.js`,
+  `src/coordinator/spawn-worker/acp-interactions.js`, and
+  `src/api/routes/acp.js`
 
 ## Current Workflow Model
 
@@ -48,6 +53,35 @@ Recovery continuations are categorized by reason, including provider retry,
 schema correction, finalization, and coordinator resume. `parent_run_id` is
 disambiguated by relationship metadata so stage progression, manual retry, and
 recovery continuation are not treated as the same behavior.
+
+## External ACP Agents
+
+An ACP-backed agent is stored as `sdk = 'acp'`, model
+`acp:<profile-id>`, and execution mode `acp`. The coordinator preflights that
+binding before spawn. The worker resolves the profile through the shared
+runtime and routes permission or elicitation requests over its private stdin
+control channel. Operation and task-run interaction schemas are sanitized
+before persistence or broadcast; response values are process-only data and
+must never enter SQLite, run events, logs, or backups.
+
+Generic profiles are client-owned but limited to the services Worklab actually
+implements. Filesystem, terminal, and client-MCP requests are rejected during
+profile validation. Mono profiles come from a sanitized discovery descriptor;
+their command, environment-key set, configuration, workspace, MCP ownership,
+session policy, and probe timeout are agent-owned and immutable in Worklab.
+Both discovery and runtime processes receive an explicit environment allowlist.
+
+Agent-owned turns use `src/core/acp-task-input.js`. They receive task-owned
+state, comments, saved plans, prior outcomes, review evidence, workspace/result
+contracts, and file `resource_link` attachments. They do not receive Worklab
+persona instructions, memory, knowledge, skills, tools, MCP configuration,
+repository instructions, webhooks, resume payloads, or delegation policy.
+
+ACP provider session identifiers are opaque runtime values. Worklab may store
+and return the encoded identifier, but must not persist the remote raw session
+id or let one profile delete another profile's session. Cancellation is
+semantic: task aborts reach `session/cancel`, pending interactions settle
+fail-closed, and late protocol updates remain bounded and typed.
 
 ## Team Lead Cycles
 

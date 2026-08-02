@@ -136,6 +136,35 @@ Start in the UI, not in config files:
 Runtime data defaults to `~/.worklab`; task workspaces default to
 `~/worklab-workspace`.
 
+## External Agents Over ACP
+
+Worklab can run external agents through ACP v1 over stdio. Open **Agents**,
+choose **New agent**, then either import a discovered mono-agent source or add a
+generic ACP process manually. Imported mono-agents keep their configuration,
+workspace, MCP, and session policy agent-owned; Worklab stores only the
+sanitized discovery descriptor and launches the exact bridge argv without a
+shell. Set `WORKLAB_MONO_AGENT_BIN` when the `mono-agent` executable is not on
+the Worklab service `PATH`.
+
+The ACP client lives in the shared `@mono-agent/agent-runtime` package. Worklab
+owns profile persistence, task scheduling, and the browser interaction inbox.
+Permission choices, non-secret elicitation forms, and browser continuation URLs
+appear globally while a task or profile operation is waiting. Submitted form
+values travel only to the waiting worker process; they are not stored in the
+database, run events, logs, or backups.
+
+Agent-owned ACP turns receive task-owned context and file attachments as
+`resource_link` blocks. Worklab instructions, memory, knowledge, skills, MCP
+servers, tools, repository instructions, and delegation policy are withheld so
+the external agent remains authoritative for its own runtime. The current
+Worklab client does not provide ACP filesystem, terminal, or client-MCP
+services.
+
+The mono-agent integration is an ACP v1 core-session profile: initialization,
+sessions, prompts, typed updates, cancellation, text, resource links, and
+elicitation are supported. Client-supplied MCP servers remain unsupported, so
+the bridge is not described as a generally conformant ACP Agent.
+
 ## Daily Use
 
 - Use **Tasks** as the active work queue.
@@ -186,6 +215,7 @@ WORKLAB_HOST=127.0.0.1
 WORKLAB_DATA_DIR=/tmp/worklab-dev
 WORKLAB_WORKSPACE=/tmp/worklab-workspace
 WORKLAB_LOG_LEVEL=info
+WORKLAB_MONO_AGENT_BIN=/absolute/path/to/mono-agent
 ```
 
 CLI flags are passed after the command:

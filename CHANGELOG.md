@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Added external agents over ACP v1 using the shared
+  `@mono-agent/agent-runtime` client. Worklab now supports sanitized mono-agent
+  discovery/import, generic stdio profiles, probe/auth/logout/session
+  operations, task-run cancellation, opaque provider sessions, typed ACP
+  events, and permission/form/URL interactions in the browser. Agent-owned
+  profiles receive task-owned context and `resource_link` attachments without
+  inheriting Worklab memory, knowledge, tools, MCP, skills, repository
+  instructions, or delegation policy. Interaction response values remain
+  process-only. Worklab does not expose ACP filesystem, terminal, or client-MCP
+  services; mono-agent is documented as a core-session profile rather than a
+  generally conformant ACP Agent.
+
 - Upgraded `@mono-agent/agent-runtime` from 0.4.1 to 0.17.1.
   - Non-empty skill sets now carry an explicit `skillsRoot`, as required by
     the runtime's indexed-skill contract, while `skillDirs` continues to bound
