@@ -147,6 +147,56 @@ describe("coordinator drain — timeout falls through to cancel", () => {
     }
   }, 10_000);
 
+  it("terminates non-ACP descendants as soon as cancellation starts", async () => {
+    if (process.platform === "win32") return;
+
+    const tempDir = mkdtempSync(join(tmpdir(), "worklab-worker-tree-cancel-"));
+    const childPidFile = join(tempDir, "child.pid");
+    let childPid = null;
+    try {
+      const db = makeTestDb();
+      const broker = stubBroker();
+      const { taskId, runId } = seedTaskAndRun(db);
+      const script = {
+        spawnChildPidFile: childPidFile,
+        events: [{ type: "started", runId, delayMs: 750 }],
+        exitAfterMs: 250,
+      };
+
+      const handle = spawnWorker({
+        binary: fakeBinary,
+        args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+        env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+        runId,
+        taskId,
+        broker,
+        db,
+        runIdleWarningMs: 0,
+        cancelGraceMs: 2_000,
+        persistDebounceMs: 5,
+      });
+
+      const pidDeadline = Date.now() + 2_000;
+      while (!existsSync(childPidFile) && Date.now() < pidDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(existsSync(childPidFile)).toBe(true);
+      childPid = Number(readFileSync(childPidFile, "utf8").trim());
+      expect(childPid).toBeGreaterThan(0);
+
+      handle.cancel({ initiator: "api_cancel", reason: "process tree cancellation regression" });
+      await expect(waitForProcessExit(childPid, { timeoutMs: 500 })).resolves.toBe(true);
+
+      const result = await handle.done;
+      expect(result.failureKind).toBe("cancelled_user");
+    } finally {
+      if (childPid && processAlive(childPid)) {
+        try { process.kill(childPid, "SIGKILL"); } catch { /* already gone */ }
+      }
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }, 10_000);
+
   it("lets the worker semantically cancel before cleaning up its process group", async () => {
     if (process.platform === "win32") return;
 
@@ -166,7 +216,11 @@ describe("coordinator drain — timeout falls through to cancel", () => {
       const handle = spawnWorker({
         binary: fakeBinary,
         args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
-        env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+        env: {
+          FAKE_WORKER_SCRIPT: JSON.stringify(script),
+          WORKLAB_RUN_ID: runId,
+          WORKLAB_ACP_PROFILE_ID: "00000000-0000-4000-8000-000000000001",
+        },
         runId,
         taskId,
         broker,

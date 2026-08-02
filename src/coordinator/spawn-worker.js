@@ -600,13 +600,18 @@ export function spawnWorker({
 
   function terminateChild() {
     try { child.stdin?.end?.(); } catch { /* already closed */ }
-    // Give the worker a chance to translate the abort into provider-specific
-    // cancellation (ACP session/cancel, pending interaction cleanup, etc.). A
-    // process-group SIGTERM here would kill the provider bridge at the same
-    // instant and race that semantic cleanup. Descendants are still bounded by
-    // the process-group SIGKILL ceiling below, and finalize() group-cleans them
-    // as soon as the worker exits.
-    signalWorkerProcess("SIGTERM");
+    if (env.WORKLAB_ACP_PROFILE_ID) {
+      // Give an ACP worker a chance to translate the abort into session/cancel
+      // and pending-interaction cleanup. Killing its provider bridge at the
+      // same instant would race that semantic cleanup. Descendants remain
+      // bounded by the process-group SIGKILL ceiling below and by finalize().
+      signalWorkerProcess("SIGTERM");
+    } else {
+      // Non-ACP workers have no provider-side cancellation handshake to
+      // preserve. Stop their whole process group immediately so tools and dev
+      // servers cannot keep performing side effects after cancellation.
+      signalWorkerProcessTree("SIGTERM");
+    }
     if (!sigkillTimer) {
       sigkillTimer = setTimeout(() => {
         signalWorkerProcessTree("SIGKILL");
