@@ -364,6 +364,29 @@ function permissionResponseMatchesOffer(row, response, disposition) {
   return disposition === "selected" || disposition === optionKind;
 }
 
+function canonicalInteractionResponse(row, response, disposition) {
+  if (row.kind === "permission") {
+    if (disposition === "cancel") return { outcome: { outcome: "cancelled" } };
+    return {
+      outcome: {
+        outcome: "selected",
+        optionId: permissionOptionId(response),
+      },
+    };
+  }
+
+  if (disposition !== "accept") return { action: disposition };
+  const source = response && typeof response === "object" && !Array.isArray(response)
+    ? response
+    : {};
+  const content = Object.hasOwn(source, "content")
+    ? source.content
+    : source.values;
+  return content === undefined
+    ? { action: "accept" }
+    : { action: "accept", content };
+}
+
 function expireInteraction(db, interactionId, disposition, now = Date.now()) {
   const info = db.prepare(`
     UPDATE acp_interactions
@@ -588,7 +611,10 @@ export function createAcpInteractionControls({
         message: "permission response does not match an offered option",
       };
     }
-    if (action === "respond" && !rememberPrivateResponse(response)) {
+    const safeResponse = action === "respond"
+      ? canonicalInteractionResponse(existing, response, safeDisposition)
+      : null;
+    if (action === "respond" && !rememberPrivateResponse(safeResponse)) {
       return { ok: false, code: "invalid_response", message: "private response exceeds safety limits" };
     }
     const delivery = beginDelivery({ interactionId, action, disposition: safeDisposition });
@@ -601,7 +627,7 @@ export function createAcpInteractionControls({
           interaction_id: interactionId,
           delivery_id: delivery.deliveryId,
           disposition: safeDisposition,
-          response,
+          response: safeResponse,
         }
       : {
           type: "acp_interaction_cancel",

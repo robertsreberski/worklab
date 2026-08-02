@@ -289,6 +289,7 @@ describe("spawnWorker ACP interactions", () => {
     try {
       const { taskId, runId } = seed(db);
       const sentinel = "task-run-request-secret-sentinel";
+      const unknownResponseSecret = "unknown-response-field-must-not-cross-stdin";
       const rawSessionId = "RAW_REMOTE_SESSION_DO_NOT_PERSIST";
       let deeplyNestedSession = { sessionId: rawSessionId };
       for (let depth = 0; depth < 10; depth += 1) {
@@ -384,6 +385,7 @@ describe("spawnWorker ACP interactions", () => {
           },
           diagnostic_echo: "OTP493827END approved=true-ish",
           "OTP493827END-approved=true-ish": "key echo",
+          unknown_secret_field: unknownResponseSecret,
         },
       });
       expect(delivered.ok).toBe(true);
@@ -395,32 +397,27 @@ describe("spawnWorker ACP interactions", () => {
       await handle.done;
       const log = db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runId);
       const controlSeen = JSON.parse(log.events).find((event) => event.type === "control_seen");
-      expect(controlSeen.message.response).toMatchObject({
+      expect(controlSeen.message.response).toEqual({
+        action: "accept",
         content: {
           answer: "[redacted]",
           pin: "[redacted]",
           approved: "[redacted]",
         },
-        diagnostic_echo: "OTP[redacted]END approved=[redacted]-ish",
-        "OTP[redacted]END-approved=[redacted]-ish": "key echo",
       });
       expect(log.events).not.toMatch(
-        /do-not-persist|task-run-request-secret-sentinel|RAW_REMOTE_SESSION|493827|approved=true-ish/u,
+        /do-not-persist|task-run-request-secret-sentinel|unknown-response-field|RAW_REMOTE_SESSION|493827|approved=true-ish/u,
       );
       const run = db.prepare("SELECT diagnostics_json, raw_output_path FROM task_runs WHERE id = ?").get(runId);
       expect(run.diagnostics_json).not.toMatch(
-        /do-not-persist|task-run-request-secret-sentinel|RAW_REMOTE_SESSION|493827|approved=true-ish/u,
+        /do-not-persist|task-run-request-secret-sentinel|unknown-response-field|RAW_REMOTE_SESSION|493827|approved=true-ish/u,
       );
-      expect(run.diagnostics_json).toContain("OTP[redacted]END approved=[redacted]-ish");
       const rawLog = readFileSync(run.raw_output_path, "utf8");
-      expect(rawLog).not.toMatch(/RAW_REMOTE_SESSION|493827|approved=true-ish/u);
-      expect(rawLog).toContain("OTP[redacted]END approved=[redacted]-ish");
+      expect(rawLog).not.toMatch(/unknown-response-field|RAW_REMOTE_SESSION|493827|approved=true-ish/u);
       expect(JSON.stringify(broadcasts)).not.toMatch(
-        /do-not-persist|task-run-request-secret-sentinel|RAW_REMOTE_SESSION|493827|approved=true-ish/u,
+        /do-not-persist|task-run-request-secret-sentinel|unknown-response-field|RAW_REMOTE_SESSION|493827|approved=true-ish/u,
       );
-      expect(JSON.stringify(broadcasts)).toContain("OTP[redacted]END approved=[redacted]-ish");
-      expect(JSON.stringify(loggerEvents)).not.toMatch(/493827|approved=true-ish/u);
-      expect(JSON.stringify(loggerEvents)).toContain("OTP[redacted]END approved=[redacted]-ish");
+      expect(JSON.stringify(loggerEvents)).not.toMatch(/unknown-response-field|493827|approved=true-ish/u);
       expect(JSON.stringify(db.prepare("SELECT * FROM acp_interactions").all())).not.toContain(rawSessionId);
     } finally {
       db.close();
