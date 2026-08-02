@@ -13,7 +13,10 @@ import {
   getAcpInteractionById,
   insertAcpInteractionRequest,
 } from "../../core/db/queries/acp-interactions.js";
-import { normalizeAcpUrlHandoff } from "../../core/acp-url-handoff.js";
+import {
+  createAcpUrlPublicRequest,
+  inspectAcpUrlHandoff,
+} from "../../core/acp-url-handoff.js";
 
 const DEFAULT_ACK_TIMEOUT_MS = 10_000;
 const TERMINAL_OUTCOMES = new Set(["submitted", "cancelled", "expired", "stale"]);
@@ -42,30 +45,6 @@ function exactIdentifier(value, max = 1024) {
     : null;
 }
 
-export function createTaskRunAcpUrlHandoffFrame({
-  interactionId,
-  runId,
-  profileId,
-  url,
-} = {}) {
-  const interaction = exactIdentifier(interactionId);
-  const run = exactIdentifier(runId);
-  const profile = exactIdentifier(profileId);
-  const normalizedUrl = normalizeAcpUrlHandoff(url);
-  if (!interaction || !run || !profile || !normalizedUrl) return null;
-  const frame = {
-    type: ACP_URL_HANDOFF_FRAME_TYPE,
-    version: ACP_URL_HANDOFF_FRAME_VERSION,
-    interaction_id: interaction,
-    run_id: run,
-    profile_id: profile,
-    url: normalizedUrl,
-  };
-  return Buffer.byteLength(JSON.stringify(frame), "utf8") <= MAX_URL_HANDOFF_FRAME_BYTES
-    ? frame
-    : null;
-}
-
 export function taskRunEventNeedsUrlHandoff(event) {
   return event?.type === "acp_interaction_requested"
     && event?.interaction_kind !== "permission"
@@ -82,6 +61,7 @@ export function createTaskRunAcpUrlHandoffReceiver({
   runId,
   profileId,
   onInvalid,
+  onRetained,
   waitMs = DEFAULT_URL_HANDOFF_WAIT_MS,
 } = {}) {
   const owner = {
@@ -129,6 +109,7 @@ export function createTaskRunAcpUrlHandoffReceiver({
       return;
     }
     const expectedKeys = ["interaction_id", "profile_id", "run_id", "type", "url", "version"];
+    const inspected = inspectAcpUrlHandoff(frame?.url);
     if (!frame
       || typeof frame !== "object"
       || Array.isArray(frame)
@@ -138,16 +119,24 @@ export function createTaskRunAcpUrlHandoffReceiver({
       || frame.run_id !== owner.ownerId
       || frame.profile_id !== owner.profileId
       || !exactIdentifier(frame.interaction_id)
-      || !normalizeAcpUrlHandoff(frame.url)) {
+      || !inspected) {
       rejectChannel("frame_invalid");
       return;
     }
     const interactionId = frame.interaction_id;
-    const retained = store.retain({
+    let retained = store.retain({
       interactionId,
       ...owner,
       url: frame.url,
     }) === true;
+    if (retained && typeof onRetained === "function") {
+      try {
+        retained = onRetained({ interactionId, url: frame.url }) === true;
+      } catch {
+        retained = false;
+      }
+      if (!retained) store.remove(interactionId, owner);
+    }
     settleWaiters(interactionId, retained);
     if (!retained) report("frame_rejected");
   }
@@ -269,7 +258,7 @@ function stripAcpSessionIdentifiers(value, depth = 0) {
   )));
 }
 
-export function sanitizeTaskRunAcpInteractionEvent(event) {
+export function sanitizeTaskRunAcpInteractionEvent(event, { urlPublicRequest = null } = {}) {
   if (event?.type === "acp_session_update") {
     return stripAcpSessionIdentifiers(event);
   }
@@ -278,13 +267,16 @@ export function sanitizeTaskRunAcpInteractionEvent(event) {
   }
   if (!event || !String(event.type || "").startsWith("acp_interaction_")) return event;
   if (event.type === "acp_interaction_requested") {
+    const request = event?.request?.mode === "url" && urlPublicRequest
+      ? urlPublicRequest
+      : event.request;
     return {
       type: "acp_interaction_requested",
       interaction_id: boundedIdentifier(event.interaction_id),
       protocol_request_id: boundedIdentifier(event.protocol_request_id || event.interaction_id),
       profile_id: boundedIdentifier(event.profile_id),
       interaction_kind: event.interaction_kind === "permission" ? "permission" : "elicitation",
-      request: sanitizeAcpInteractionSchema(event.request),
+      request: sanitizeAcpInteractionSchema(request),
       ts: Number(event.ts) || Date.now(),
       ...(Number.isFinite(Number(event._event_seq)) ? { _event_seq: Number(event._event_seq) } : {}),
     };
@@ -308,8 +300,11 @@ export function sanitizeTaskRunAcpInteractionEvent(event) {
   };
 }
 
-export function persistAcpInteractionRequest(db, runId, event) {
+export function persistAcpInteractionRequest(db, runId, event, { profileId = null } = {}) {
   const safeEvent = sanitizeTaskRunAcpInteractionEvent(event);
+  if (profileId && safeEvent.profile_id !== profileId) {
+    throw new Error("ACP interaction profile does not match the active run");
+  }
   const request = safeEvent.request;
   const kind = safeEvent.interaction_kind === "permission"
     ? "permission"
@@ -317,7 +312,7 @@ export function persistAcpInteractionRequest(db, runId, event) {
   const at = Number(safeEvent.ts) || Date.now();
   insertAcpInteractionRequest(db, {
     id: safeEvent.interaction_id,
-    profileId: safeEvent.profile_id,
+    profileId: profileId || safeEvent.profile_id,
     taskRunId: runId,
     protocolRequestId: safeEvent.protocol_request_id,
     kind,
@@ -367,6 +362,7 @@ export function createAcpInteractionControls({
   const deliveries = new Map();
   const activeByInteraction = new Map();
   const privateValues = new Set();
+  const urlPublicRequests = new Map();
 
   function collectPrivateValues(value, collected, depth = 0) {
     if (depth > 10) return false;
@@ -386,14 +382,29 @@ export function createAcpInteractionControls({
     return Object.values(value).every((entry) => collectPrivateValues(entry, collected, depth + 1));
   }
 
-  function rememberPrivateResponse(response) {
+  function rememberPrivateValues(value) {
     const collected = new Set();
-    if (!collectPrivateValues(response?.content, collected)
-      || !collectPrivateValues(response?.values, collected)) {
-      return false;
-    }
+    if (!collectPrivateValues(value, collected)) return false;
     for (const value of collected) privateValues.add(value);
     return true;
+  }
+
+  function rememberPrivateResponse(response) {
+    return rememberPrivateValues([response?.content, response?.values]);
+  }
+
+  function registerUrlHandoff({ interactionId, url } = {}) {
+    const id = exactIdentifier(interactionId);
+    const inspected = inspectAcpUrlHandoff(url);
+    const publicRequest = createAcpUrlPublicRequest(url);
+    if (!id || !inspected || !publicRequest
+      || !rememberPrivateValues(inspected.privateValues)) return false;
+    urlPublicRequests.set(id, publicRequest);
+    return true;
+  }
+
+  function publicUrlRequest(interactionId) {
+    return urlPublicRequests.get(exactIdentifier(interactionId)) || null;
   }
 
   function redactText(value) {
@@ -510,6 +521,7 @@ export function createAcpInteractionControls({
 
     const accepted = Boolean(row);
     if (accepted) {
+      urlPublicRequests.delete(interactionId);
       urlHandoffStore?.remove?.(interactionId, {
         ownerKind: "run",
         ownerId: runId,
@@ -605,10 +617,20 @@ export function createAcpInteractionControls({
     deliveries.clear();
     activeByInteraction.clear();
     privateValues.clear();
+    urlPublicRequests.clear();
     urlHandoffStore?.removeOwner?.("run", runId);
   }
 
-  return { respond, cancel, handleWorkerEvent, redactText, redactWorkerEvent, close };
+  return {
+    respond,
+    cancel,
+    handleWorkerEvent,
+    registerUrlHandoff,
+    publicUrlRequest,
+    redactText,
+    redactWorkerEvent,
+    close,
+  };
 }
 
 export function expireAcpInteractionsForRun(db, runId, { urlHandoffStore = null } = {}) {

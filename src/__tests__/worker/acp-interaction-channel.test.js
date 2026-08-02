@@ -67,6 +67,10 @@ describe("createAcpInteractionChannel", () => {
     const emit = vi.fn();
     const emitPrivateUrlHandoff = vi.fn(() => true);
     const sentinel = "task-run-schema-secret-sentinel";
+    const pathSecret = "TASK_PATH_SECRET";
+    const querySecret = "TASK_QUERY_SECRET";
+    const fragmentSecret = "TASK_FRAGMENT_SECRET";
+    const rawUrl = `https://host-secret.example/${pathSecret}?token=${querySecret}#${fragmentSecret}`;
     const channel = createAcpInteractionChannel({
       emit,
       emitPrivateUrlHandoff,
@@ -80,7 +84,9 @@ describe("createAcpInteractionChannel", () => {
       payload: {
         sessionId: "RAW_REMOTE_FORM_SESSION",
         mode: "url",
-        url: `https://example.test/login?token=${sentinel}#${sentinel}`,
+        url: rawUrl,
+        message: `Open ${rawUrl}`,
+        description: `${pathSecret} ${querySecret} ${fragmentSecret} USERINFO_SECRET`,
         requestedSchema: {
           type: "object",
           default: sentinel,
@@ -102,19 +108,22 @@ describe("createAcpInteractionChannel", () => {
     const emitted = emit.mock.calls[0][0];
     expect(JSON.stringify(emitted)).not.toContain(sentinel);
     expect(JSON.stringify(emitted)).not.toContain("RAW_REMOTE_FORM_SESSION");
-    expect(emitted.request.url).toBe("https://example.test/login?token=%5Bredacted%5D");
-    expect(emitted.request.requestedSchema.properties.password).toEqual({ type: "string" });
-    expect(emitted.request.requestedSchema.properties.answer).toEqual({ type: "string" });
-    expect(emitted.request.requestedSchema.properties.content).toEqual({ type: "string" });
+    expect(emitted.request).toEqual({
+      mode: "url",
+      message: "Continue in your browser.",
+      urlAvailable: true,
+    });
     expect(emitPrivateUrlHandoff).toHaveBeenCalledWith({
       type: "worklab_acp_url_handoff",
       version: 1,
       interaction_id: "int-safe",
       run_id: "run-safe",
       profile_id: "profile-1",
-      url: `https://example.test/login?token=${sentinel}#${sentinel}`,
+      url: rawUrl,
     });
-    expect(JSON.stringify(emit.mock.calls)).not.toContain(sentinel);
+    expect(JSON.stringify(emit.mock.calls)).not.toMatch(
+      /task-run-schema-secret-sentinel|TASK_PATH_SECRET|TASK_QUERY_SECRET|TASK_FRAGMENT_SECRET|USERINFO_SECRET|host-secret/u,
+    );
   });
 
   it("rejects credential-bearing URL elicitations without emitting on either channel", async () => {

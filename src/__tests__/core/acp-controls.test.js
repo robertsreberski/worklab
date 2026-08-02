@@ -250,7 +250,7 @@ describe("createWorklabAcpControls", () => {
   });
 
   it("carries URL secrets only on a non-enumerable in-process handoff symbol", async () => {
-    const rawUrl = "https://example.test/authorize?state=private-state#resume";
+    const rawUrl = "https://host-private.example/PATH_PRIVATE/authorize?state=QUERY_PRIVATE#FRAGMENT_PRIVATE";
     let delivered;
     const runtime = {
       authenticateAcpProfile: vi.fn(async (_id, _method, options) => {
@@ -258,7 +258,8 @@ describe("createWorklabAcpControls", () => {
           kind: "elicitation",
           payload: {
             mode: "url",
-            message: "Continue in a browser",
+            message: `Continue at ${rawUrl}`,
+            description: "PATH_PRIVATE QUERY_PRIVATE FRAGMENT_PRIVATE USERINFO_PRIVATE",
             url: rawUrl,
           },
         }, { requestId: "url-request-1" });
@@ -277,8 +278,14 @@ describe("createWorklabAcpControls", () => {
       });
       expect(delivered[ACP_PRIVATE_URL_HANDOFF]).toBe(rawUrl);
       expect(Object.keys(delivered)).toEqual(["kind", "protocolRequestId", "requestSchema"]);
-      expect(JSON.stringify(delivered)).not.toMatch(/private-state|resume/u);
-      expect(delivered.requestSchema.url).toContain("%5Bredacted%5D");
+      expect(delivered.requestSchema).toEqual({
+        mode: "url",
+        message: "Continue in your browser.",
+        urlAvailable: true,
+      });
+      expect(JSON.stringify(delivered)).not.toMatch(
+        /host-private|PATH_PRIVATE|QUERY_PRIVATE|FRAGMENT_PRIVATE|USERINFO_PRIVATE/u,
+      );
     } finally {
       db.close();
     }

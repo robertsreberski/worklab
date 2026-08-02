@@ -150,6 +150,7 @@ export function spawnWorker({
   let cancelReason = null;
   let sigkillTimer = null;
   let finalized = false;
+  let finalizationQueued = false;
   let exitFallbackTimer = null;
   let exitWatchdogFired = false;
   let cleanupSigkillTimer = null;
@@ -190,12 +191,14 @@ export function spawnWorker({
   const acpEventBoundary = createTaskRunAcpEventBoundary({
     profileId: env.WORKLAB_ACP_PROFILE_ID || null,
   });
+  let acpInteractionControls = null;
   const acpUrlHandoffReceiver = createTaskRunAcpUrlHandoffReceiver({
     stream: child.stdio[3],
     store: acpUrlHandoffStore,
     runId,
     profileId: env.WORKLAB_ACP_PROFILE_ID || null,
     onInvalid: (reason) => logger?.warn?.({ runId, reason }, "ACP private URL handoff channel rejected"),
+    onRetained: (handoff) => acpInteractionControls?.registerUrlHandoff?.(handoff) === true,
   });
   // Trailing-edge debounce window for the in-flight events JSON. Long-running
   // agents emit hundreds of events; rewriting the whole JSON each line is
@@ -627,6 +630,8 @@ export function spawnWorker({
   }
   resetIdleTimer();
 
+  const expectedAcpProfileId = env.WORKLAB_ACP_PROFILE_ID || null;
+  let stdoutProcessing = Promise.resolve();
   const rl = createInterface({ input: child.stdout });
   rl.on("line", (line) => {
     if (!line.trim()) return;
@@ -641,14 +646,45 @@ export function spawnWorker({
       return;
     }
     const processParsed = () => {
+      const isUrlInteraction = taskRunEventNeedsUrlHandoff(parsed);
+      if (parsed.type === "acp_interaction_requested"
+        && expectedAcpProfileId
+        && parsed.profile_id !== expectedAcpProfileId) {
+        acpUrlHandoffStore?.remove?.(String(parsed.interaction_id || ""), {
+          ownerKind: "run",
+          ownerId: runId,
+          profileId: expectedAcpProfileId,
+        });
+        logger?.warn?.({ runId, reason: "profile_mismatch" }, "ACP interaction request rejected");
+        writeControlMessage({
+          type: "acp_interaction_cancel",
+          interaction_id: String(parsed.interaction_id || ""),
+        }).catch(() => {});
+        return;
+      }
+      const urlPublicRequest = isUrlInteraction
+        ? acpInteractionControls.publicUrlRequest(parsed.interaction_id)
+        : null;
+      if (isUrlInteraction && !urlPublicRequest) {
+        logger?.warn?.({ runId, reason: "url_privacy_unavailable" }, "ACP interaction request rejected");
+        writeControlMessage({
+          type: "acp_interaction_cancel",
+          interaction_id: String(parsed.interaction_id || ""),
+        }).catch(() => {});
+        return;
+      }
       const safeParsed = acpInteractionControls.redactWorkerEvent(
-        sanitizeTaskRunAcpInteractionEvent(acpEventBoundary.sanitizeWorkerEvent(parsed)),
+        sanitizeTaskRunAcpInteractionEvent(acpEventBoundary.sanitizeWorkerEvent(parsed), {
+          urlPublicRequest,
+        }),
       );
       if (safeParsed.type === "acp_interaction_requested" && safeParsed.interaction_id) {
         try {
           // Make the pending row visible before the SSE notification. The raw
           // URL is already isolated on fd3 and is never present in safeParsed.
-          persistAcpInteractionRequest(db, runId, safeParsed);
+          persistAcpInteractionRequest(db, runId, safeParsed, {
+            profileId: expectedAcpProfileId,
+          });
         } catch (err) {
           logger?.warn?.({ err: err.message, runId }, "failed to persist ACP interaction request");
           writeControlMessage({
@@ -721,9 +757,9 @@ export function spawnWorker({
         promptDiagnostics = { ...(promptDiagnostics || {}), ...rawEvent.diagnostics };
       }
     };
-    if (taskRunEventNeedsUrlHandoff(parsed)) {
-      rl.pause();
-      acpUrlHandoffReceiver.waitFor(parsed.interaction_id).then((ready) => {
+    stdoutProcessing = stdoutProcessing.then(async () => {
+      if (taskRunEventNeedsUrlHandoff(parsed)) {
+        const ready = await acpUrlHandoffReceiver.waitFor(parsed.interaction_id);
         if (ready) {
           processParsed();
           return;
@@ -738,10 +774,12 @@ export function spawnWorker({
           type: "acp_interaction_cancel",
           interaction_id: String(parsed.interaction_id || ""),
         }).catch(() => {});
-      }).finally(() => rl.resume());
-      return;
-    }
-    processParsed();
+        return;
+      }
+      processParsed();
+    }).catch(() => {
+      logger?.warn?.({ runId, reason: "stdout_processing_failed" }, "ACP worker event rejected");
+    });
   });
 
   child.stderr.on("data", (chunk) => {
@@ -840,7 +878,7 @@ export function spawnWorker({
     return { ok: true, row };
   }
 
-  const acpInteractionControls = createAcpInteractionControls({
+  acpInteractionControls = createAcpInteractionControls({
     db,
     runId,
     writeControlMessage,
@@ -880,6 +918,12 @@ export function spawnWorker({
 
   const done = new Promise((resolve) => {
     function finalize(code, signal = null) {
+      if (finalized || finalizationQueued) return;
+      finalizationQueued = true;
+      void stdoutProcessing.then(() => finalizeAfterStdout(code, signal));
+    }
+
+    function finalizeAfterStdout(code, signal = null) {
       if (finalized) return;
       finalized = true;
       acpUrlHandoffReceiver.close();

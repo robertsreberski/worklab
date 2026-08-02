@@ -211,6 +211,23 @@ function sendUrlHandoffGone(res) {
   });
 }
 
+function sendUrlHandoffUnavailable(res) {
+  for (const header of [
+    "Location",
+    "Pragma",
+    "Referrer-Policy",
+    "X-Robots-Tag",
+    "Cross-Origin-Opener-Policy",
+    "X-Content-Type-Options",
+  ]) res.removeHeader(header);
+  return res.status(503).json({
+    error: {
+      code: "url_handoff_unavailable",
+      message: "ACP URL handoff could not be opened",
+    },
+  });
+}
+
 function startOperation(res, manager, profileId, kind, options = {}) {
   if (!manager) {
     return sendError(res, routeError("ACP operation manager is not configured", {
@@ -451,23 +468,28 @@ export function registerAcpRoutes(app, {
     if (!row || row.state !== "pending" || row.kind !== "url" || !owner) {
       return sendUrlHandoffGone(res);
     }
-    const url = acpUrlHandoffStore?.consume?.({
-      interactionId: row.id,
-      ...owner,
-    });
-    if (!url) return sendUrlHandoffGone(res);
-
-    res.status(303);
-    res.set({
-      Location: url,
-      "Cache-Control": "no-store",
-      Pragma: "no-cache",
-      "Referrer-Policy": "no-referrer",
-      "X-Robots-Tag": "noindex",
-      "Cross-Origin-Opener-Policy": "same-origin",
-      "X-Content-Type-Options": "nosniff",
-    });
-    return res.end();
+    try {
+      const opened = acpUrlHandoffStore?.consumeWith?.({
+        interactionId: row.id,
+        ...owner,
+      }, (url) => {
+        res.set({
+          Location: url,
+          "Cache-Control": "no-store",
+          Pragma: "no-cache",
+          "Referrer-Policy": "no-referrer",
+          "X-Robots-Tag": "noindex",
+          "Cross-Origin-Opener-Policy": "same-origin",
+          "X-Content-Type-Options": "nosniff",
+        });
+        res.status(303);
+        return true;
+      });
+      if (!opened?.consumed) return sendUrlHandoffGone(res);
+      return res.end();
+    } catch {
+      return sendUrlHandoffUnavailable(res);
+    }
   });
 
   app.post("/api/acp/interactions/:id/respond", async (req, res) => {

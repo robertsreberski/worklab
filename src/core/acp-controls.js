@@ -8,7 +8,8 @@ import {
 } from "./acp-operations.js";
 import {
   ACP_PRIVATE_URL_HANDOFF,
-  normalizeAcpUrlHandoff,
+  createAcpUrlPublicRequest,
+  inspectAcpUrlHandoff,
 } from "./acp-url-handoff.js";
 
 function controlError(code, message) {
@@ -68,7 +69,8 @@ function interactionAdapter(onInteraction, { urlHandoffAvailable = false } = {})
   if (typeof onInteraction !== "function") return undefined;
   return async (request, context = {}) => {
     const kind = interactionKind(request);
-    const privateUrl = kind === "url" ? normalizeAcpUrlHandoff(request?.payload?.url) : null;
+    const rawUrl = kind === "url" ? request?.payload?.url : null;
+    const privateUrl = kind === "url" ? inspectAcpUrlHandoff(rawUrl) : null;
     if (kind === "url" && (!urlHandoffAvailable || !privateUrl)) {
       throw controlError(
         "url_handoff_unavailable",
@@ -78,7 +80,10 @@ function interactionAdapter(onInteraction, { urlHandoffAvailable = false } = {})
     const safeRequest = sanitizeAcpInteractionRequest({
       source: { request, context },
       protocolRequestId: protocolRequestId(request, context),
-      requestSchema: request?.payload,
+      requestSchema: kind === "url"
+        ? createAcpUrlPublicRequest(rawUrl)
+        : request?.payload,
+      privateValues: privateUrl?.privateValues,
     });
     const callbackRequest = {
       kind,
@@ -86,7 +91,7 @@ function interactionAdapter(onInteraction, { urlHandoffAvailable = false } = {})
     };
     if (privateUrl) {
       Object.defineProperty(callbackRequest, ACP_PRIVATE_URL_HANDOFF, {
-        value: privateUrl,
+        value: rawUrl,
         enumerable: false,
         configurable: false,
         writable: false,

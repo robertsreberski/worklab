@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { sanitizeAcpInteractionSchema } from "../core/acp-operations.js";
-import { normalizeAcpUrlHandoff } from "../core/acp-url-handoff.js";
+import {
+  createAcpUrlPublicRequest,
+  inspectAcpUrlHandoff,
+} from "../core/acp-url-handoff.js";
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 const MAX_TEXT_CHARS = 16_384;
@@ -145,15 +148,16 @@ export function createAcpInteractionChannel({
     if (!profileId || !interactionId) return Promise.resolve(cancelledResponse(kind));
 
     const isUrl = kind === "elicitation" && request?.payload?.mode === "url";
+    let privateUrl = null;
     if (isUrl) {
-      const privateUrl = normalizeAcpUrlHandoff(request?.payload?.url);
+      privateUrl = inspectAcpUrlHandoff(request?.payload?.url);
       const frame = privateUrl ? {
         type: "worklab_acp_url_handoff",
         version: 1,
         interaction_id: String(interactionId),
         run_id: String(runId || ""),
         profile_id: String(profileId),
-        url: privateUrl,
+        url: request.payload.url,
       } : null;
       let handedOff = false;
       try {
@@ -166,7 +170,9 @@ export function createAcpInteractionChannel({
 
     const shaped = kind === "permission"
       ? sanitizePermission(request?.payload)
-      : sanitizeElicitation(request?.payload);
+      : isUrl
+        ? createAcpUrlPublicRequest(request.payload.url)
+        : sanitizeElicitation(request?.payload);
     const sanitized = sanitizeAcpInteractionSchema(shaped);
     const offeredOptionIds = new Set(
       kind === "permission" ? sanitized.options.map((option) => option.optionId) : [],

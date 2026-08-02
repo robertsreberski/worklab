@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  createAcpUrlPublicRequest,
   createAcpUrlHandoffStore,
+  inspectAcpUrlHandoff,
   normalizeAcpUrlHandoff,
 } from "../../core/acp-url-handoff.js";
 
@@ -25,6 +27,31 @@ describe("ACP URL handoff store", () => {
     expect(normalizeAcpUrlHandoff(`https://example.test/${"x".repeat(8_200)}`)).toBeNull();
   });
 
+  it("canonicalizes redirects and exposes only a fixed host-owned public marker", () => {
+    const original = "https://例え.テスト/続行/PRIVATE_PATH?state=PRIVATE%20QUERY#PRIVATE%20FRAGMENT";
+    const inspected = inspectAcpUrlHandoff(original);
+
+    expect(inspected.url).toBe(
+      "https://xn--r8jz45g.xn--zckzah/%E7%B6%9A%E8%A1%8C/PRIVATE_PATH?state=PRIVATE%20QUERY#PRIVATE%20FRAGMENT",
+    );
+    expect(inspected.privateValues).toEqual(expect.arrayContaining([
+      original,
+      inspected.url,
+      "PRIVATE_PATH",
+      "PRIVATE%20QUERY",
+      "PRIVATE QUERY",
+      "PRIVATE%20FRAGMENT",
+      "PRIVATE FRAGMENT",
+    ]));
+    expect(createAcpUrlPublicRequest(original)).toEqual({
+      mode: "url",
+      message: "Continue in your browser.",
+      urlAvailable: true,
+    });
+    expect(JSON.stringify(createAcpUrlPublicRequest(original)))
+      .not.toMatch(/xn--|PRIVATE|state|FRAGMENT/u);
+  });
+
   it("binds a URL to one interaction owner and consumes it exactly once", () => {
     const store = createAcpUrlHandoffStore();
     const url = "https://example.test/authorize?state=private#resume";
@@ -35,6 +62,23 @@ describe("ACP URL handoff store", () => {
     expect(store.consume(owner)).toBe(url);
     expect(store.consume(owner)).toBeNull();
     expect(store.size).toBe(0);
+    store.clear();
+  });
+
+  it("retains the URL when redirect header construction fails", () => {
+    const store = createAcpUrlHandoffStore();
+    const url = "https://example.test/private?state=retry";
+    expect(store.retain({ ...owner, url })).toBe(true);
+
+    expect(() => store.consumeWith(owner, () => {
+      throw new Error("header rejected");
+    })).toThrow("header rejected");
+    expect(store.has(owner)).toBe(true);
+    expect(store.consumeWith(owner, (value) => value)).toEqual({
+      consumed: true,
+      value: url,
+    });
+    expect(store.has(owner)).toBe(false);
     store.clear();
   });
 

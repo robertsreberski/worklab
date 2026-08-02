@@ -115,10 +115,20 @@ if (script.echoControls || script.echoControlsToStderr || script.ackAcpControls 
 
 async function run() {
   for (const frame of script.privateUrlHandoffs || []) emitPrivateUrlHandoff(frame);
-  for (const e of script.events) {
+  if (script.eventsInOneChunk) {
+    process.stdout.write((script.events || []).map((event) => {
+      const payload = { ...event };
+      delete payload.delayMs;
+      delete payload.stderr;
+      return `${JSON.stringify(payload)}\n`;
+    }).join(""));
+    if (script.stderrAfterEvents) process.stderr.write(String(script.stderrAfterEvents));
+  }
+  for (const e of script.eventsInOneChunk ? [] : script.events) {
     if (aborted) { emit({ type: "cancelled" }); process.exit(130); }
-    const { delayMs = 0, ...payload } = e;
+    const { delayMs = 0, stderr, ...payload } = e;
     if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+    if (stderr) process.stderr.write(String(stderr));
     emit(payload);
   }
   if (script.exitAfterMs) await new Promise(r => setTimeout(r, script.exitAfterMs));

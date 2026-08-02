@@ -716,7 +716,8 @@ describe("ACP API", () => {
     const runId = "run-url-open";
     const interactionId = newAcpInteractionId();
     const sentinel = "PRIVATE_REDIRECT_STATE_SENTINEL";
-    const rawUrl = `https://example.test/authorize?state=${sentinel}#${sentinel}`;
+    const rawUrl = `https://例え.テスト/続行?state=${sentinel}#${sentinel}`;
+    const canonicalUrl = new URL(rawUrl).href;
     server.db.prepare(`
       INSERT INTO task_runs (id, mode, stage, agent_name, status, process_status, started_at)
       VALUES (?, 'execute', 'execute', ?, 'running', 'running', ?)
@@ -762,7 +763,7 @@ describe("ACP API", () => {
       .redirects(0)
       .expect(303);
     expect(opened.text).toBe("");
-    expect(opened.headers.location).toBe(rawUrl);
+    expect(opened.headers.location).toBe(canonicalUrl);
     expect(opened.headers["cache-control"]).toBe("no-store");
     expect(opened.headers.pragma).toBe("no-cache");
     expect(opened.headers["referrer-policy"]).toBe("no-referrer");

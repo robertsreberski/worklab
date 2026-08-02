@@ -21,6 +21,7 @@ afterEach(() => {
 function setup(controls, {
   probeTimeoutMs = 5_000,
   abortCleanupTimeoutMs,
+  urlHandoffTtlMs,
 } = {}) {
   const db = makeTestDb();
   const cwd = mkdtempSync(join(tmpdir(), "worklab-acp-operation-"));
@@ -38,7 +39,7 @@ function setup(controls, {
   });
   const events = [];
   const broker = { broadcast: (channel, event) => events.push({ channel, event }) };
-  const urlHandoffStore = createAcpUrlHandoffStore();
+  const urlHandoffStore = createAcpUrlHandoffStore({ ttlMs: urlHandoffTtlMs });
   const manager = createAcpOperationManager({
     db,
     broker,
@@ -614,21 +615,33 @@ describe("AcpOperationManager", () => {
   });
 
   it("retains URL query state only in the one-use handoff store", async () => {
-    const rawUrl = "https://example.test/login?token=one-time-secret&state=sensitive#fragment";
+    const rawUrl = "https://host-private.example/PATH_PRIVATE/login?token=QUERY_PRIVATE&state=sensitive#FRAGMENT_PRIVATE";
     const { db, profile, manager, urlHandoffStore, events } = setup({
       authenticate: async ({ onInteraction }) => {
         const request = {
-        requestId: "auth-url-1",
-        kind: "url",
-        schema: {
-            url: "https://example.test/login?token=%5Bredacted%5D&state=%5Bredacted%5D",
-        },
+          requestId: "auth-url-1",
+          kind: "url",
+          schema: {
+            mode: "url",
+            url: rawUrl,
+            message: `Open ${rawUrl}`,
+            description: "PATH_PRIVATE QUERY_PRIVATE FRAGMENT_PRIVATE USERINFO_PRIVATE",
+          },
         };
         Object.defineProperty(request, ACP_PRIVATE_URL_HANDOFF, {
           value: rawUrl,
           enumerable: false,
         });
-        return onInteraction(request);
+        await onInteraction(request);
+        return {
+          authenticated: true,
+          status: `completed ${rawUrl}`,
+          warnings: [
+            "PATH_PRIVATE",
+            "QUERY_PRIVATE",
+            "FRAGMENT_PRIVATE",
+          ],
+        };
       },
     });
     const operation = manager.start({
@@ -643,8 +656,11 @@ describe("AcpOperationManager", () => {
     }, { timeout: 2_000, interval: 5 });
 
     const persisted = interaction.request_schema_json;
-    expect(persisted).toContain("https://example.test/login");
-    expect(persisted).not.toMatch(/one-time-secret|sensitive|fragment/u);
+    expect(JSON.parse(persisted)).toEqual({
+      mode: "url",
+      message: "Continue in your browser.",
+      urlAvailable: true,
+    });
     expect(urlHandoffStore.has({
       interactionId: interaction.id,
       ownerKind: "operation",
@@ -654,7 +670,9 @@ describe("AcpOperationManager", () => {
     expect(JSON.stringify({
       rows: db.prepare("SELECT * FROM acp_interactions").all(),
       events,
-    })).not.toMatch(/one-time-secret|sensitive|fragment/u);
+    })).not.toMatch(
+      /host-private|PATH_PRIVATE|QUERY_PRIVATE|FRAGMENT_PRIVATE|USERINFO_PRIVATE|sensitive/u,
+    );
     expect(() => manager.respond({
       operationId: operation.id,
       interactionId: interaction.id,
@@ -669,6 +687,49 @@ describe("AcpOperationManager", () => {
     manager.cancelInteraction({ operationId: operation.id, interactionId: interaction.id });
     expect(urlHandoffStore.size).toBe(0);
     await waitForOperation(manager, operation.id, "succeeded");
+    expect(JSON.stringify({
+      operation: manager.get(operation.id),
+      rows: db.prepare("SELECT * FROM acp_operations").all(),
+      events,
+    })).not.toMatch(
+      /host-private|PATH_PRIVATE|QUERY_PRIVATE|FRAGMENT_PRIVATE|USERINFO_PRIVATE|sensitive/u,
+    );
+  });
+
+  it("cancels a URL interaction when its private handoff expires", async () => {
+    vi.useFakeTimers();
+    let response;
+    const rawUrl = "https://private-expiry.example/authorize?state=EXPIRING_PRIVATE_STATE";
+    const { db, profile, manager, urlHandoffStore } = setup({
+      authenticate: async ({ onInteraction }) => {
+        const request = { requestId: "expiring-url", kind: "url" };
+        Object.defineProperty(request, ACP_PRIVATE_URL_HANDOFF, {
+          value: rawUrl,
+          enumerable: false,
+        });
+        response = await onInteraction(request);
+        return { authenticated: response?.disposition === "cancel" };
+      },
+    }, { probeTimeoutMs: 5_000, urlHandoffTtlMs: 100 });
+    const operation = manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "url-login",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const interaction = db.prepare("SELECT * FROM acp_interactions WHERE operation_id = ?")
+      .get(operation.id);
+    expect(interaction?.state).toBe("pending");
+    expect(urlHandoffStore.size).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(response).toEqual({ disposition: "cancel" });
+    expect(urlHandoffStore.size).toBe(0);
+    expect(db.prepare("SELECT state, disposition FROM acp_interactions WHERE id = ?")
+      .get(interaction.id)).toEqual({ state: "cancelled", disposition: "cancel" });
+    expect(manager.get(operation.id)?.state).toBe("succeeded");
   });
 
   it("round-trips encoded list identifiers to delete controls without persisting raw session ids", async () => {

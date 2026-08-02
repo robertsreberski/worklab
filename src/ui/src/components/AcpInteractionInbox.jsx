@@ -442,12 +442,12 @@ export function AcpInteractionInbox() {
         {active.kind === "url" && (
           <Button
             key="open-url"
-            buttonRef={!urlWasOpened && active.url ? firstControlRef : undefined}
+            buttonRef={!urlWasOpened && active.urlAvailable ? firstControlRef : undefined}
             size="sm"
             variant="primary"
             type="submit"
             form={urlFormId}
-            disabled={!!busy || !active.url || urlWasOpened}
+            disabled={!!busy || !active.urlAvailable || urlWasOpened}
           >{urlWasOpened ? "Link opened" : "Open link"}</Button>
         )}
         {active.kind === "url" && urlWasOpened && (
@@ -585,15 +585,15 @@ export function AcpInteractionInbox() {
 
         {active.kind === "url" && (
           <div class="acp-interaction-url">
-            {active.url ? (
+            {active.urlAvailable ? (
               <div class="acp-interaction-url-link">
                 <Icon name="external" size={16} />
-                <span>{active.url}</span>
+                <span>A private one-use browser handoff is ready.</span>
               </div>
             ) : (
               <Banner variant="warn" title="No safe link available" detail="Decline or cancel this request." dismissible={false} />
             )}
-            {active.url && (
+            {active.urlAvailable && (
               <form
                 id={urlFormId}
                 class="sr-only"

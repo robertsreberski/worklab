@@ -129,30 +129,25 @@ describe("ACP interaction UI helpers", () => {
     expect(() => acpElicitationDecision("cancel")).toThrow("Invalid elicitation decision");
   });
 
-  it("exposes only an http(s) URL with credentials, query values, and fragments removed", () => {
+  it("exposes only a host-owned availability marker for URL handoffs", () => {
     const interaction = normalizeAcpInteraction({
       id: "url-1",
       kind: "url",
       state: "pending",
       requestSchema: {
         message: "Continue in your browser",
+        urlAvailable: true,
         url: "https://user:password@example.test/login?token=secret&state=one#fragment",
       },
     });
-    const parsed = new URL(interaction.url);
-
-    expect(parsed.origin + parsed.pathname).toBe("https://example.test/login");
-    expect(parsed.username).toBe("");
-    expect(parsed.password).toBe("");
-    expect(parsed.searchParams.get("token")).toBe("[redacted]");
-    expect(parsed.searchParams.get("state")).toBe("[redacted]");
-    expect(parsed.hash).toBe("");
+    expect(interaction.urlAvailable).toBe(true);
+    expect(interaction).not.toHaveProperty("url");
     expect(normalizeAcpInteraction({
       id: "url-2",
       kind: "url",
       state: "pending",
       requestSchema: { url: "javascript:alert(1)" },
-    }).url).toBe("");
+    }).urlAvailable).toBe(false);
   });
 
   it("refreshes for direct and run-wrapped ACP interaction events", () => {

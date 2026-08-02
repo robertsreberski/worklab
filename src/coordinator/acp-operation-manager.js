@@ -32,7 +32,11 @@ import {
   insertAcpInteractionRequest,
 } from "../core/db/queries/acp-interactions.js";
 import { updateAcpProfileProbe } from "../core/db/queries/acp-profiles.js";
-import { ACP_PRIVATE_URL_HANDOFF } from "../core/acp-url-handoff.js";
+import {
+  ACP_PRIVATE_URL_HANDOFF,
+  createAcpUrlPublicRequest,
+  inspectAcpUrlHandoff,
+} from "../core/acp-url-handoff.js";
 
 const CONTROL_METHODS = Object.freeze({
   probe: "probe",
@@ -153,13 +157,12 @@ function createPrivateResponseTracker() {
     return valid;
   }
 
-  function rememberResponse(response) {
+  function rememberValues(value) {
     if (failedClosed) return false;
     const collected = new Set();
     const state = { nodes: 0, stringChars: 0 };
     const ancestors = new WeakSet();
-    const valid = collect(response?.content, collected, state, ancestors)
-      && collect(response?.values, collected, state, ancestors);
+    const valid = collect(value, collected, state, ancestors);
     if (!valid) {
       failedClosed = true;
       return false;
@@ -167,6 +170,10 @@ function createPrivateResponseTracker() {
     for (const value of collected) values.add(value);
     stringChars += state.stringChars;
     return true;
+  }
+
+  function rememberResponse(response) {
+    return rememberValues([response?.content, response?.values]);
   }
 
   function clear() {
@@ -177,6 +184,7 @@ function createPrivateResponseTracker() {
 
   return {
     values,
+    rememberValues,
     rememberResponse,
     clear,
     get failedClosed() { return failedClosed; },
@@ -486,6 +494,12 @@ export class AcpOperationManager {
     record.deadline.unref?.();
   }
 
+  #clearInteractionDeadline(pending) {
+    if (!pending?.deadline) return;
+    clearTimeout(pending.deadline);
+    pending.deadline = null;
+  }
+
   #requestInteraction(record, request = {}) {
     if (record.controller.signal.aborted) {
       return Promise.reject(abortReason(record.controller.signal, "ACP operation cancelled"));
@@ -502,7 +516,18 @@ export class AcpOperationManager {
         status: 400,
       });
     }
-    const requestSchemaSource = request.requestSchema || request.schema || request.payload || request;
+    const rawPrivateUrl = kind === "url" ? request[ACP_PRIVATE_URL_HANDOFF] : null;
+    const privateUrl = kind === "url" ? inspectAcpUrlHandoff(rawPrivateUrl) : null;
+    if (kind === "url" && (!privateUrl
+      || !record.privateResponses.rememberValues(privateUrl.privateValues))) {
+      throw managerError("ACP URL interaction cannot be handed off safely", {
+        code: "url_handoff_unavailable",
+        status: 503,
+      });
+    }
+    const requestSchemaSource = kind === "url"
+      ? createAcpUrlPublicRequest(rawPrivateUrl)
+      : request.requestSchema || request.schema || request.payload || request;
     const safeRequest = sanitizeAcpInteractionRequest({
       source: request,
       protocolRequestId: candidateProtocolRequestId,
@@ -513,7 +538,6 @@ export class AcpOperationManager {
     const { protocolRequestId, requestSchema } = safeRequest;
     const now = this.now();
     const id = newAcpInteractionId();
-    const privateUrl = kind === "url" ? request[ACP_PRIVATE_URL_HANDOFF] : null;
     let retainedUrl = false;
     if (kind === "url") {
       retainedUrl = this.urlHandoffStore?.retain?.({
@@ -521,7 +545,7 @@ export class AcpOperationManager {
         ownerKind: "operation",
         ownerId: record.id,
         profileId: record.profile.id,
-        url: privateUrl,
+        url: rawPrivateUrl,
       }) === true;
       if (!retainedUrl) {
         throw managerError("ACP URL interaction cannot be handed off safely", {
@@ -559,10 +583,24 @@ export class AcpOperationManager {
       const abort = () => {
         const pending = record.pending.get(id);
         if (!pending) return;
+        this.#clearInteractionDeadline(pending);
         record.pending.delete(id);
         reject(abortReason(record.controller.signal, "ACP operation cancelled"));
       };
-      record.pending.set(id, { resolve, reject, abort });
+      const pending = { resolve, reject, abort, deadline: null };
+      record.pending.set(id, pending);
+      if (kind === "url") {
+        pending.deadline = setTimeout(() => {
+          pending.deadline = null;
+          if (!record.pending.has(id)) return;
+          try {
+            this.cancelInteraction({ operationId: record.id, interactionId: id });
+          } catch {
+            // Operation settlement owns cleanup when the interaction is no longer pending.
+          }
+        }, this.urlHandoffStore.ttlMs);
+        pending.deadline.unref?.();
+      }
       record.controller.signal.addEventListener("abort", abort, { once: true });
       if (record.controller.signal.aborted) abort();
     });
@@ -608,6 +646,7 @@ export class AcpOperationManager {
       ownerId: operationId,
       profileId: record.profile.id,
     });
+    this.#clearInteractionDeadline(pending);
     record.pending.delete(interactionId);
     record.controller.signal.removeEventListener("abort", pending.abort);
     this.#armDeadline(record);
@@ -633,6 +672,7 @@ export class AcpOperationManager {
       ownerId: operationId,
       profileId: record.profile.id,
     });
+    this.#clearInteractionDeadline(pending);
     record.pending.delete(interactionId);
     record.controller.signal.removeEventListener("abort", pending.abort);
     if (record.pending.size === 0) {
@@ -679,6 +719,7 @@ export class AcpOperationManager {
         ownerId: record.id,
         profileId: record.profile.id,
       });
+      this.#clearInteractionDeadline(pending);
       record.controller.signal.removeEventListener("abort", pending.abort);
       pending.reject(error);
       record.pending.delete(id);

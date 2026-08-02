@@ -105,15 +105,14 @@ describe("spawnWorker ACP interactions", () => {
     expect(JSON.stringify(malformedReasons)).not.toContain("private-secret");
   });
 
-  it("keeps task-run URL query and fragment state exclusively on fd3", async () => {
+  it("keeps task-run URL secrets on fd3 and redacts later same-chunk echoes", async () => {
     const db = makeTestDb();
     const dataDir = mkdtempSync(join(tmpdir(), "worklab-acp-url-handoff-"));
     const urlHandoffStore = createAcpUrlHandoffStore();
     try {
       const { taskId, runId } = seed(db);
-      const sentinel = "PRIVATE_URL_QUERY_SENTINEL";
-      const rawUrl = `https://example.test/authorize?state=${sentinel}#${sentinel}`;
-      const publicUrl = "https://example.test/authorize?state=%5Bredacted%5D";
+      const rawUrl = "https://秘密.example/続行/PATH_PRIVATE?state=QUERY%20PRIVATE#FRAGMENT%20PRIVATE";
+      const privatePattern = /秘密|続行|PATH_PRIVATE|QUERY(?:%20| )PRIVATE|FRAGMENT(?:%20| )PRIVATE|USERINFO_PRIVATE|xn--/u;
       const broadcasts = [];
       const loggerEvents = [];
       const handle = spawnWorker({
@@ -135,8 +134,29 @@ describe("spawnWorker ACP interactions", () => {
               protocol_request_id: "url-rpc",
               profile_id: "profile-1",
               interaction_kind: "elicitation",
-              request: { mode: "url", message: "Continue", url: publicUrl },
+              request: {
+                mode: "url",
+                message: `Open ${rawUrl}`,
+                description: "PATH_PRIVATE QUERY PRIVATE FRAGMENT PRIVATE USERINFO_PRIVATE",
+                url: rawUrl,
+              },
+            }, {
+              type: "sdk_event",
+              event: {
+                type: "assistant",
+                message: { content: [{ type: "text", text: `later ${rawUrl} PATH_PRIVATE QUERY PRIVATE` }] },
+              },
+            }, {
+              type: "final",
+              text: `finished ${rawUrl}`,
+              diagnostics: {
+                path: "PATH_PRIVATE",
+                query: "QUERY PRIVATE",
+                fragment: "FRAGMENT PRIVATE",
+              },
             }],
+            eventsInOneChunk: true,
+            stderrAfterEvents: `stderr ${rawUrl} PATH_PRIVATE QUERY PRIVATE FRAGMENT PRIVATE\n`,
             exitAfterMs: 250,
           }),
           WORKLAB_RUN_ID: runId,
@@ -161,14 +181,18 @@ describe("spawnWorker ACP interactions", () => {
       });
 
       const row = await waitForRow(db, "interaction-url");
-      expect(JSON.parse(row.request_schema_json).url).toBe(publicUrl);
+      expect(JSON.parse(row.request_schema_json)).toEqual({
+        mode: "url",
+        message: "Continue in your browser.",
+        urlAvailable: true,
+      });
       expect(urlHandoffStore.has({
         interactionId: "interaction-url",
         ownerKind: "run",
         ownerId: runId,
         profileId: "profile-1",
       })).toBe(true);
-      expect(JSON.stringify({ row, broadcasts, loggerEvents })).not.toContain(sentinel);
+      expect(JSON.stringify({ row, broadcasts, loggerEvents })).not.toMatch(privatePattern);
 
       await handle.done;
       const run = db.prepare("SELECT raw_output_path FROM task_runs WHERE id = ?").get(runId);
@@ -179,8 +203,71 @@ describe("spawnWorker ACP interactions", () => {
         rawLog: readFileSync(run.raw_output_path, "utf8"),
         broadcasts,
         loggerEvents,
-      })).not.toContain(sentinel);
+      })).not.toMatch(privatePattern);
       expect(urlHandoffStore.size).toBe(0);
+    } finally {
+      urlHandoffStore.clear();
+      db.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects URL interaction stdout bound to a different ACP profile", async () => {
+    const db = makeTestDb();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-acp-profile-mismatch-"));
+    const urlHandoffStore = createAcpUrlHandoffStore();
+    try {
+      const { taskId, runId } = seed(db);
+      const rawUrl = "https://profile-private.example/authorize?state=PROFILE_PRIVATE_STATE";
+      const loggerEvents = [];
+      const handle = spawnWorker({
+        binary: fakeBinary,
+        args: ["--task", taskId, "--mode", "execute", "--agent", "external"],
+        env: {
+          FAKE_WORKER_SCRIPT: JSON.stringify({
+            privateUrlHandoffs: [{
+              type: "worklab_acp_url_handoff",
+              version: 1,
+              interaction_id: "interaction-profile-mismatch",
+              run_id: runId,
+              profile_id: "profile-1",
+              url: rawUrl,
+            }],
+            events: [{
+              type: "acp_interaction_requested",
+              interaction_id: "interaction-profile-mismatch",
+              protocol_request_id: "profile-mismatch-rpc",
+              profile_id: "profile-other",
+              interaction_kind: "elicitation",
+              request: { mode: "url", url: rawUrl },
+            }],
+            exitAfterMs: 50,
+          }),
+          WORKLAB_RUN_ID: runId,
+          WORKLAB_DATA_DIR: dataDir,
+          WORKLAB_ACP_PROFILE_ID: "profile-1",
+        },
+        runId,
+        taskId,
+        broker: broker(),
+        db,
+        logger: Object.fromEntries(["info", "warn", "error"].map((level) => [
+          level,
+          (...args) => loggerEvents.push({ level, args }),
+        ])),
+        runIdleWarningMs: 0,
+        acpUrlHandoffStore: urlHandoffStore,
+      });
+
+      await handle.done;
+
+      expect(db.prepare("SELECT * FROM acp_interactions WHERE id = ?")
+        .get("interaction-profile-mismatch")).toBeUndefined();
+      expect(urlHandoffStore.size).toBe(0);
+      expect(JSON.stringify(loggerEvents)).toContain("profile_mismatch");
+      expect(JSON.stringify(loggerEvents)).not.toMatch(
+        /profile-private|PROFILE_PRIVATE_STATE/u,
+      );
     } finally {
       urlHandoffStore.clear();
       db.close();

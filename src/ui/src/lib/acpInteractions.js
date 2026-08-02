@@ -138,22 +138,6 @@ function permissionOptions(requestSchema = {}) {
   return [...new Map(options.map((option) => [option.id, option])).values()];
 }
 
-function safeInteractionUrl(value) {
-  const raw = text(value, 8_192);
-  if (!raw) return "";
-  try {
-    const url = new URL(raw);
-    if (url.protocol !== "https:" && url.protocol !== "http:") return "";
-    url.username = "";
-    url.password = "";
-    url.hash = "";
-    for (const key of [...url.searchParams.keys()]) url.searchParams.set(key, "[redacted]");
-    return url.toString();
-  } catch {
-    return "";
-  }
-}
-
 export function normalizeAcpInteraction(interaction = {}) {
   const id = exactId(interaction.id, 1_000);
   const kind = ["permission", "form", "url"].includes(interaction.kind) ? interaction.kind : "unknown";
@@ -183,7 +167,7 @@ export function normalizeAcpInteraction(interaction = {}) {
     fields: form.fields,
     blockedFields: form.blockedFields,
     unsupportedFields: form.unsupportedFields,
-    url: kind === "url" ? safeInteractionUrl(requestSchema.url) : "",
+    urlAvailable: kind === "url" && requestSchema.urlAvailable === true,
   };
 }
 

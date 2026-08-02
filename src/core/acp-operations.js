@@ -6,6 +6,7 @@ import {
   parseAcpSessionCursor,
   selectAcpPaginationCursorEntry,
 } from "./acp-session-cursors.js";
+import { ACP_URL_PUBLIC_REQUEST } from "./acp-url-handoff.js";
 
 const MAX_PERSISTED_JSON_BYTES = 64 * 1024;
 const MAX_TEXT_CHARS = 2000;
@@ -238,17 +239,7 @@ function redactedText(value, rawSessionIds, max = MAX_TEXT_CHARS, privateValues 
 
 function sanitizedUrl(value, rawSessionIds, privateValues) {
   const text = redactedText(value, rawSessionIds, MAX_TEXT_CHARS, privateValues);
-  if (!text) return text;
-  try {
-    const url = new URL(text);
-    url.username = "";
-    url.password = "";
-    for (const key of [...url.searchParams.keys()]) url.searchParams.set(key, "[redacted]");
-    url.hash = "";
-    return url.toString();
-  } catch {
-    return text.replace(/([?#]).*$/u, "$1[redacted]");
-  }
+  return text ? "[redacted]" : text;
 }
 
 function sanitizedValue(value, {
@@ -760,7 +751,9 @@ export function rowToAcpOperation(row) {
 
 export function rowToAcpInteraction(row) {
   if (!row) return null;
-  const requestSchema = parseJson(row.request_schema_json, {});
+  const requestSchema = row.kind === "url"
+    ? { ...ACP_URL_PUBLIC_REQUEST }
+    : parseJson(row.request_schema_json, {});
   const safeRequest = sanitizeAcpInteractionRequest({
     source: {
       protocolRequestId: row.protocol_request_id,

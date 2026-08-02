@@ -178,7 +178,10 @@ export { WORKLAB_RUNTIME_BRAND } from "./runtime-brand.js";
 export {
   ACP_PRIVATE_URL_HANDOFF,
   ACP_URL_HANDOFF_LIMITS,
+  ACP_URL_PUBLIC_REQUEST,
+  createAcpUrlPublicRequest,
   createAcpUrlHandoffStore,
+  inspectAcpUrlHandoff,
   normalizeAcpUrlHandoff,
 } from "./acp-url-handoff.js";
 
