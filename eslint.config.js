@@ -62,7 +62,7 @@ const FORBID_REMOVED_SHIMS = {
 // through the runtime façade on @mono-agent/agent-runtime/ai —
 // listPiBuiltinModels, getPiBuiltinModel, reasoningLevelsForPiModel,
 // resolvePiOAuthApiKey, loginPiOAuth — which keeps pi-ai's mutable registry and
-// its exact 0.80.6 pin inside the runtime. pi-ai remains a devDependency only
+// its exact 0.83.0 pin inside the runtime. pi-ai remains a devDependency only
 // for the faux-provider fixtures in src/__tests__/e2e/multi-sdk.test.js, so the
 // test blocks below deliberately do not carry this rule.
 const FORBID_PI_AI = {

@@ -2,7 +2,17 @@
 
 ## Unreleased
 
-- Upgraded `@mono-agent/agent-runtime` from 0.4.1 to 0.15.2.
+- Upgraded `@mono-agent/agent-runtime` from 0.4.1 to 0.17.1.
+  - Non-empty skill sets now carry an explicit `skillsRoot`, as required by
+    the runtime's indexed-skill contract, while `skillDirs` continues to bound
+    filesystem access for Worklab's disclosed skills.
+  - Worklab deliberately leaves the runtime's new per-route retry attempts,
+    request-scoped `toolEnvironment`, and generic Pi `Agent` subagents unset.
+    Existing fallback routing, worker environment, and native-subagent policy
+    remain Worklab-owned.
+  - Runtime 0.17.1 restores fallback routing when Pi 0.83 reports a missing
+    credential as `Provider is not configured`: the failure is normalized to
+    `provider_auth`, so the next configured route is attempted.
   - Fixed direct Codex runs, which the upgrade had broken outright. The
     runtime fails a run closed unless the tool policy is an omitted
     allowlist or one containing `"*"`, and Worklab always sends an explicit
