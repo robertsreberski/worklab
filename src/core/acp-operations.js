@@ -647,7 +647,7 @@ export function sanitizeAcpOperationError(kind, error, {
   const code = !privacyFailedClosed
     && privacy.complete
     && /^[A-Za-z0-9_.-]+$/u.test(rawCode || "")
-    && !containsRawSessionId(rawCode, privacy.redactions)
+    && !containsRawSessionId(originalCode, privacy.redactions)
     && !containsPrivateScalar(originalCode, privateValues)
     ? rawCode
     : "operation_failed";
