@@ -32,14 +32,22 @@ async function boundedFetch(fetchImpl, url, options, timeoutMs, consume) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
   timeout.unref?.();
+  let response;
   try {
-    const response = await fetchImpl(url, {
+    response = await fetchImpl(url, {
       ...options,
       redirect: "error",
       signal: controller.signal,
     });
     return consume ? await consume(response) : response;
   } finally {
+    // Status-only responses and every early validation failure must actively
+    // discard the body. Otherwise an endpoint that sends headers and an
+    // endless body can keep Undici's socket (and the CLI process) alive.
+    controller.abort();
+    if (response?.body && !response.body.locked) {
+      try { await response.body.cancel(); } catch {}
+    }
     clearTimeout(timeout);
   }
 }
@@ -52,22 +60,25 @@ async function readBoundedJson(response) {
   }
   const declaredLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > MAX_HEALTH_RESPONSE_BYTES) {
-    await response.body?.cancel();
     return { status: "control_unavailable", health: null };
   }
   const reader = response.body?.getReader();
   if (!reader) return { status: "control_unavailable", health: null };
   const chunks = [];
   let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > MAX_HEALTH_RESPONSE_BYTES) {
-      await reader.cancel();
-      return { status: "control_unavailable", health: null };
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_HEALTH_RESPONSE_BYTES) {
+        await reader.cancel();
+        return { status: "control_unavailable", health: null };
+      }
+      chunks.push(Buffer.from(value));
     }
-    chunks.push(Buffer.from(value));
+  } finally {
+    reader.releaseLock();
   }
   try {
     return { status: "ok", health: JSON.parse(Buffer.concat(chunks, total).toString("utf8")) };

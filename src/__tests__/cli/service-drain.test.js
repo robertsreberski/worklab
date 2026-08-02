@@ -8,6 +8,10 @@ import {
   coordinatorShutdownProof,
   ensureMcpToken,
 } from "../../core/index.js";
+import {
+  readCoordinatorHealth,
+  requestCoordinatorShutdown,
+} from "../../cli/coordinator-control.js";
 import { gracefulStopCoordinator } from "../../cli/service-drain.js";
 
 describe("service drain helper", () => {
@@ -230,5 +234,32 @@ describe("service drain helper", () => {
 
     expect(result).toMatchObject({ status: "control_unavailable", reason: "identity_unconfirmed" });
     expect(Date.now() - startedAt).toBeLessThan(500);
+  });
+
+  it("cancels endless status-only and rejected health response bodies", async () => {
+    const dataDir = tempDataDir();
+    let shutdownBodyCancelled = false;
+    const shutdown = await requestCoordinatorShutdown({
+      config: { dataDir, host: "127.0.0.1", port: 7878 },
+      incarnation: "cancel-status-body-incarnation",
+      fetchImpl: vi.fn(async () => new Response(new ReadableStream({
+        cancel() { shutdownBodyCancelled = true; },
+      }), { status: 202 })),
+      timeoutMs: 20,
+    });
+
+    let healthBodyCancelled = false;
+    const health = await readCoordinatorHealth({
+      config: { dataDir, host: "127.0.0.1", port: 7878 },
+      fetchImpl: vi.fn(async () => new Response(new ReadableStream({
+        cancel() { healthBodyCancelled = true; },
+      }), { status: 500, headers: { "content-type": "text/plain" } })),
+      timeoutMs: 20,
+    });
+
+    expect(shutdown).toEqual({ status: "accepted" });
+    expect(shutdownBodyCancelled).toBe(true);
+    expect(health).toEqual({ status: "control_unavailable", health: null });
+    expect(healthBodyCancelled).toBe(true);
   });
 });
