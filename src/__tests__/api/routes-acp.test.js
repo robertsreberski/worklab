@@ -369,6 +369,31 @@ describe("ACP API", () => {
     });
   });
 
+  it("requires generic profiles to be recreated before launch identity changes", async () => {
+    const cwd = workspace();
+    const { agent } = makeTestServer();
+    const profile = (await createGeneric(agent, cwd)).body.profile;
+
+    const rejected = await agent.patch(`/api/acp/profiles/${profile.id}`)
+      .send({ args: ["different-agent.js"] })
+      .expect(409);
+    expect(rejected.body).toEqual({
+      error: {
+        code: "profile_identity_immutable",
+        message: "ACP launch and session identity is immutable; create a new profile to change args",
+      },
+    });
+
+    const updated = await agent.patch(`/api/acp/profiles/${profile.id}`)
+      .send({ displayName: "Renamed", probeTimeoutMs: 45_000 })
+      .expect(200);
+    expect(updated.body.profile).toMatchObject({
+      args: [],
+      probeTimeoutMs: 45_000,
+      agent: { displayName: "Renamed" },
+    });
+  });
+
   it("does not expose errors returned by injected discovery controls", async () => {
     const { agent } = makeTestServer({
       acpControls: {

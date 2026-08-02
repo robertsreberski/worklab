@@ -442,6 +442,57 @@ describe("ACP profile persistence", () => {
     expect(getAcpProfile({ db, id: profile.id }).configPolicy).toEqual({});
   });
 
+  it("keeps generic launch and session identity immutable after creation", () => {
+    const db = makeTestDb();
+    const cwd = tempDir();
+    const otherCwd = tempDir();
+    const profile = createAcpProfile({
+      db,
+      input: {
+        agentName: "external",
+        displayName: "External",
+        command: process.execPath,
+        args: ["agent.js"],
+        cwd,
+        envKeys: ["ACP_TOKEN"],
+        sessionPolicy: { resumeStrategy: "auto" },
+      },
+    });
+
+    for (const input of [
+      { command: "/bin/sh" },
+      { args: ["different.js"] },
+      { cwd: otherCwd },
+      { envKeys: ["OTHER_TOKEN"] },
+      { configurationOwner: "agent" },
+      { workspaceOwner: "agent", canonicalWorkspace: cwd },
+      { mcpOwner: "agent" },
+      { canonicalWorkspace: cwd },
+      { sessionPolicy: { resumeStrategy: "load" } },
+    ]) {
+      let error;
+      try {
+        updateAcpProfileRecord({ db, id: profile.id, input });
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toMatchObject({ code: "profile_identity_immutable", status: 409 });
+      expect(error.message).toMatch(/create a new profile/i);
+    }
+
+    expect(getAcpProfile({ db, id: profile.id })).toMatchObject({
+      command: profile.command,
+      args: ["agent.js"],
+      cwd: profile.cwd,
+      envKeys: ["ACP_TOKEN"],
+      configurationOwner: "client",
+      workspaceOwner: "client",
+      mcpOwner: "client",
+      canonicalWorkspace: null,
+      sessionPolicy: { resumeStrategy: "auto" },
+    });
+  });
+
   it("rejects unsupported client capabilities when patching a generic profile", () => {
     const db = makeTestDb();
     const cwd = tempDir();

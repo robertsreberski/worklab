@@ -79,6 +79,19 @@ const MONO_DESCRIPTOR_OWNED_INPUT_KEYS = Object.freeze([
   "probeTimeoutMs",
   "probe_timeout_ms",
 ]);
+const GENERIC_IMMUTABLE_IDENTITY_FIELDS = Object.freeze([
+  "command",
+  "args",
+  "cwd",
+  "envKeys",
+  "configurationOwner",
+  "workspaceOwner",
+  "mcpOwner",
+  "canonicalWorkspace",
+  "permissionsPolicy",
+  "configPolicy",
+  "sessionPolicy",
+]);
 
 function acpError(message, { code = "validation", status = 400, details } = {}) {
   return Object.assign(new Error(message), {
@@ -99,6 +112,21 @@ function inputValue(input, camel, snake = camel, fallback = undefined) {
   if (Object.hasOwn(input || {}, camel)) return input[camel];
   if (snake !== camel && Object.hasOwn(input || {}, snake)) return input[snake];
   return fallback;
+}
+
+function sameNormalizedValue(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function assertGenericIdentityUnchanged(current, next) {
+  const changed = GENERIC_IMMUTABLE_IDENTITY_FIELDS.filter(
+    (field) => !sameNormalizedValue(current[field], next[field]),
+  );
+  if (!changed.length) return;
+  throw acpError(
+    `ACP launch and session identity is immutable; create a new profile to change ${changed.join(", ")}`,
+    { code: "profile_identity_immutable", status: 409 },
+  );
 }
 
 function boundedString(value, name, { required = false, max = MAX_STRING_CHARS } = {}) {
@@ -710,6 +738,7 @@ export function updateAcpProfileRecord({ db, id, input = {}, now = Date.now() })
   const profile = current.driver === "mono"
     ? normalizeMonoProfile(input, null, current)
     : normalizeGenericProfile(input, current);
+  if (current.driver === "generic") assertGenericIdentityUnchanged(current, profile);
   const transaction = db.transaction(() => {
     bindAgent(db, profile, id, now);
     const fields = persistenceFields(profile, { id, createdAt: current.createdAt, updatedAt: now });
