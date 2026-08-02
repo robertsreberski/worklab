@@ -216,6 +216,148 @@
   --sans: var(--font-sans);
 }
 
+/* External agent creation and ACP discovery */
+.external-agent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 20px;
+  padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: var(--radius-pill);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.agent-create-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+
+.agent-create-choice {
+  display: flex;
+  min-width: 0;
+  min-height: 156px;
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+
+.agent-create-choice:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: var(--surface-hover);
+  transform: translateY(-1px);
+}
+
+.agent-create-choice:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.agent-create-choice-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 34px;
+  height: 34px;
+  margin-right: var(--sp-3);
+  border-radius: var(--radius-md);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.agent-create-choice-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.agent-create-choice-title { font-weight: 650; }
+.agent-create-choice-description { color: var(--text-muted); font-size: 12px; line-height: 1.45; }
+.agent-create-choice-arrow { flex: 0 0 auto; margin-left: var(--sp-2); color: var(--text-faint); }
+
+.mono-discovery-contract {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 5px;
+  color: var(--status-done);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.mono-discovery-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+.mono-discovery-source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.mono-discovery-source-main { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+.mono-discovery-source-head { display: flex; align-items: center; gap: var(--sp-2); }
+.mono-discovery-capabilities { display: flex; flex-wrap: wrap; gap: 5px; }
+.mono-discovery-capabilities span {
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  background: var(--surface-subtle);
+  font-size: 10px;
+}
+.mono-discovery-empty {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-6);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.external-agent-detail-head .external-agent-badge { margin-left: 2px; }
+.external-agent-editor-layout .form-section .banner { margin-bottom: 0; }
+.external-agent-editor-layout .textarea.mono { min-height: 116px; }
+
+.acp-health-card { display: flex; flex-direction: column; gap: var(--sp-3); }
+.acp-health-error {
+  padding: var(--sp-2);
+  border: 1px solid var(--status-error-border);
+  border-radius: var(--radius-sm);
+  color: var(--status-error);
+  background: var(--status-error-bg-10);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.acp-health-empty { color: var(--text-muted); font-size: 11px; line-height: 1.4; }
+.acp-capability-list { display: flex; flex-wrap: wrap; gap: 5px; }
+.acp-capability-list span {
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  background: var(--surface-subtle);
+  font-size: 10px;
+}
+
+@media (max-width: 720px) {
+  .agent-create-choices { grid-template-columns: 1fr; }
+  .agent-create-choice { min-height: 0; }
+  .mono-discovery-source { align-items: flex-start; flex-direction: column; }
+}
+
 /* 2. Keyframes (§2.6.3) ---------------------------------------- */
 @keyframes wl-pulse {
   0%   { transform: scale(1);   opacity: 0.85; }
