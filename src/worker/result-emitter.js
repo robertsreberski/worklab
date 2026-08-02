@@ -62,7 +62,10 @@ export function emitFinalResult(ctx, result) {
   const { emit } = ctx;
 
   if (result.cancelled) {
-    emit({ type: "cancelled" });
+    emit({
+      type: "cancelled",
+      ...providerSessionPayload(result),
+    });
     return 130;
   }
   emitRuntimeWarnings(emit, result);
@@ -73,6 +76,7 @@ export function emitFinalResult(ctx, result) {
       failureKind: result.failureKind,
       ...(result.errorDetails ? { details: result.errorDetails } : {}),
       ...(result.diagnostics && typeof result.diagnostics === "object" ? { diagnostics: result.diagnostics } : {}),
+      ...providerSessionPayload(result),
     });
     return 1;
   }
@@ -131,6 +135,7 @@ export function emitFinalResult(ctx, result) {
         type: "worklab_result_error",
         message: result.parsedResultFatalMessage || result.parsedResultError || "Invalid worklab_result",
         ...(result.diagnostics && typeof result.diagnostics === "object" ? { diagnostics: result.diagnostics } : {}),
+        ...providerSessionPayload(result),
       });
       return 1;
     }
@@ -170,6 +175,7 @@ export function emitFinalResult(ctx, result) {
         type: "worklab_result_error",
         message: result.parsedResultFatalMessage || result.parsedResultError || "Reviewer did not return a valid worklab_result or verdict",
         ...(result.diagnostics && typeof result.diagnostics === "object" ? { diagnostics: result.diagnostics } : {}),
+        ...providerSessionPayload(result),
       });
       return 1;
     }
@@ -204,6 +210,7 @@ export function emitFinalResult(ctx, result) {
         type: "worklab_result_error",
         message: result.parsedResultError || "Lead cycle did not return a valid worklab.lead_cycle.v1 result",
         ...(result.diagnostics && typeof result.diagnostics === "object" ? { diagnostics: result.diagnostics } : {}),
+        ...providerSessionPayload(result),
       });
       return 1;
     }
@@ -222,6 +229,10 @@ export function emitFinalResult(ctx, result) {
     return 0;
   }
 
-  emit({ type: "error", message: `unknown runner kind: ${result.kind}` });
+  emit({
+    type: "error",
+    message: `unknown runner kind: ${result.kind}`,
+    ...providerSessionPayload(result),
+  });
   return 1;
 }
