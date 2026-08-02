@@ -172,6 +172,14 @@ export default [
     rules: restricted(FORBID_DB, FORBID_EDGE_FROM_CORE, FORBID_REMOVED_SHIMS, FORBID_PI_AI),
   },
 
+  // Core DB modules are excluded above only so their better-sqlite3 imports
+  // remain legal. They are still production code and must consume Pi through
+  // agent-runtime's stable façade like every other production module.
+  {
+    files: ["src/core/db/**/*.js"],
+    rules: restricted(FORBID_PI_AI),
+  },
+
   // src/api/ — HTTP edge. Edge consumers go through core/index.js; the
   // FORBID_DEEP_CORE carve-out for core/db/queries/* applies here too.
   {
