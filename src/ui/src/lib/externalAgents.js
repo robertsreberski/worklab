@@ -189,6 +189,48 @@ export function externalAgentVolatileState(profile = {}) {
   };
 }
 
+function advertisedAuthMethods(profile = {}, operation = null) {
+  const lastProbe = firstDefined(profile.lastProbe, profile.last_probe, {});
+  return firstDefined(
+    operation?.result?.authMethods,
+    operation?.result?.auth_methods,
+    operation?.result?.initialize?.authMethods,
+    operation?.result?.initialize?.auth_methods,
+    operation?.authMethods,
+    operation?.auth_methods,
+    lastProbe?.result?.authMethods,
+    lastProbe?.result?.auth_methods,
+    lastProbe?.result?.initialize?.authMethods,
+    lastProbe?.result?.initialize?.auth_methods,
+    lastProbe?.authMethods,
+    lastProbe?.auth_methods,
+    profile.authMethods,
+    profile.auth_methods,
+    [],
+  );
+}
+
+export function acpAuthMethods(profile = {}, operation = null) {
+  const items = advertisedAuthMethods(profile, operation);
+  if (!Array.isArray(items)) return [];
+  const methods = items.map((method) => {
+    if (typeof method === "string") {
+      const id = text(method);
+      return id ? { id, label: id, type: "", description: "" } : null;
+    }
+    if (!method || typeof method !== "object") return null;
+    const id = text(firstDefined(method.id, method.authMethodId, method.auth_method_id));
+    if (!id) return null;
+    return {
+      id,
+      label: text(firstDefined(method.name, method.title, method.label)) || id,
+      type: text(method.type),
+      description: text(method.description),
+    };
+  }).filter(Boolean);
+  return [...new Map(methods.map((method) => [method.id, method])).values()];
+}
+
 export function acpEndpointUnsupported(error) {
   return [404, 405, 501].includes(Number(error?.status))
     || ["not_found", "method_not_found", "not_implemented", "unsupported"].includes(String(error?.code || "").toLowerCase());
