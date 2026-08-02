@@ -973,6 +973,39 @@ describe("spawnWorker", () => {
     expect(run.provider_session_id).toBe("failed-session");
   });
 
+  it.each([
+    ["provider error", { type: "error", message: "provider failed", failureKind: "provider_error" }, 1],
+    ["structured result error", { type: "worklab_result_error", message: "invalid result" }, 1],
+    ["cancellation", { type: "cancelled", initiator: "worker_signal" }, 130],
+  ])("persists provider_session_id from terminal %s events", async (_label, terminalEvent, exitCode) => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const providerSessionId = `acp:v1:external:${Buffer.from(`remote-${runId}`).toString("base64url")}`;
+    const script = {
+      events: [{ ...terminalEvent, provider_session_id: providerSessionId }],
+      exitCode,
+    };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId,
+      taskId,
+      broker,
+      db,
+      runIdleWarningMs: 0,
+    });
+
+    const result = await handle.done;
+    const run = db.prepare("SELECT diagnostics_json, provider_session_id FROM task_runs WHERE id = ?").get(runId);
+
+    expect(result.providerSessionId).toBe(providerSessionId);
+    expect(run.provider_session_id).toBe(providerSessionId);
+    expect(JSON.parse(run.diagnostics_json).provider_session_id).toBe(providerSessionId);
+    expect(JSON.stringify(run)).not.toContain(`remote-${runId}`);
+  });
+
   it("persists final usage cost without applying hidden per-agent cost budgets", async () => {
     const db = makeTestDb();
     const broker = stubBroker();

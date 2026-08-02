@@ -135,6 +135,7 @@ export function spawnWorker({
   let errorMessage = null;
   let resultError = null;
   let workerDiagnostics = null;
+  let terminalProviderSessionId = null;
   let explicitFailureKind = null;
   let errorDetails = null;
   let exitCode = null;
@@ -627,6 +628,12 @@ export function spawnWorker({
     );
     const { rawEvent } = emitEvent(safeParsed);
     mergeWorkerDiagnostics(rawEvent.diagnostics);
+    if (["final", "error", "cancelled", "worklab_result_error"].includes(rawEvent.type)) {
+      const providerSessionId = rawEvent.provider_session_id || rawEvent.providerSessionId;
+      if (typeof providerSessionId === "string" && providerSessionId.length > 0) {
+        terminalProviderSessionId = providerSessionId;
+      }
+    }
     const recoveredStructuredResult = worklabResultFromStructuredOutputEvent(rawEvent);
     if (recoveredStructuredResult) structuredOutputResult = recoveredStructuredResult;
     if (rawEvent.type === "final") finalPayload = rawEvent;
@@ -892,6 +899,7 @@ export function spawnWorker({
           }) || "spawn");
       const providerSessionId = finalPayload?.provider_session_id
         || finalPayload?.providerSessionId
+        || terminalProviderSessionId
         || workerDiagnostics?.provider_session_id
         || errorDetails?.provider_session_id
         || null;
