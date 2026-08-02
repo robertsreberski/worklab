@@ -10,10 +10,14 @@ import { makeTestDb } from "../helpers/test-db.js";
 const cleanup = [];
 
 afterEach(() => {
+  vi.useRealTimers();
   for (const dir of cleanup.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function setup(controls) {
+function setup(controls, {
+  probeTimeoutMs = 5_000,
+  abortCleanupTimeoutMs,
+} = {}) {
   const db = makeTestDb();
   const cwd = mkdtempSync(join(tmpdir(), "worklab-acp-operation-"));
   cleanup.push(cwd);
@@ -25,12 +29,12 @@ function setup(controls) {
       command: process.execPath,
       cwd,
       envKeys: ["ACP_API_TOKEN"],
-      probeTimeoutMs: 5_000,
+      probeTimeoutMs,
     },
   });
   const events = [];
   const broker = { broadcast: (channel, event) => events.push({ channel, event }) };
-  const manager = createAcpOperationManager({ db, broker, controls });
+  const manager = createAcpOperationManager({ db, broker, controls, abortCleanupTimeoutMs });
   return { db, profile, events, manager };
 }
 
@@ -269,6 +273,93 @@ describe("AcpOperationManager", () => {
     expect(db.prepare("SELECT state, disposition FROM acp_interactions WHERE operation_id = ?")
       .get(operation.id)).toMatchObject({ state: "expired", disposition: "operation_ended" });
     expect(manager.abort(operation.id)).toBe(false);
+  });
+
+  it("pauses the operation deadline while authentication waits for a person", async () => {
+    vi.useFakeTimers();
+    let delivered;
+    const { db, profile, manager } = setup({
+      authenticate: async ({ onInteraction }) => {
+        delivered = await onInteraction({
+          requestId: "slow-human-approval",
+          kind: "permission",
+          schema: { options: [{ id: "allow_once", label: "Allow once", kind: "allow_once" }] },
+        });
+        return { authenticated: true };
+      },
+    }, { probeTimeoutMs: 1_000 });
+    const operation = manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "permission-login",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const interaction = db.prepare("SELECT * FROM acp_interactions WHERE operation_id = ?")
+      .get(operation.id);
+    expect(interaction?.state).toBe("pending");
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(manager.get(operation.id)?.state).toBe("waiting_for_interaction");
+    expect(manager.isActive(operation.id)).toBe(true);
+
+    manager.respond({
+      operationId: operation.id,
+      interactionId: interaction.id,
+      disposition: "allow_once",
+      response: { outcome: { outcome: "selected", optionId: "allow_once" } },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(manager.get(operation.id)?.state).toBe("succeeded");
+    expect(delivered).toEqual({ outcome: { outcome: "selected", optionId: "allow_once" } });
+  });
+
+  it("retains an aborted handler until cleanup finishes or its hard ceiling elapses", async () => {
+    let beginCleanup;
+    let finishCleanup;
+    const cleanupStarted = new Promise((resolve) => { beginCleanup = resolve; });
+    const cleanupGate = new Promise((resolve) => { finishCleanup = resolve; });
+    const { profile, manager } = setup({
+      probe: async ({ signal }) => {
+        await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+        beginCleanup();
+        await cleanupGate;
+        throw signal.reason;
+      },
+    }, { abortCleanupTimeoutMs: 1_000 });
+    const operation = manager.start({ profileId: profile.id, kind: "probe" });
+    await vi.waitFor(() => expect(manager.get(operation.id)?.state).toBe("running"));
+
+    expect(manager.abort(operation.id, "test cleanup gate")).toBe(true);
+    await cleanupStarted;
+    await vi.waitFor(() => expect(manager.get(operation.id)?.state).toBe("cancelled"));
+    expect(manager.isActive(operation.id)).toBe(true);
+    expect(() => manager.start({ profileId: profile.id, kind: "probe" }))
+      .toThrowError("ACP profile already has an active operation");
+    let shutdownSettled = false;
+    const shutdown = manager.shutdown().then(() => { shutdownSettled = true; });
+    await Promise.resolve();
+    expect(shutdownSettled).toBe(false);
+
+    finishCleanup();
+    await shutdown;
+    expect(manager.isActive(operation.id)).toBe(false);
+  });
+
+  it("releases an aborted handler after the cleanup hard ceiling", async () => {
+    const { profile, manager } = setup({
+      probe: async ({ signal }) => {
+        await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+        return new Promise(() => {});
+      },
+    }, { abortCleanupTimeoutMs: 20 });
+    const operation = manager.start({ profileId: profile.id, kind: "probe" });
+    await vi.waitFor(() => expect(manager.get(operation.id)?.state).toBe("running"));
+    expect(manager.abort(operation.id, "test cleanup ceiling")).toBe(true);
+    await vi.waitFor(() => expect(manager.isActive(operation.id)).toBe(false), {
+      timeout: 500,
+      interval: 5,
+    });
+    expect(manager.get(operation.id)?.state).toBe("cancelled");
   });
 
   it("redacts credentials and query values from persisted interaction URLs", async () => {

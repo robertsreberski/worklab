@@ -47,6 +47,8 @@ const INTERACTION_KIND_ALIASES = Object.freeze({
   elicitation_url: "url",
 });
 
+const DEFAULT_ABORT_CLEANUP_TIMEOUT_MS = 5_000;
+
 function managerError(message, { code = "invalid_state", status = 409 } = {}) {
   return Object.assign(new Error(message), { code, status, safeMessage: message });
 }
@@ -74,6 +76,20 @@ function raceWithAbort(promise, signal) {
     signal.addEventListener("abort", listener, { once: true });
   });
   return Promise.race([promise, aborted]).finally(() => signal.removeEventListener("abort", listener));
+}
+
+async function waitForSettlement(promise, timeoutMs) {
+  let timeout;
+  const deadline = new Promise((resolve) => {
+    timeout = setTimeout(() => resolve(false), timeoutMs);
+    timeout.unref?.();
+  });
+  const settled = Promise.resolve(promise).then(() => true, () => true);
+  try {
+    return await Promise.race([settled, deadline]);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function permissionOptionId(response) {
@@ -115,12 +131,22 @@ function assertOfferedPermissionResponse(row, response, disposition) {
 }
 
 export class AcpOperationManager {
-  constructor({ db, broker, controls = {}, logger, now = () => Date.now() } = {}) {
+  constructor({
+    db,
+    broker,
+    controls = {},
+    logger,
+    now = () => Date.now(),
+    abortCleanupTimeoutMs = DEFAULT_ABORT_CLEANUP_TIMEOUT_MS,
+  } = {}) {
     this.db = db;
     this.broker = broker;
     this.controls = controls;
     this.logger = logger;
     this.now = now;
+    this.abortCleanupTimeoutMs = Number.isFinite(abortCleanupTimeoutMs) && abortCleanupTimeoutMs > 0
+      ? abortCleanupTimeoutMs
+      : DEFAULT_ABORT_CLEANUP_TIMEOUT_MS;
     this.active = new Map();
     this.#reconcileOrphanedOperations();
   }
@@ -188,7 +214,7 @@ export class AcpOperationManager {
       });
     }
     const profile = assertAcpProfileBinding({ db: this.db, id: profileId });
-    if (countActiveAcpOperationsForProfile(this.db, profileId) > 0) {
+    if (this.isProfileActive(profileId) || countActiveAcpOperationsForProfile(this.db, profileId) > 0) {
       throw managerError("ACP profile already has an active operation", {
         code: "operation_active",
         status: 409,
@@ -223,6 +249,7 @@ export class AcpOperationManager {
       authMethodId: methodId,
       controller: new AbortController(),
       pending: new Map(),
+      deadline: null,
       done: null,
     };
     this.active.set(id, record);
@@ -235,29 +262,28 @@ export class AcpOperationManager {
     const method = CONTROL_METHODS[record.kind];
     const handler = this.controls[method];
     const startedAt = this.now();
-    let timeout;
+    let handlerPromise;
     try {
       if (markAcpOperationRunning(this.db, record.id, { startedAt }).changes !== 1) {
         throw managerError("ACP operation is no longer queued");
       }
       this.#broadcastOperation(record.id, "running");
-      timeout = setTimeout(() => {
-        record.controller.abort(managerError("ACP operation timed out", {
-          code: "operation_timeout",
-          status: 408,
-        }));
-      }, record.profile.probeTimeoutMs);
-      timeout.unref?.();
-
-      const result = await raceWithAbort(Promise.resolve().then(() => handler.call(this.controls, {
-        profile: record.profile,
-        operation: this.get(record.id),
-        remoteSessionId: record.remoteSessionId,
-        providerSessionId: record.providerSessionId,
-        authMethodId: record.authMethodId,
-        signal: record.controller.signal,
-        onInteraction: (request) => this.#requestInteraction(record, request),
-      })), record.controller.signal);
+      this.#armDeadline(record);
+      handlerPromise = Promise.resolve().then(() => {
+        if (record.controller.signal.aborted) {
+          throw abortReason(record.controller.signal, "ACP operation cancelled");
+        }
+        return handler.call(this.controls, {
+          profile: record.profile,
+          operation: this.get(record.id),
+          remoteSessionId: record.remoteSessionId,
+          providerSessionId: record.providerSessionId,
+          authMethodId: record.authMethodId,
+          signal: record.controller.signal,
+          onInteraction: (request) => this.#requestInteraction(record, request),
+        });
+      });
+      const result = await raceWithAbort(handlerPromise, record.controller.signal);
       if (record.controller.signal.aborted) throw abortReason(record.controller.signal, "ACP operation cancelled");
 
       const sanitized = sanitizeAcpOperationResult(record.kind, result);
@@ -307,11 +333,40 @@ export class AcpOperationManager {
       }, "ACP operation ended without success");
       this.#broadcastOperation(record.id, cancelled ? "cancelled" : "failed");
     } finally {
-      if (timeout) clearTimeout(timeout);
+      this.#clearDeadline(record);
       this.#settlePending(record, "operation_ended");
+      if (record.controller.signal.aborted && handlerPromise) {
+        const settled = await waitForSettlement(handlerPromise, this.abortCleanupTimeoutMs);
+        if (!settled) {
+          this.logger?.warn?.({
+            operation_id: record.id,
+            kind: record.kind,
+            cleanup_timeout_ms: this.abortCleanupTimeoutMs,
+          }, "ACP operation handler did not settle after cancellation");
+        }
+      }
       this.active.delete(record.id);
     }
     return this.get(record.id);
+  }
+
+  #clearDeadline(record) {
+    if (!record.deadline) return;
+    clearTimeout(record.deadline);
+    record.deadline = null;
+  }
+
+  #armDeadline(record) {
+    this.#clearDeadline(record);
+    if (record.controller.signal.aborted || record.pending.size > 0) return;
+    record.deadline = setTimeout(() => {
+      record.deadline = null;
+      record.controller.abort(managerError("ACP operation timed out", {
+        code: "operation_timeout",
+        status: 408,
+      }));
+    }, record.profile.probeTimeoutMs);
+    record.deadline.unref?.();
   }
 
   #requestInteraction(record, request = {}) {
@@ -350,6 +405,7 @@ export class AcpOperationManager {
       cancelAcpInteraction(this.db, id, { disposition: "cancel", resolvedAt: now });
       throw managerError("ACP operation is not accepting interactions");
     }
+    this.#clearDeadline(record);
     const interaction = rowToAcpInteraction(getAcpInteractionById(this.db, id));
     this.broker?.broadcast?.("global", { type: "acp_interaction_requested", interaction });
     this.#broadcastOperation(record.id, "waiting_for_interaction");
@@ -398,6 +454,7 @@ export class AcpOperationManager {
     })();
     record.pending.delete(interactionId);
     record.controller.signal.removeEventListener("abort", pending.abort);
+    this.#armDeadline(record);
     pending.resolve(response);
     const interaction = rowToAcpInteraction(finalized);
     this.broker?.broadcast?.("global", { type: "acp_interaction_submitted", interaction });
@@ -415,12 +472,13 @@ export class AcpOperationManager {
       resolvedAt: this.now(),
     });
     if (!cancelled) throw managerError("ACP interaction is not pending", { code: "not_pending", status: 409 });
-    pending.resolve({ disposition: "cancel" });
     record.pending.delete(interactionId);
     record.controller.signal.removeEventListener("abort", pending.abort);
     if (record.pending.size === 0) {
       markAcpOperationRunning(this.db, operationId, { updatedAt: this.now() });
     }
+    this.#armDeadline(record);
+    pending.resolve({ disposition: "cancel" });
     const interaction = rowToAcpInteraction(cancelled);
     this.broker?.broadcast?.("global", { type: "acp_interaction_cancelled", interaction });
     this.#broadcastOperation(operationId, "running");
