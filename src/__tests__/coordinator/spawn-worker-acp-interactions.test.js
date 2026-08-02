@@ -105,6 +105,11 @@ describe("spawnWorker ACP interactions", () => {
         exitAfterMs: 250,
       };
       const broadcasts = [];
+      const loggerEvents = [];
+      const logger = Object.fromEntries(["info", "warn", "error"].map((level) => [
+        level,
+        (...args) => loggerEvents.push({ level, args }),
+      ]));
       const handle = spawnWorker({
         binary: fakeBinary,
         args: ["--task", taskId, "--mode", "execute", "--agent", "external"],
@@ -122,6 +127,7 @@ describe("spawnWorker ACP interactions", () => {
           size: () => 0,
         },
         db,
+        logger,
         runIdleWarningMs: 0,
       });
       const pending = await waitForRow(db, "interaction-1");
@@ -138,7 +144,16 @@ describe("spawnWorker ACP interactions", () => {
       const delivered = await handle.sendAcpInteractionResponse({
         interactionId: "interaction-1",
         disposition: "accept",
-        response: { action: "accept", content: { answer: "do-not-persist" } },
+        response: {
+          action: "accept",
+          content: {
+            answer: "do-not-persist",
+            pin: 493827,
+            approved: true,
+          },
+          diagnostic_echo: "OTP493827END approved=true-ish",
+          "OTP493827END-approved=true-ish": "key echo",
+        },
       });
       expect(delivered.ok).toBe(true);
       const submitted = db.prepare("SELECT * FROM acp_interactions WHERE id = ?").get("interaction-1");
@@ -148,11 +163,33 @@ describe("spawnWorker ACP interactions", () => {
 
       await handle.done;
       const log = db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runId);
-      expect(log.events).not.toMatch(/do-not-persist|task-run-request-secret-sentinel|RAW_REMOTE_SESSION/u);
+      const controlSeen = JSON.parse(log.events).find((event) => event.type === "control_seen");
+      expect(controlSeen.message.response).toMatchObject({
+        content: {
+          answer: "[redacted]",
+          pin: "[redacted]",
+          approved: "[redacted]",
+        },
+        diagnostic_echo: "OTP[redacted]END approved=[redacted]-ish",
+        "OTP[redacted]END-approved=[redacted]-ish": "key echo",
+      });
+      expect(log.events).not.toMatch(
+        /do-not-persist|task-run-request-secret-sentinel|RAW_REMOTE_SESSION|493827|approved=true-ish/u,
+      );
       const run = db.prepare("SELECT diagnostics_json, raw_output_path FROM task_runs WHERE id = ?").get(runId);
-      expect(run.diagnostics_json).not.toMatch(/do-not-persist|task-run-request-secret-sentinel|RAW_REMOTE_SESSION/u);
-      expect(readFileSync(run.raw_output_path, "utf8")).not.toContain(rawSessionId);
-      expect(JSON.stringify(broadcasts)).not.toMatch(/do-not-persist|task-run-request-secret-sentinel|RAW_REMOTE_SESSION/u);
+      expect(run.diagnostics_json).not.toMatch(
+        /do-not-persist|task-run-request-secret-sentinel|RAW_REMOTE_SESSION|493827|approved=true-ish/u,
+      );
+      expect(run.diagnostics_json).toContain("OTP[redacted]END approved=[redacted]-ish");
+      const rawLog = readFileSync(run.raw_output_path, "utf8");
+      expect(rawLog).not.toMatch(/RAW_REMOTE_SESSION|493827|approved=true-ish/u);
+      expect(rawLog).toContain("OTP[redacted]END approved=[redacted]-ish");
+      expect(JSON.stringify(broadcasts)).not.toMatch(
+        /do-not-persist|task-run-request-secret-sentinel|RAW_REMOTE_SESSION|493827|approved=true-ish/u,
+      );
+      expect(JSON.stringify(broadcasts)).toContain("OTP[redacted]END approved=[redacted]-ish");
+      expect(JSON.stringify(loggerEvents)).not.toMatch(/493827|approved=true-ish/u);
+      expect(JSON.stringify(loggerEvents)).toContain("OTP[redacted]END approved=[redacted]-ish");
       expect(JSON.stringify(db.prepare("SELECT * FROM acp_interactions").all())).not.toContain(rawSessionId);
     } finally {
       db.close();
@@ -495,10 +532,21 @@ describe("spawnWorker ACP interactions", () => {
         response: { action: "accept", content: { pin: 654321, remember: false } },
       });
       await vi.waitFor(() => expect(controlMessage?.delivery_id).toBe("delivery-scalars"));
-      expect(controls.redactWorkerEvent({ pin: 654321, remember: false, count: 7, ok: true }))
-        .toEqual({ pin: "[redacted]", remember: "[redacted]", count: 7, ok: true });
-      expect(controls.redactText("pin=654321 remember=false count=7 ok=true"))
-        .toBe("pin=[redacted] remember=[redacted] count=7 ok=true");
+      expect(controls.redactWorkerEvent({
+        pin: 654321,
+        remember: false,
+        "OTP654321END-remember=false-ish": "embedded key",
+        count: 7,
+        ok: true,
+      })).toEqual({
+        pin: "[redacted]",
+        remember: "[redacted]",
+        "OTP[redacted]END-remember=[redacted]-ish": "embedded key",
+        count: 7,
+        ok: true,
+      });
+      expect(controls.redactText("OTP654321END remember=false-ish count=7 ok=true"))
+        .toBe("OTP[redacted]END remember=[redacted]-ish count=7 ok=true");
       controls.handleWorkerEvent({
         type: "acp_interaction_acknowledged",
         interaction_id: "interaction-scalars",
