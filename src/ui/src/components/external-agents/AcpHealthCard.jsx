@@ -1,8 +1,6 @@
 import {
   acpAuthMethods,
   acpOperationCancellable,
-  acpProbeStatus,
-  externalAgentVolatileState,
 } from "../../lib/externalAgents.js";
 import { Card } from "../Card.jsx";
 import { Button } from "../primitives/Button.jsx";
@@ -10,21 +8,73 @@ import { StatusPill } from "../primitives/StatusPill.jsx";
 import { EntityMetaList } from "../EntityMetaList.jsx";
 import { Icon } from "../Icon.jsx";
 
-function probeValue(profile, operation) {
-  return operation || profile?.lastProbe || profile?.last_probe || null;
+function object(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
-function probeLabel(profile, operation) {
-  const value = probeValue(profile, operation);
-  return value?.status || value?.state || (profile ? "Not tested" : "Save to test");
+function text(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function titleCase(value) {
+  return text(value).replaceAll("_", " ").replace(/\b\w/gu, (letter) => letter.toUpperCase());
+}
+
+function probeRecord(profile, operation) {
+  const operationKind = text(operation?.kind).toLowerCase();
+  if (operation && (!operationKind || operationKind === "probe")) return operation;
+  return profile?.lastProbe || profile?.last_probe || null;
+}
+
+function normalizedTimestamp(value) {
+  if (value == null || value === "") return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export function acpHealthView(profile = {}, operation = null) {
+  const probe = probeRecord(profile, operation);
+  const result = object(probe?.result);
+  const state = text(probe?.state || probe?.status).toLowerCase();
+  const reportedStatus = text(result.status).toLowerCase();
+  const active = ["queued", "pending", "running", "probing", "waiting_for_interaction"].includes(state);
+  const failed = ["failed", "error", "unhealthy", "offline", "cancelled", "canceled"].includes(state)
+    || ["failed", "error", "unhealthy", "offline"].includes(reportedStatus);
+  const complete = ["success", "succeeded", "healthy", "ready", "complete", "completed"].includes(state)
+    || ["success", "succeeded", "healthy", "ready", "complete", "completed"].includes(reportedStatus);
+  const status = active ? "running" : failed ? "failed" : complete ? "complete" : "disabled";
+  const errorValue = object(probe?.error);
+  const error = text(errorValue.message || probe?.error);
+  const timestamp = normalizedTimestamp(
+    probe?.completedAt || probe?.completed_at || probe?.updatedAt || probe?.updated_at || probe?.at,
+  );
+  return {
+    status,
+    label: active
+      ? "Running"
+      : failed
+        ? "Failed"
+        : titleCase(reportedStatus || state) || (profile ? "Not tested" : "Save to test"),
+    result,
+    capabilities: object(result.capabilities),
+    agentInfo: object(result.agentInfo || result.agent_info),
+    installedVersion: text(result.installedVersion || result.installed_version),
+    protocolVersion: result.protocolVersion ?? result.protocol_version ?? null,
+    bridgeVersion: result.bridgeVersion ?? result.bridge_version ?? null,
+    authenticated: typeof result.authenticated === "boolean" ? result.authenticated : null,
+    timestamp,
+    error,
+  };
 }
 
 function capabilityLabels(capabilities = null) {
   if (!capabilities || typeof capabilities !== "object") return [];
-  const session = capabilities.session || capabilities.sessionCapabilities || capabilities.session_capabilities || {};
+  const rawSession = capabilities.session || capabilities.sessions || capabilities.sessionCapabilities || capabilities.session_capabilities || {};
+  const session = typeof rawSession === "object" ? rawSession : {};
   const prompt = capabilities.prompt || capabilities.promptCapabilities || capabilities.prompt_capabilities || {};
   return [
     capabilities.loadSession || capabilities.load_session ? "Load sessions" : null,
+    rawSession === true ? "Sessions" : null,
     session.resume ? "Resume sessions" : null,
     session.list ? "List sessions" : null,
     session.delete ? "Delete sessions" : null,
@@ -44,32 +94,40 @@ export function AcpHealthCard({
   canProbe = true,
   onAuthenticate,
   authenticatingMethodId = null,
+  onLogout,
+  loggingOut = false,
   onCancelOperation,
   cancellingOperation = false,
+  statusMessage = "",
 }) {
-  const volatile = externalAgentVolatileState(profile || {});
-  const status = acpProbeStatus(profile || {}, operation);
-  const probe = probeValue(profile, operation);
-  const capabilities = capabilityLabels(volatile.capabilities || probe?.capabilities || probe?.agentCapabilities);
-  const info = probe?.agentInfo || probe?.agent_info || profile?.agentInfo || profile?.agent_info || null;
-  const timestamp = probe?.completedAt || probe?.completed_at || probe?.updatedAt || probe?.updated_at || probe?.at || null;
-  const error = probe?.error?.message || probe?.error || probe?.message || null;
-  const authMethods = acpAuthMethods(profile || {}, operation);
+  const view = acpHealthView(profile || {}, operation);
+  const capabilities = capabilityLabels(view.capabilities);
+  const info = view.agentInfo;
+  const authMethods = acpAuthMethods(profile || {}, text(operation?.kind).toLowerCase() === "probe" ? operation : null);
   const operationActive = acpOperationCancellable(operation);
+  const announcement = statusMessage
+    || (probing ? "Testing ACP connection." : null)
+    || (authenticatingMethodId ? "ACP authentication is in progress." : null)
+    || (loggingOut ? "ACP logout is in progress." : null)
+    || `ACP connection status: ${view.label}.`;
 
   return (
     <Card
       variant="spacious"
       title="ACP connection"
-      headerRight={<StatusPill status={status} label={probeLabel(profile, operation)} size="sm" />}
+      headerRight={<StatusPill status={view.status} label={view.label} size="sm" />}
       class="entity-rail-card acp-health-card"
     >
+      <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
       <EntityMetaList items={[
         info?.name || info?.title ? { label: "Agent", value: info.title || info.name, mono: false } : null,
-        info?.version ? { label: "Version", value: info.version } : null,
-        timestamp ? { label: "Last probe", value: new Date(timestamp).toLocaleString(), mono: false } : null,
+        view.installedVersion || info?.version ? { label: "Version", value: view.installedVersion || info.version } : null,
+        view.protocolVersion != null ? { label: "Protocol", value: `ACP ${view.protocolVersion}`, mono: false } : null,
+        view.bridgeVersion != null ? { label: "Bridge", value: String(view.bridgeVersion) } : null,
+        view.authenticated != null ? { label: "Authenticated", value: view.authenticated ? "Yes" : "No", mono: false } : null,
+        view.timestamp ? { label: "Last probe", value: view.timestamp.toLocaleString(), mono: false } : null,
       ].filter(Boolean)} />
-      {error && <div class="acp-health-error">{String(error)}</div>}
+      {view.error && <div class="acp-health-error" role="alert" aria-live="assertive">{view.error}</div>}
       {capabilities.length > 0 ? (
         <div class="acp-capability-list" aria-label="Reported ACP capabilities">
           {capabilities.map((label) => <span key={label}>{label}</span>)}
@@ -77,7 +135,7 @@ export function AcpHealthCard({
       ) : (
         <div class="acp-health-empty">Capabilities appear after a successful initialize probe.</div>
       )}
-      {authMethods.length > 0 && (
+      {(authMethods.length > 0 || onLogout) && (
         <div class="acp-auth-methods" aria-label="Advertised authentication methods">
           <strong>Authentication</strong>
           {authMethods.map((method) => (
@@ -98,6 +156,17 @@ export function AcpHealthCard({
               </Button>
             </div>
           ))}
+          {onLogout && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onLogout}
+              loading={loggingOut}
+              disabled={operationActive || !!authenticatingMethodId}
+            >
+              Log out
+            </Button>
+          )}
         </div>
       )}
       <div class="acp-health-actions">
@@ -106,7 +175,7 @@ export function AcpHealthCard({
           size="sm"
           iconLeft={<Icon name="refresh-cw" size={13} />}
           onClick={onProbe}
-          loading={probing || status === "running"}
+          loading={probing || (view.status === "running" && text(operation?.kind).toLowerCase() === "probe")}
           disabled={!canProbe || operationActive}
         >
           Test connection
