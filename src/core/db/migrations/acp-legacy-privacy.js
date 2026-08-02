@@ -67,6 +67,23 @@ function tableExists(db, table) {
   return !!db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','virtual table') AND name = ?").get(table);
 }
 
+function tableHasRows(db, table, where = "") {
+  if (!tableExists(db, table)) return false;
+  return Boolean(db.prepare(`SELECT 1 FROM ${table} ${where} LIMIT 1`).get());
+}
+
+function hasLegacyAcpFootprint(db, runs = []) {
+  if (runs.length > 0) return true;
+  if (tableHasRows(db, "acp_profiles")
+    || tableHasRows(db, "acp_operations")
+    || tableHasRows(db, "acp_interactions")) return true;
+  return tableHasRows(
+    db,
+    "agents",
+    "WHERE sdk = 'acp' OR execution_mode = 'acp' OR model LIKE 'acp:%'",
+  );
+}
+
 function parseJson(value, fallback) {
   if (value == null) return { value: fallback, valid: true };
   try {
@@ -540,11 +557,16 @@ function scrubStandaloneAcpOperations(db) {
  */
 export function scrubLegacyAcpSessionData(db) {
   if (!tableExists(db, "task_runs") || !tableExists(db, "acp_profiles")) {
-    return { databaseChanged: false, filesChanged: 0 };
+    return {
+      databaseChanged: false,
+      filesChanged: 0,
+      legacyFootprint: hasLegacyAcpFootprint(db),
+    };
   }
   const jsonColumns = jsonColumnsForRun(db);
   const textColumns = RUN_TEXT_COLUMNS.filter((column) => hasColumn(db, "task_runs", column));
   const runs = acpRuns(db, jsonColumns, textColumns);
+  const legacyFootprint = hasLegacyAcpFootprint(db, runs);
   const dataDir = databaseDataDir(db);
   let databaseChanges = 0;
   let filesChanged = 0;
@@ -571,7 +593,7 @@ export function scrubLegacyAcpSessionData(db) {
   } finally {
     db.pragma(`secure_delete = ${Number(previousSecureDelete) || 0}`);
   }
-  return { databaseChanged: databaseChanges > 0, filesChanged };
+  return { databaseChanged: databaseChanges > 0, filesChanged, legacyFootprint };
 }
 
 function truncateWal(db) {
@@ -582,12 +604,23 @@ function truncateWal(db) {
 }
 
 /** Compact outside the scrub transaction so replaced cell contents cannot
- * remain in SQLite free pages or the WAL. The marker makes the unconditional
- * first-upgrade compaction one-shot; any later scrubbed row compacts again. */
-export function compactLegacyAcpTaskRunData(db, { databaseChanged = false } = {}) {
+ * remain in SQLite free pages or the WAL. The marker makes the first ACP-
+ * footprint compaction one-shot; databases with no legacy ACP footprint only
+ * need the marker, while any later scrubbed row compacts again. */
+export function compactLegacyAcpTaskRunData(db, {
+  databaseChanged = false,
+  legacyFootprint = false,
+} = {}) {
   const compacted = db.prepare("SELECT value FROM schema_meta WHERE key = ?").get(ACP_PRIVACY_COMPACTION_KEY)?.value === "1";
   if (compacted && !databaseChanged) return false;
   if (db.inTransaction) throw new Error("ACP privacy compaction must run outside a transaction");
+  if (!databaseChanged && !legacyFootprint) {
+    db.prepare(`
+      INSERT INTO schema_meta (key, value) VALUES (?, '1')
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run(ACP_PRIVACY_COMPACTION_KEY);
+    return false;
+  }
   truncateWal(db);
   db.exec("VACUUM");
   truncateWal(db);

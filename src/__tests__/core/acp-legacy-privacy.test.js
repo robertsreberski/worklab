@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
@@ -38,6 +38,25 @@ describe("legacy ACP session privacy migration", () => {
 
   afterEach(() => {
     for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  });
+
+  it("marks a non-ACP upgrade without vacuuming the existing database", () => {
+    const db = openDb(":memory:");
+    db.exec(`
+      CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO schema_meta (key, value) VALUES ('version', '48');
+      CREATE TABLE legacy_payload (id INTEGER PRIMARY KEY, body TEXT NOT NULL);
+      INSERT INTO legacy_payload (body) VALUES (printf('%.*c', 100000, 'x'));
+    `);
+    const exec = vi.spyOn(db, "exec");
+
+    runMigrations(db);
+
+    expect(exec.mock.calls.map(([sql]) => String(sql).trim().toUpperCase())).not.toContain("VACUUM");
+    expect(db.prepare("SELECT value FROM schema_meta WHERE key = 'acp_legacy_session_privacy_compacted_v1'").get())
+      .toEqual({ value: "1" });
+    expect(db.prepare("SELECT length(body) AS length FROM legacy_payload").get().length).toBe(100000);
+    db.close();
   });
 
   it("scrubs historical ACP rows, copied values, and raw JSONL while preserving opaque and non-ACP sessions", () => {
