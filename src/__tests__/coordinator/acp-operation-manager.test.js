@@ -422,46 +422,103 @@ describe("AcpOperationManager", () => {
   });
 
   it("round-trips encoded list identifiers to delete controls without persisting raw session ids", async () => {
-    const rawSessionId = "session/one";
+    const rawSessionIds = ["session/one", "session/two"];
+    const pageCursor = "opaque/page-2?state=keep+exact==";
+    const receivedCursors = [];
     let received;
     const { db, profile, manager } = setup({
-      listSessions: async ({ profile: activeProfile }) => ({
-        sessions: [{
-          sessionId: rawSessionId,
-          providerSessionId: `acp:v1:${activeProfile.id}:${Buffer.from(rawSessionId).toString("base64url")}`,
-          title: "Listed session",
-          token: "drop-list-secret",
-        }],
-      }),
+      listSessions: async ({ profile: activeProfile, cursor, operation }) => {
+        receivedCursors.push({ cursor, request: operation.request });
+        const page = cursor ? 1 : 0;
+        const rawSessionId = rawSessionIds[page];
+        return {
+          sessions: [{
+            sessionId: rawSessionId,
+            providerSessionId: `acp:v1:${activeProfile.id}:${Buffer.from(rawSessionId).toString("base64url")}`,
+            title: `Listed session ${page + 1}`,
+            token: "drop-list-secret",
+          }],
+          ...(cursor ? {} : { nextCursor: pageCursor }),
+        };
+      },
       deleteSession: async (context) => {
         received = context.providerSessionId;
         return {
           deleted: true,
           providerSessionId: context.providerSessionId,
-          sessionId: rawSessionId,
+          sessionId: rawSessionIds[1],
           token: "drop-delete-secret",
         };
       },
     });
     const listedOperation = manager.start({ profileId: profile.id, kind: "list_sessions" });
     const listed = await waitForOperation(manager, listedOperation.id, "succeeded");
-    const publicId = `acp:v1:${profile.id}:${Buffer.from(rawSessionId).toString("base64url")}`;
+    const firstPublicId = `acp:v1:${profile.id}:${Buffer.from(rawSessionIds[0]).toString("base64url")}`;
     expect(listed.result).toEqual({
-      sessions: [{ id: publicId, title: "Listed session" }],
+      sessions: [{ id: firstPublicId, title: "Listed session 1" }],
+      nextCursor: pageCursor,
+      truncated: true,
+    });
+
+    const secondOperation = manager.start({
+      profileId: profile.id,
+      kind: "list_sessions",
+      cursor: listed.result.nextCursor,
+    });
+    expect(secondOperation.request).toEqual({ cursor: pageCursor });
+    const secondPage = await waitForOperation(manager, secondOperation.id, "succeeded");
+    const publicId = `acp:v1:${profile.id}:${Buffer.from(rawSessionIds[1]).toString("base64url")}`;
+    expect(secondPage.result).toEqual({
+      sessions: [{ id: publicId, title: "Listed session 2" }],
       truncated: false,
     });
+    expect(receivedCursors).toEqual([
+      { cursor: null, request: {} },
+      { cursor: pageCursor, request: { cursor: pageCursor } },
+    ]);
 
     const deleteOperation = manager.start({
       profileId: profile.id,
       kind: "delete_session",
-      remoteSessionId: listed.result.sessions[0].id,
+      remoteSessionId: secondPage.result.sessions[0].id,
     });
     const deleted = await waitForOperation(manager, deleteOperation.id, "succeeded");
     expect(received).toBe(publicId);
     expect(deleted.request).toEqual({ providerSessionId: publicId });
     expect(deleted.result).toEqual({ deleted: true, id: publicId });
     const persisted = JSON.stringify(db.prepare("SELECT * FROM acp_operations ORDER BY created_at").all());
-    expect(persisted).not.toMatch(/session\/one|drop-list-secret|drop-delete-secret/u);
+    expect(persisted).not.toMatch(/session\/(?:one|two)|drop-list-secret|drop-delete-secret/u);
+  });
+
+  it("marks locally capped and unusably paginated session results as truncated", async () => {
+    const validCursor = "page-2";
+    const { profile, manager } = setup({
+      listSessions: async ({ profile: activeProfile, cursor }) => {
+        if (cursor) return { sessions: [], nextCursor: "x".repeat(2_001) };
+        return {
+          sessions: Array.from({ length: 201 }, (_, index) => {
+            const rawSessionId = `remote/${index}`;
+            return {
+              providerSessionId: `acp:v1:${activeProfile.id}:${Buffer.from(rawSessionId).toString("base64url")}`,
+              title: `Session ${index}`,
+            };
+          }),
+        };
+      },
+    });
+
+    const capped = manager.start({ profileId: profile.id, kind: "list_sessions" });
+    const cappedResult = await waitForOperation(manager, capped.id, "succeeded");
+    expect(cappedResult.result.sessions).toHaveLength(200);
+    expect(cappedResult.result).toMatchObject({ truncated: true });
+
+    const invalidCursor = manager.start({
+      profileId: profile.id,
+      kind: "list_sessions",
+      cursor: validCursor,
+    });
+    const invalidResult = await waitForOperation(manager, invalidCursor.id, "succeeded");
+    expect(invalidResult.result).toEqual({ sessions: [], truncated: true });
   });
 
   it("fails closed when a control is unavailable or another operation is active", async () => {
@@ -507,5 +564,19 @@ describe("AcpOperationManager", () => {
       kind: "authenticate",
       authMethodId: " browser-login ",
     })).toThrowError("authMethodId is invalid");
+  });
+
+  it("requires list-session cursors to remain bounded and opaque", () => {
+    const { profile, manager } = setup({ listSessions: async () => ({ sessions: [] }) });
+    expect(() => manager.start({
+      profileId: profile.id,
+      kind: "list_sessions",
+      cursor: " page-2",
+    })).toThrowError("cursor is invalid");
+    expect(() => manager.start({
+      profileId: profile.id,
+      kind: "list_sessions",
+      cursor: "x".repeat(2_001),
+    })).toThrowError("cursor is invalid");
   });
 });

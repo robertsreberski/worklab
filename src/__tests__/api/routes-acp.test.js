@@ -364,7 +364,9 @@ describe("ACP API", () => {
 
   it("starts control operations with 202 and exposes sanitized operation state", async () => {
     const cwd = workspace();
-    const rawSessionId = "session/one";
+    const rawSessionIds = ["session/one", "session/two"];
+    const pageCursor = "opaque/page-2?state=keep+exact==";
+    const listedContexts = [];
     let deletedSession;
     const controls = {
       probe: async () => ({
@@ -378,19 +380,25 @@ describe("ACP API", () => {
           accessToken: "method-secret",
         }],
       }),
-      listSessions: async ({ profile: activeProfile }) => ({
-        sessions: [{
-          sessionId: rawSessionId,
-          providerSessionId: `acp:v1:${activeProfile.id}:${Buffer.from(rawSessionId).toString("base64url")}`,
-          title: "Listed session",
-        }],
-      }),
+      listSessions: async ({ profile: activeProfile, cursor }) => {
+        listedContexts.push({ cursor, cwd: activeProfile.cwd });
+        const page = cursor ? 1 : 0;
+        const rawSessionId = rawSessionIds[page];
+        return {
+          sessions: [{
+            sessionId: rawSessionId,
+            providerSessionId: `acp:v1:${activeProfile.id}:${Buffer.from(rawSessionId).toString("base64url")}`,
+            title: `Listed session ${page + 1}`,
+          }],
+          ...(cursor ? {} : { nextCursor: pageCursor }),
+        };
+      },
       deleteSession: async ({ providerSessionId }) => {
         deletedSession = providerSessionId;
         return {
           deleted: true,
           providerSessionId,
-          sessionId: rawSessionId,
+          sessionId: rawSessionIds[1],
           token: "delete-secret",
         };
       },
@@ -416,17 +424,54 @@ describe("ACP API", () => {
     ]);
     expect(JSON.stringify(probedProfile.body)).not.toMatch(/probe-secret|method-secret/u);
 
-    const listed = await agent.post(`/api/acp/profiles/${profile.id}/sessions:list`).expect(202);
+    const listed = await agent.post(`/api/acp/profiles/${profile.id}/sessions:list`).send({}).expect(202);
     await vi.waitFor(() => {
       expect(acpOperationManager.get(listed.body.operation.id)?.state).toBe("succeeded");
     });
     const listedResult = acpOperationManager.get(listed.body.operation.id).result;
-    const publicId = `acp:v1:${profile.id}:${Buffer.from(rawSessionId).toString("base64url")}`;
-    expect(listedResult.sessions).toEqual([{ id: publicId, title: "Listed session" }]);
-    expect(JSON.stringify(listedResult)).not.toContain(rawSessionId);
+    const firstPublicId = `acp:v1:${profile.id}:${Buffer.from(rawSessionIds[0]).toString("base64url")}`;
+    expect(listedResult).toEqual({
+      sessions: [{ id: firstPublicId, title: "Listed session 1" }],
+      nextCursor: pageCursor,
+      truncated: true,
+    });
+    expect(JSON.stringify(listedResult)).not.toContain(rawSessionIds[0]);
+
+    const secondPage = await agent.post(`/api/acp/profiles/${profile.id}/sessions:list`)
+      .send({ cursor: listedResult.nextCursor })
+      .expect(202);
+    expect(secondPage.body.operation.request).toEqual({ cursor: pageCursor });
+    await vi.waitFor(() => {
+      expect(acpOperationManager.get(secondPage.body.operation.id)?.state).toBe("succeeded");
+    });
+    const secondResult = acpOperationManager.get(secondPage.body.operation.id).result;
+    const publicId = `acp:v1:${profile.id}:${Buffer.from(rawSessionIds[1]).toString("base64url")}`;
+    expect(secondResult).toEqual({
+      sessions: [{ id: publicId, title: "Listed session 2" }],
+      truncated: false,
+    });
+    expect(listedContexts).toEqual([
+      { cursor: null, cwd: profile.cwd },
+      { cursor: pageCursor, cwd: profile.cwd },
+    ]);
+    expect(JSON.stringify(secondResult)).not.toContain(rawSessionIds[1]);
+
+    const clientCwd = await agent.post(`/api/acp/profiles/${profile.id}/sessions:list`).send({
+      cursor: pageCursor,
+      cwd: "/client/must-not-select-workspace",
+    }).expect(400);
+    expect(clientCwd.body.error).toEqual({
+      code: "validation",
+      message: "sessions:list accepts only one optional field: cursor",
+    });
+    const oversizedCursor = await agent.post(`/api/acp/profiles/${profile.id}/sessions:list`)
+      .send({ cursor: "x".repeat(2_001) })
+      .expect(400);
+    expect(oversizedCursor.body.error).toEqual({ code: "validation", message: "cursor is invalid" });
+    expect(listedContexts).toHaveLength(2);
 
     const deleted = await agent.delete(
-      `/api/acp/profiles/${profile.id}/sessions/${encodeURIComponent(listedResult.sessions[0].id)}`,
+      `/api/acp/profiles/${profile.id}/sessions/${encodeURIComponent(secondResult.sessions[0].id)}`,
     ).expect(202);
     await vi.waitFor(() => {
       expect(acpOperationManager.get(deleted.body.operation.id)?.state).toBe("succeeded");
@@ -435,9 +480,9 @@ describe("ACP API", () => {
     const deleteResult = acpOperationManager.get(deleted.body.operation.id);
     expect(deleteResult.request).toEqual({ providerSessionId: publicId });
     expect(deleteResult.result).toEqual({ deleted: true, id: publicId });
-    expect(JSON.stringify(deleteResult)).not.toMatch(/delete-secret|session\/one/u);
+    expect(JSON.stringify(deleteResult)).not.toMatch(/delete-secret|session\/(?:one|two)/u);
     expect(JSON.stringify(db.prepare("SELECT * FROM acp_operations ORDER BY created_at").all()))
-      .not.toMatch(/delete-secret|session\/one/u);
+      .not.toMatch(/delete-secret|session\/(?:one|two)/u);
   });
 
   it("responds to operation interactions without persisting or echoing form answers", async () => {

@@ -293,9 +293,21 @@ export function registerAcpRoutes(app, {
   app.post("/api/acp/profiles/:id/logout", (req, res) => (
     startOperation(res, acpOperationManager, req.params.id, "logout")
   ));
-  app.post("/api/acp/profiles/:id/sessions:list", (req, res) => (
-    startOperation(res, acpOperationManager, req.params.id, "list_sessions")
-  ));
+  app.post("/api/acp/profiles/:id/sessions:list", (req, res) => {
+    try {
+      const body = req.body == null ? {} : req.body;
+      if (typeof body !== "object"
+        || Array.isArray(body)
+        || Object.keys(body).some((key) => key !== "cursor")) {
+        throw routeError("sessions:list accepts only one optional field: cursor");
+      }
+      return startOperation(res, acpOperationManager, req.params.id, "list_sessions", {
+        cursor: Object.hasOwn(body, "cursor") ? body.cursor : null,
+      });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
   app.delete("/api/acp/profiles/:id/sessions/:sessionId", (req, res) => {
     try {
       const providerSessionId = normalizeAcpProviderSessionId(req.params.sessionId, req.params.id);

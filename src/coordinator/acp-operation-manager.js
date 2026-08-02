@@ -4,6 +4,7 @@ import {
   acpInteractionDisposition,
   normalizeAcpAuthMethodId,
   normalizeAcpProviderSessionId,
+  normalizeAcpSessionCursor,
   rowToAcpInteraction,
   rowToAcpOperation,
   sanitizeAcpInteractionSchema,
@@ -207,7 +208,7 @@ export class AcpOperationManager {
     return [...this.active.values()].some((entry) => entry.profile.id === profileId);
   }
 
-  start({ profileId, kind, remoteSessionId = null, authMethodId = null } = {}) {
+  start({ profileId, kind, remoteSessionId = null, authMethodId = null, cursor = null } = {}) {
     if (this.closing) {
       throw managerError("ACP operation manager is shutting down", {
         code: "shutting_down",
@@ -231,13 +232,16 @@ export class AcpOperationManager {
       ? normalizeAcpProviderSessionId(remoteSessionId, profileId)
       : null;
     const methodId = kind === "authenticate" ? normalizeAcpAuthMethodId(authMethodId) : null;
+    const sessionCursor = kind === "list_sessions" ? normalizeAcpSessionCursor(cursor) : null;
     const now = this.now();
     const id = newAcpOperationId();
     const request = providerSessionId
       ? { providerSessionId }
       : methodId
         ? { authMethodId: methodId }
-        : {};
+        : sessionCursor
+          ? { cursor: sessionCursor }
+          : {};
     insertAcpOperation(this.db, {
       id,
       profileId,
@@ -254,6 +258,7 @@ export class AcpOperationManager {
       remoteSessionId: providerSessionId,
       providerSessionId,
       authMethodId: methodId,
+      cursor: sessionCursor,
       controller: new AbortController(),
       pending: new Map(),
       deadline: null,
@@ -286,6 +291,7 @@ export class AcpOperationManager {
           remoteSessionId: record.remoteSessionId,
           providerSessionId: record.providerSessionId,
           authMethodId: record.authMethodId,
+          cursor: record.cursor,
           signal: record.controller.signal,
           onInteraction: (request) => this.#requestInteraction(record, request),
         });
