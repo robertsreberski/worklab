@@ -91,6 +91,16 @@ describe("external agent UI helpers", () => {
       .toThrow("Configuration policy must be a JSON object");
   });
 
+  it("rejects environment values instead of treating them as key names", () => {
+    expect(() => externalAgentPayload({
+      displayName: "External",
+      command: "/bin/agent",
+      envKeysText: "TOKEN=secret",
+      configPolicyText: "{}",
+      sessionPolicyText: "{}",
+    })).toThrow("Environment entries must contain key names only");
+  });
+
   it("keeps agent-owned and mono-managed launch policy out of ordinary patches", () => {
     const draft = {
       displayName: "Managed",

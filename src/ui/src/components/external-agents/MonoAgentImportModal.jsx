@@ -9,10 +9,14 @@ import { Banner } from "../Banner.jsx";
 import { LoadingState } from "../LoadingState.jsx";
 
 function healthStatus(source) {
-  if (source.ready || ["running", "ready", "healthy"].includes(source.health)) return "complete";
+  if (source.ready || ["running", "ready", "healthy", "online", "alive"].includes(source.health)) return "complete";
   if (["starting", "probing", "pending"].includes(source.health)) return "running";
   if (["failed", "unhealthy", "offline", "stopped"].includes(source.health)) return "failed";
   return "disabled";
+}
+
+function sourceImportable(source) {
+  return source.ready || ["running", "ready", "healthy", "online", "alive"].includes(source.health);
 }
 
 function importedAgentName(result, sourceId) {
@@ -119,7 +123,7 @@ export function MonoAgentImportModal({ open, onClose, onImported }) {
               <Button
                 variant={source.imported ? "secondary" : "primary"}
                 size="sm"
-                disabled={source.imported || (!source.ready && source.health !== "running")}
+                disabled={source.imported || !sourceImportable(source)}
                 loading={busySourceId === source.sourceId}
                 onClick={() => importSource(source)}
               >
