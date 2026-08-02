@@ -85,6 +85,13 @@ function requiredRuntimeMethod(runtime, name) {
   return runtime[name];
 }
 
+function throwIfAborted(signal) {
+  if (!signal?.aborted) return;
+  throw signal.reason instanceof Error
+    ? signal.reason
+    : controlError("cancelled", "ACP operation was cancelled");
+}
+
 /**
  * Compose Worklab's persisted ACP profiles and mono-agent discovery with the
  * shared @mono-agent/agent-runtime ACP client. Runtime loading is lazy so the
@@ -119,6 +126,7 @@ export function createWorklabAcpControls({
 
     async probe({ profile, signal, onInteraction } = {}) {
       const client = await runtime();
+      throwIfAborted(signal);
       const result = await requiredRuntimeMethod(client, "probeAcpProfile")(
         profileId(profile),
         runtimeOptions({ signal, onInteraction }),
@@ -133,6 +141,7 @@ export function createWorklabAcpControls({
 
     async authenticate({ profile, authMethodId, signal, onInteraction } = {}) {
       const client = await runtime();
+      throwIfAborted(signal);
       return requiredRuntimeMethod(client, "authenticateAcpProfile")(
         profileId(profile),
         authMethodId,
@@ -142,6 +151,7 @@ export function createWorklabAcpControls({
 
     async logout({ profile, signal, onInteraction } = {}) {
       const client = await runtime();
+      throwIfAborted(signal);
       const result = await requiredRuntimeMethod(client, "logoutAcpProfile")(
         profileId(profile),
         runtimeOptions({ signal, onInteraction }),
@@ -151,6 +161,7 @@ export function createWorklabAcpControls({
 
     async listSessions({ profile, signal, onInteraction } = {}) {
       const client = await runtime();
+      throwIfAborted(signal);
       return requiredRuntimeMethod(client, "listAcpSessions")(
         profileId(profile),
         {},
@@ -160,6 +171,7 @@ export function createWorklabAcpControls({
 
     async deleteSession({ profile, providerSessionId, remoteSessionId, signal, onInteraction } = {}) {
       const client = await runtime();
+      throwIfAborted(signal);
       const opaqueSessionId = providerSessionId || remoteSessionId;
       const decoded = requiredRuntimeMethod(client, "decodeAcpProviderSessionId")(opaqueSessionId);
       if (decoded?.profileId !== profileId(profile)) {

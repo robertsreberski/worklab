@@ -14,7 +14,7 @@ afterEach(() => {
   for (const directory of cleanup.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
-function setup(agentRuntime) {
+function setup(agentRuntime, { loadAgentRuntime } = {}) {
   const db = makeTestDb();
   const cwd = mkdtempSync(join(tmpdir(), "worklab-acp-controls-"));
   cleanup.push(cwd);
@@ -33,6 +33,7 @@ function setup(agentRuntime) {
     db,
     env: {},
     agentRuntime,
+    ...(loadAgentRuntime ? { loadAgentRuntime } : {}),
     monoDiscoveryControls: {
       discoverMono: vi.fn(),
       resolveMonoSource: vi.fn(),
@@ -177,6 +178,46 @@ describe("createWorklabAcpControls", () => {
         providerSessionId: `acp:v1:${PROFILE_ID}:cmVtb3RlLTE`,
       })).rejects.toMatchObject({ code: "invalid_session_id" });
       expect(runtime.deleteAcpSession).not.toHaveBeenCalled();
+    } finally {
+      db.close();
+    }
+  });
+
+  it.each([
+    ["probe", (controls, profile, signal) => controls.probe({ profile, signal })],
+    ["authenticate", (controls, profile, signal) => controls.authenticate({
+      profile,
+      authMethodId: "browser",
+      signal,
+    })],
+    ["logout", (controls, profile, signal) => controls.logout({ profile, signal })],
+    ["list sessions", (controls, profile, signal) => controls.listSessions({ profile, signal })],
+    ["delete session", (controls, profile, signal) => controls.deleteSession({
+      profile,
+      providerSessionId: `acp:v1:${PROFILE_ID}:cmVtb3RlLTE`,
+      signal,
+    })],
+  ])("does not invoke %s after cancellation during lazy runtime loading", async (_name, invoke) => {
+    let resolveRuntime;
+    const loadAgentRuntime = vi.fn(() => new Promise((resolve) => { resolveRuntime = resolve; }));
+    const runtime = {
+      probeAcpProfile: vi.fn(),
+      authenticateAcpProfile: vi.fn(),
+      logoutAcpProfile: vi.fn(),
+      listAcpSessions: vi.fn(),
+      decodeAcpProviderSessionId: vi.fn(),
+      deleteAcpSession: vi.fn(),
+    };
+    const { db, profile, controls } = setup(null, { loadAgentRuntime });
+    const controller = new AbortController();
+    try {
+      const result = invoke(controls, profile, controller.signal);
+      await vi.waitFor(() => expect(loadAgentRuntime).toHaveBeenCalledTimes(1));
+      controller.abort(new Error("cancelled during runtime load"));
+      resolveRuntime(runtime);
+
+      await expect(result).rejects.toThrow("cancelled during runtime load");
+      for (const method of Object.values(runtime)) expect(method).not.toHaveBeenCalled();
     } finally {
       db.close();
     }
