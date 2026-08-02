@@ -57,23 +57,32 @@ function indexExists(db, index) {
   return !!db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?").get(index);
 }
 
-function reconcileAcpOperationsBeforeActiveProfileIndex(db) {
+function reconcileDuplicateAcpOperationsBeforeActiveProfileIndex(db) {
   if (!tableExists(db, "acp_operations")
     || indexExists(db, "idx_acp_operations_one_active_profile")) return;
 
   const completedAt = Date.now();
   const errorJson = JSON.stringify({
-    code: "coordinator_restarted",
-    message: "Worklab restarted before the ACP operation completed.",
+    code: "duplicate_active_operations",
+    message: "Multiple active ACP operations existed for the same profile during schema migration.",
   });
   const reconcile = db.transaction(() => {
-    const terminalized = db.prepare(`
+    const duplicateProfiles = db.prepare(`
+      SELECT profile_id
+      FROM acp_operations
+      WHERE state IN ('queued', 'running', 'waiting_for_interaction')
+      GROUP BY profile_id
+      HAVING COUNT(*) > 1
+      ORDER BY profile_id
+    `).all();
+    const terminalize = db.prepare(`
       UPDATE acp_operations
       SET state = 'failed', error_json = ?, updated_at = ?, completed_at = ?
-      WHERE state IN ('queued', 'running', 'waiting_for_interaction')
-    `).run(errorJson, completedAt, completedAt);
-    if (terminalized.changes > 0 && tableExists(db, "acp_interactions")) {
-      db.prepare(`
+      WHERE profile_id = ?
+        AND state IN ('queued', 'running', 'waiting_for_interaction')
+    `);
+    const expireInteractions = tableExists(db, "acp_interactions")
+      ? db.prepare(`
         UPDATE acp_interactions
         SET state = 'expired', disposition = 'operation_ended',
             updated_at = ?, resolved_at = ?
@@ -81,9 +90,14 @@ function reconcileAcpOperationsBeforeActiveProfileIndex(db) {
           AND state IN ('pending', 'submitted')
           AND operation_id IN (
             SELECT id FROM acp_operations
-            WHERE state = 'failed' AND error_json = ? AND completed_at = ?
+            WHERE profile_id = ?
+              AND state IN ('queued', 'running', 'waiting_for_interaction')
           )
-      `).run(completedAt, completedAt, errorJson, completedAt);
+      `)
+      : null;
+    for (const { profile_id: profileId } of duplicateProfiles) {
+      expireInteractions?.run(completedAt, completedAt, profileId);
+      terminalize.run(errorJson, completedAt, completedAt, profileId);
     }
     db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_acp_operations_one_active_profile
@@ -953,10 +967,10 @@ export function runMigrations(db) {
   ensureCurrentSchemaColumnsBeforeSchema(db);
   ensureEmbeddingVectorPresentColumn(db);
   // v50 adds a partial unique index enforcing one live management operation
-  // per ACP profile. Active rows in an older database are crash-orphaned at
-  // this startup boundary and must be terminalized before SQLite can create
-  // the index, including the duplicate rows the index is meant to prevent.
-  reconcileAcpOperationsBeforeActiveProfileIndex(db);
+  // per ACP profile. Migration runners are not necessarily coordinators, so a
+  // singleton active row may still have a live owner. Only impossible legacy
+  // duplicate groups are terminalized before creating the index.
+  reconcileDuplicateAcpOperationsBeforeActiveProfileIndex(db);
   db.exec(SCHEMA_SQL);
   ensureCurrentLeadCycleColumns(db);
   ensureNullableTaskRunsTaskId(db);

@@ -139,7 +139,7 @@ describe("openDb + runMigrations", () => {
     ]));
   });
 
-  it("reconciles legacy active ACP operations before adding the unique profile guard", () => {
+  it("preserves singleton active ACP operations while reconciling duplicate groups", () => {
     const db = openDb(":memory:");
     db.exec(SCHEMA_SQL);
     db.exec("DROP INDEX idx_acp_operations_one_active_profile");
@@ -154,6 +154,16 @@ describe("openDb + runMigrations", () => {
         configuration_owner, workspace_owner, mcp_owner, created_at, updated_at
       ) VALUES (?, 'legacy-acp', 'generic', ?, '[]', '[]', 'client', 'client', 'client', ?, ?)
     `).run("00000000-0000-4000-8000-000000000011", process.execPath, now, now);
+    db.prepare(`
+      INSERT INTO agents (name, display_name, sdk, model, execution_mode, created_at, updated_at)
+      VALUES ('singleton-acp', 'Singleton ACP', 'acp', 'acp:00000000-0000-4000-8000-000000000021', 'acp', ?, ?)
+    `).run(now, now);
+    db.prepare(`
+      INSERT INTO acp_profiles (
+        id, agent_name, driver, command, args_json, env_keys_json,
+        configuration_owner, workspace_owner, mcp_owner, created_at, updated_at
+      ) VALUES (?, 'singleton-acp', 'generic', ?, '[]', '[]', 'client', 'client', 'client', ?, ?)
+    `).run("00000000-0000-4000-8000-000000000021", process.execPath, now, now);
     const insertOperation = db.prepare(`
       INSERT INTO acp_operations (
         id, profile_id, kind, state, request_json, result_json, error_json, created_at, updated_at
@@ -173,6 +183,35 @@ describe("openDb + runMigrations", () => {
       now - 1,
       now - 1,
     );
+    insertOperation.run(
+      "00000000-0000-4000-8000-000000000022",
+      "00000000-0000-4000-8000-000000000021",
+      "running",
+      now,
+      now,
+    );
+    const insertInteraction = db.prepare(`
+      INSERT INTO acp_interactions (
+        id, profile_id, operation_id, protocol_request_id, kind,
+        request_schema_json, state, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'form', '{}', 'pending', ?, ?)
+    `);
+    insertInteraction.run(
+      "00000000-0000-4000-8000-000000000017",
+      "00000000-0000-4000-8000-000000000011",
+      "00000000-0000-4000-8000-000000000013",
+      "duplicate-request",
+      now,
+      now,
+    );
+    insertInteraction.run(
+      "00000000-0000-4000-8000-000000000023",
+      "00000000-0000-4000-8000-000000000021",
+      "00000000-0000-4000-8000-000000000022",
+      "singleton-request",
+      now,
+      now,
+    );
     db.prepare(`
       INSERT INTO schema_meta (key, value) VALUES ('version', '49')
       ON CONFLICT(key) DO UPDATE SET value = excluded.value
@@ -181,18 +220,46 @@ describe("openDb + runMigrations", () => {
     runMigrations(db);
 
     const rows = db.prepare(`
-      SELECT state, error_json, completed_at
+      SELECT id, state, error_json, completed_at
       FROM acp_operations ORDER BY id
     `).all();
-    expect(rows).toHaveLength(2);
-    for (const row of rows) {
+    expect(rows).toHaveLength(3);
+    const rowsById = Object.fromEntries(rows.map((row) => [row.id, row]));
+    for (const id of [
+      "00000000-0000-4000-8000-000000000012",
+      "00000000-0000-4000-8000-000000000013",
+    ]) {
+      const row = rowsById[id];
       expect(row.state).toBe("failed");
       expect(row.completed_at).toEqual(expect.any(Number));
       expect(JSON.parse(row.error_json)).toEqual({
-        code: "coordinator_restarted",
-        message: "Worklab restarted before the ACP operation completed.",
+        code: "duplicate_active_operations",
+        message: "Multiple active ACP operations existed for the same profile during schema migration.",
       });
     }
+    expect(rowsById["00000000-0000-4000-8000-000000000022"]).toMatchObject({
+      state: "running",
+      error_json: "{}",
+      completed_at: null,
+    });
+    const interactions = db.prepare(`
+      SELECT id, state, disposition, resolved_at
+      FROM acp_interactions ORDER BY id
+    `).all();
+    expect(interactions).toEqual([
+      expect.objectContaining({
+        id: "00000000-0000-4000-8000-000000000017",
+        state: "expired",
+        disposition: "operation_ended",
+        resolved_at: expect.any(Number),
+      }),
+      {
+        id: "00000000-0000-4000-8000-000000000023",
+        state: "pending",
+        disposition: null,
+        resolved_at: null,
+      },
+    ]);
     expect(db.prepare(`
       SELECT sql FROM sqlite_master
       WHERE type = 'index' AND name = 'idx_acp_operations_one_active_profile'
@@ -218,6 +285,13 @@ describe("openDb + runMigrations", () => {
       now + 3,
       now + 3,
     )).not.toThrow();
+    expect(() => insertOperation.run(
+      "00000000-0000-4000-8000-000000000024",
+      "00000000-0000-4000-8000-000000000021",
+      "queued",
+      now + 4,
+      now + 4,
+    )).toThrowError(/acp_operations\.profile_id/u);
     expect(db.prepare("SELECT value FROM schema_meta WHERE key = 'version'").get()?.value)
       .toBe(String(SCHEMA_VERSION));
   });
