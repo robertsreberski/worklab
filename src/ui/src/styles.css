@@ -309,6 +309,17 @@
 }
 .mono-discovery-source-main { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
 .mono-discovery-source-head { display: flex; align-items: center; gap: var(--sp-2); }
+.mono-discovery-compatibility {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  max-width: 640px;
+  color: var(--status-progress);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.mono-discovery-compatibility svg { flex: 0 0 auto; margin-top: 1px; }
+.mono-discovery-warnings { display: flex; flex-direction: column; gap: 2px; color: var(--text-muted); font-size: 10px; }
 .mono-discovery-capabilities { display: flex; flex-wrap: wrap; gap: 5px; }
 .mono-discovery-capabilities span {
   padding: 1px 6px;

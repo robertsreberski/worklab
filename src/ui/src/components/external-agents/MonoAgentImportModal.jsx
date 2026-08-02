@@ -1,6 +1,11 @@
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../../lib/api.js";
-import { acpEndpointUnsupported, normalizeMonoDiscovery } from "../../lib/externalAgents.js";
+import {
+  acpEndpointUnsupported,
+  monoSourceCompatibilityHint,
+  monoSourceImportable,
+  normalizeMonoDiscovery,
+} from "../../lib/externalAgents.js";
 import { Modal } from "../Modal.jsx";
 import { Button } from "../primitives/Button.jsx";
 import { StatusPill } from "../primitives/StatusPill.jsx";
@@ -13,10 +18,6 @@ function healthStatus(source) {
   if (["starting", "probing", "pending"].includes(source.health)) return "running";
   if (["failed", "unhealthy", "offline", "stopped"].includes(source.health)) return "failed";
   return "disabled";
-}
-
-function sourceImportable(source) {
-  return source.ready || ["running", "ready", "healthy", "online", "alive"].includes(source.health);
 }
 
 function importedAgentName(result, sourceId) {
@@ -111,6 +112,17 @@ export function MonoAgentImportModal({ open, onClose, onImported }) {
                   <StatusPill status={healthStatus(source)} label={source.health} size="sm" />
                 </div>
                 <span class="pane-row-mono">{source.sourceId}</span>
+                {source.compatible !== true && (
+                  <div class="mono-discovery-compatibility" role="status">
+                    <Icon name="alert-triangle" size={14} />
+                    <span>{monoSourceCompatibilityHint(source)}</span>
+                  </div>
+                )}
+                {source.warnings.length > 0 && (
+                  <div class="mono-discovery-warnings" aria-label="mono-agent compatibility warnings">
+                    {source.warnings.map((warning, index) => <span key={`${warning}-${index}`}>{warning}</span>)}
+                  </div>
+                )}
                 <div class="mono-discovery-capabilities">
                   {source.capabilities.sessions === true && <span>Sessions</span>}
                   {source.constraints.promptContent.includes("resource_link") && <span>Text + resource links</span>}
@@ -123,11 +135,11 @@ export function MonoAgentImportModal({ open, onClose, onImported }) {
               <Button
                 variant={source.imported ? "secondary" : "primary"}
                 size="sm"
-                disabled={source.imported || !sourceImportable(source)}
+                disabled={source.imported || !monoSourceImportable(source)}
                 loading={busySourceId === source.sourceId}
                 onClick={() => importSource(source)}
               >
-                {source.imported ? "Imported" : "Import"}
+                {source.imported ? "Imported" : source.compatible !== true ? "Upgrade required" : "Import"}
               </Button>
             </div>
           ))}

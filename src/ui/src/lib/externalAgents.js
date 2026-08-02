@@ -294,6 +294,35 @@ function promptContent(value) {
   return content.filter((item) => item === "text" || item === "resource_link");
 }
 
+function discoveryVersion(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function discoveryWarnings(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 16).map((warning) => text(warning)
+    .replace(/[\u0000-\u001f\u007f]/gu, " ")
+    .slice(0, 500)
+    .trim())
+    .filter(Boolean);
+}
+
+export function monoSourceImportable(source = {}) {
+  const healthy = source.ready === true
+    || ["running", "ready", "healthy", "online", "alive"].includes(text(source.health).toLowerCase());
+  return source.compatible === true && healthy;
+}
+
+export function monoSourceCompatibilityHint(source = {}) {
+  if (source.compatible === true) return "";
+  const bridge = discoveryVersion(source.bridgeVersion);
+  const protocol = discoveryVersion(source.protocolVersion);
+  const reported = bridge != null || protocol != null
+    ? `Reported ACP bridge ${bridge ?? "unknown"} / protocol ${protocol ?? "unknown"}. `
+    : "This source does not advertise a compatible ACP bridge. ";
+  return `${reported}Upgrade mono-agent and restart this source, then retry.`;
+}
+
 export function normalizeMonoDiscovery(response = {}) {
   const schema = text(firstDefined(response.schema, response.contract, response.version, response.discovery?.schema));
   const sources = discoveryItems(response).map((entry) => {
@@ -308,6 +337,11 @@ export function normalizeMonoDiscovery(response = {}) {
       health: text(firstDefined(source?.health, source?.status, entry?.health, entry?.status)).toLowerCase() || "unknown",
       ready: bool(firstDefined(source?.ready, entry?.ready), false),
       imported: bool(firstDefined(source?.imported, entry?.imported), false),
+      compatible: firstDefined(source?.compatible, entry?.compatible) === true,
+      bridgeVersion: discoveryVersion(firstDefined(source?.bridgeVersion, source?.bridge_version, entry?.bridgeVersion, entry?.bridge_version)),
+      protocolVersion: discoveryVersion(firstDefined(source?.protocolVersion, source?.protocol_version, entry?.protocolVersion, entry?.protocol_version)),
+      installedVersion: text(firstDefined(source?.installedVersion, source?.installed_version, entry?.installedVersion, entry?.installed_version)).slice(0, 128),
+      warnings: discoveryWarnings(firstDefined(source?.warnings, entry?.warnings)),
       capabilities: {
         sessions: safeCapability(capabilities, "sessions"),
         clientMcp: safeCapability(capabilities, "clientMcp", "client_mcp"),
