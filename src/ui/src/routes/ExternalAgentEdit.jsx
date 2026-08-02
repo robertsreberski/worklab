@@ -4,6 +4,7 @@ import {
   acpEndpointUnsupported,
   acpProfileForAgent,
   externalAgentDraft,
+  externalEnvKeysValid,
   externalAgentMutationPayload,
   normalizeAcpProfile,
 } from "../lib/externalAgents.js";
@@ -237,9 +238,13 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
   const isMono = normalizedProfile.driver === "mono";
   const agentManaged = draft.configurationOwner === "agent";
   const commandValid = agentManaged || draft.command.trim().startsWith("/");
-  const cwdValid = !draft.cwd.trim() || draft.cwd.trim().startsWith("/");
+  const cwdValid = agentManaged || !draft.cwd.trim() || draft.cwd.trim().startsWith("/");
+  const workspaceManaged = draft.workspaceOwner === "agent";
+  const workspaceValid = workspaceManaged || !draft.canonicalWorkspace.trim() || draft.canonicalWorkspace.trim().startsWith("/");
+  const envKeysValid = agentManaged || externalEnvKeysValid(draft.envKeysText);
+  const probeTimeoutValid = Number(draft.probeTimeoutMs) >= 1000 && Number(draft.probeTimeoutMs) <= 300000;
   const title = isNew ? "New external agent" : (draft.displayName || draft.agentName || name);
-  const canSave = !!draft.displayName.trim() && commandValid && cwdValid && !unsupported;
+  const canSave = !!draft.displayName.trim() && commandValid && cwdValid && workspaceValid && envKeysValid && probeTimeoutValid && !unsupported;
   const saveButtonLabel = isNew ? "Create" : "Save";
   const saveButtonVariant = isDirty || isNew ? "primary" : "secondary";
   const headerActions = (
@@ -354,8 +359,8 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
                     <FormField label="Arguments" hint="One argument per line. Worklab never invokes a shell.">
                       <Textarea rows={6} monospace value={draft.argsText} onInput={(event) => update({ argsText: event.currentTarget.value })} />
                     </FormField>
-                    <FormField label="Environment key names" hint="Names only, one per line. Values come from Worklab's process environment and are never shown here.">
-                      <Textarea rows={6} monospace value={draft.envKeysText} placeholder="AGENT_TOKEN\nPATH" onInput={(event) => update({ envKeysText: event.currentTarget.value })} />
+                    <FormField label="Environment key names" hint="Names only, one per line. Values come from Worklab's process environment and are never shown here." error={envKeysValid ? null : "Use environment key names only; values and '=' are not accepted."}>
+                      <Textarea rows={6} monospace value={draft.envKeysText} placeholder="AGENT_TOKEN\nPATH" aria-invalid={!envKeysValid} onInput={(event) => update({ envKeysText: event.currentTarget.value })} />
                     </FormField>
                   </FormGrid>
                   <FormField label="Launch directory" hint="Optional absolute cwd used when starting the process." error={cwdValid ? null : "Use an absolute directory path."}>
@@ -378,32 +383,40 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
                   <Select variant="native" value={draft.mcpOwner} options={OWNER_OPTIONS} disabled={isMono} onChange={(mcpOwner) => update({ mcpOwner })} />
                 </FormField>
               </FormGrid>
-              <FormField label="Canonical workspace" hint="Optional absolute root used to validate task workspaces and ACP session cwd.">
-                <Input value={draft.canonicalWorkspace} placeholder="/workspace" disabled={isMono} onInput={(event) => update({ canonicalWorkspace: event.currentTarget.value })} />
-              </FormField>
+              {workspaceManaged ? (
+                <Banner variant="info" title="Workspace is agent-owned" detail="The canonical workspace is supplied by the external agent and is intentionally read-only in Worklab." dismissible={false} />
+              ) : (
+                <FormField label="Canonical workspace" hint="Optional absolute root used to validate task workspaces and ACP session cwd." error={workspaceValid ? null : "Use an absolute directory path."}>
+                  <Input value={draft.canonicalWorkspace} placeholder="/workspace" invalid={!workspaceValid} onInput={(event) => update({ canonicalWorkspace: event.currentTarget.value })} />
+                </FormField>
+              )}
             </FormSection>
 
             <SectionMarker id="external-agent-policy" num="04" kicker="Permissions" meta="Client policy" />
             <FormSection kicker="Permissions" title="ACP client access" description="All permissions are denied by default. Enable only the client services this external agent should be able to request.">
-              <FormGrid columns={2}>
-                <FormField switchInside><Switch checked={draft.allowFilesystem} disabled={isMono} onChange={(allowFilesystem) => update({ allowFilesystem })} label="Filesystem requests" description="Allow scoped Worklab client file reads and writes when implemented." /></FormField>
-                <FormField switchInside><Switch checked={draft.allowTerminal} disabled={isMono} onChange={(allowTerminal) => update({ allowTerminal })} label="Terminal requests" description="Allow scoped client terminal lifecycle requests when implemented." /></FormField>
-                <FormField switchInside><Switch checked={draft.allowNetwork} disabled={isMono} onChange={(allowNetwork) => update({ allowNetwork })} label="Network requests" description="Allow external network-facing client operations." /></FormField>
-                <FormField switchInside><Switch checked={draft.allowMcp} disabled={isMono} onChange={(allowMcp) => update({ allowMcp })} label="Client MCP servers" description="Allow Worklab to supply client-side MCP servers to this profile." /></FormField>
-              </FormGrid>
-              <FormGrid columns={2}>
-                {!agentManaged && (
+              {agentManaged ? (
+                <Banner variant="info" title="Permissions are agent-owned" detail="ACP permissions and session policy come from the external agent's sanitized descriptor and are intentionally hidden here." dismissible={false} />
+              ) : (
+                <>
+                  <FormGrid columns={2}>
+                    <FormField switchInside><Switch checked={draft.allowFilesystem} onChange={(allowFilesystem) => update({ allowFilesystem })} label="Filesystem requests" description="Allow scoped Worklab client file reads and writes when implemented." /></FormField>
+                    <FormField switchInside><Switch checked={draft.allowTerminal} onChange={(allowTerminal) => update({ allowTerminal })} label="Terminal requests" description="Allow scoped client terminal lifecycle requests when implemented." /></FormField>
+                    <FormField switchInside><Switch checked={draft.allowNetwork} onChange={(allowNetwork) => update({ allowNetwork })} label="Network requests" description="Allow external network-facing client operations." /></FormField>
+                    <FormField switchInside><Switch checked={draft.allowMcp} onChange={(allowMcp) => update({ allowMcp })} label="Client MCP servers" description="Allow Worklab to supply client-side MCP servers to this profile." /></FormField>
+                  </FormGrid>
+                  <FormGrid columns={2}>
                   <FormField label="Configuration policy (JSON)" hint="Advanced safe constraints only; secret-bearing fields are rejected by the server.">
                     <Textarea rows={6} monospace value={draft.configPolicyText} onInput={(event) => update({ configPolicyText: event.currentTarget.value })} />
                   </FormField>
-                )}
-                <FormField label="Session policy (JSON)" hint="Advanced session lifecycle constraints.">
-                  <Textarea rows={6} monospace value={draft.sessionPolicyText} disabled={isMono} onInput={(event) => update({ sessionPolicyText: event.currentTarget.value })} />
-                </FormField>
-              </FormGrid>
-              <FormField label="Probe timeout (ms)" hint="1,000–300,000 ms. Default 30,000.">
-                <Input type="number" min={1000} max={300000} value={String(draft.probeTimeoutMs)} disabled={isMono} onInput={(event) => update({ probeTimeoutMs: Number(event.currentTarget.value) || 30000 })} />
-              </FormField>
+                    <FormField label="Session policy (JSON)" hint="Advanced session lifecycle constraints.">
+                      <Textarea rows={6} monospace value={draft.sessionPolicyText} onInput={(event) => update({ sessionPolicyText: event.currentTarget.value })} />
+                    </FormField>
+                  </FormGrid>
+                  <FormField label="Probe timeout (ms)" hint="1,000–300,000 ms. Default 30,000." error={probeTimeoutValid ? null : "Enter a timeout from 1,000 to 300,000 ms."}>
+                    <Input type="number" min={1000} max={300000} value={String(draft.probeTimeoutMs)} invalid={!probeTimeoutValid} onInput={(event) => update({ probeTimeoutMs: Number(event.currentTarget.value) || 0 })} />
+                  </FormField>
+                </>
+              )}
             </FormSection>
           </main>
           <aside class="entity-editor-rail is-mobile-drawer-source">{renderRail()}</aside>
