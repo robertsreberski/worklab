@@ -269,6 +269,63 @@ export function runtimeWarningText(event = {}) {
   return event.message || event.warning_kind || "Runtime warning";
 }
 
+export function acpContextUsageText(event = {}) {
+  const used = Number.isFinite(event.used) ? event.used : null;
+  const window = Number.isFinite(event.window) ? event.window : null;
+  const context = used != null && window != null
+    ? `${used.toLocaleString()} / ${window.toLocaleString()} tokens`
+    : used != null
+      ? `${used.toLocaleString()} tokens used`
+      : window != null
+        ? `${window.toLocaleString()} token window`
+        : "Context usage updated";
+  const amount = Number.isFinite(event.cost?.amount) ? event.cost.amount : null;
+  const currency = event.cost?.currency || "";
+  return amount == null ? context : `${context} · ${amount.toLocaleString()}${currency ? ` ${currency}` : ""}`;
+}
+
+function AcpSummaryBlock({ event }) {
+  return (
+    <div class="agentlog-structured-output">
+      <div class="agentlog-event-text">{event.title || "ACP session updated"}</div>
+      {event.detail && <div class="agentlog-final-meta">{event.detail}</div>}
+      {event.items?.length > 0 && (
+        <div class="agentlog-structured-rows">
+          {event.items.map((item, index) => (
+            <div class="agentlog-structured-row" key={`${item.label}-${index}`}>
+              <span>{item.label}</span>
+              <strong>{item.detail || "Updated"}</strong>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AcpPlanBlock({ event }) {
+  return (
+    <div class="agentlog-structured-output">
+      <div class="agentlog-event-text">{event.title || "ACP plan updated"}</div>
+      {event.entries?.length > 0 ? (
+        <div class="agentlog-structured-rows">
+          {event.entries.map((entry, index) => {
+            const state = [entry.status, entry.priority].filter(Boolean).join(" · ") || `Step ${index + 1}`;
+            return (
+              <div class="agentlog-structured-row" key={`${state}-${index}`}>
+                <span>{state}</span>
+                <strong>{entry.content || "Plan entry updated"}</strong>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div class="agentlog-final-meta">No plan contents were included.</div>
+      )}
+    </div>
+  );
+}
+
 function CollapsibleBlock({ title, text, value, expanded, onToggle, borderColor, muted }) {
   const payload = value !== undefined ? value : (text || "");
   const previewText = structuredPreview(payload) || "";
@@ -527,6 +584,23 @@ function TimelineEvent({ event, isLast, streaming }) {
         maxHeight={5000}
       />
     );
+  } else if (type === "acp_session_update" || type === "acp_interaction") {
+    railIcon = <RailIcon name={type === "acp_interaction" ? "hand" : "refresh-cw"} tone="muted" />;
+    content = <AcpSummaryBlock event={event} />;
+  } else if (type === "acp_plan") {
+    railIcon = <RailIcon name="layout-list" tone="muted" />;
+    content = <AcpPlanBlock event={event} />;
+  } else if (type === "acp_context_usage") {
+    railIcon = <RailIcon name="database" tone="muted" />;
+    content = <div class="agentlog-final-meta">ACP context: {acpContextUsageText(event)}</div>;
+  } else if (type === "acp_provider_status") {
+    railIcon = <RailIcon name="refresh-cw" tone="warn" />;
+    const attempt = Number.isFinite(event.retryIndex)
+      ? ` · retry ${event.retryIndex + 1}`
+      : Number.isFinite(event.attemptIndex)
+        ? ` · attempt ${event.attemptIndex + 1}`
+        : "";
+    content = <div class="agentlog-event-warn">{event.title || "ACP provider updated"}{attempt}</div>;
   } else if (type === "worktree_reconcile") {
     railIcon = <RailIcon name="git-branch" tone={event.tone === "success" ? "success" : "warn"} />;
     const meta = [
