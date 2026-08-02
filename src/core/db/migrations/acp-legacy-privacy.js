@@ -39,6 +39,25 @@ const RUN_JSON_DEFAULTS = new Map([
 ]);
 const RUN_TEXT_COLUMNS = ["error_text", "summary", "details"];
 const EXPLICIT_SESSION_VALUE_RE = /"(sessionId|session_id|providerSessionId|provider_session_id)"\s*:\s*"((?:\\.|[^"\\])*)"/gu;
+const TASK_EMBEDDING_KINDS = new Set([
+  "task",
+  "tasks",
+  "comment",
+  "comments",
+  "task_comment",
+  "task_comments",
+  "task-comment",
+  "task-comments",
+]);
+const TASK_REFERENCE_SEGMENTS = new Set(["task", "tasks"]);
+const COMMENT_REFERENCE_SEGMENTS = new Set([
+  "comment",
+  "comments",
+  "task_comment",
+  "task_comments",
+  "task-comment",
+  "task-comments",
+]);
 
 function hasColumn(db, table, column) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some((row) => row.name === column);
@@ -89,6 +108,36 @@ function profileIdForRun(row) {
   }
   // Keeps the boundary active and fail-closed for orphaned legacy ACP rows.
   return "legacy-acp-orphan";
+}
+
+function referenceSegments(value) {
+  return String(value || "")
+    .split(/[/:#]/u)
+    .filter(Boolean)
+    .map((segment) => segment.replace(/\.md$/iu, ""));
+}
+
+function referenceLinksEntity(value, ids, entitySegments, kind) {
+  const segments = referenceSegments(value);
+  for (let index = 0; index < segments.length; index += 1) {
+    if (!ids.has(segments[index])) continue;
+    if (TASK_EMBEDDING_KINDS.has(String(kind || "").toLowerCase())) return true;
+    if (index > 0 && entitySegments.has(segments[index - 1].toLowerCase())) return true;
+  }
+  return false;
+}
+
+function linkedEmbeddingRows(db, taskId, comments) {
+  if (!taskId || !tableExists(db, "embeddings")) return [];
+  const taskIds = new Set([taskId]);
+  const commentIds = new Set(comments.map((row) => row.id));
+  return db.prepare("SELECT id, kind, ref, source_ref FROM embeddings ORDER BY rowid ASC").all()
+    .filter((row) => (
+      referenceLinksEntity(row.source_ref, taskIds, TASK_REFERENCE_SEGMENTS, row.kind)
+      || referenceLinksEntity(row.ref, taskIds, TASK_REFERENCE_SEGMENTS, row.kind)
+      || referenceLinksEntity(row.source_ref, commentIds, COMMENT_REFERENCE_SEGMENTS, row.kind)
+      || referenceLinksEntity(row.ref, commentIds, COMMENT_REFERENCE_SEGMENTS, row.kind)
+    ));
 }
 
 function databaseDataDir(db) {
@@ -185,7 +234,8 @@ function relatedRows(db, run) {
   const interactions = tableExists(db, "acp_interactions")
     ? db.prepare("SELECT id, protocol_request_id, request_schema_json, disposition FROM acp_interactions WHERE task_run_id = ? ORDER BY rowid ASC").all(run.id)
     : [];
-  return { logs, comments, compactions, interactions };
+  const embeddings = linkedEmbeddingRows(db, run.task_id, comments);
+  return { logs, comments, compactions, interactions, embeddings };
 }
 
 function preparedRunValue(run, jsonColumns, textColumns, related, rawLog) {
@@ -332,6 +382,22 @@ function applyRunPlan(db, run, plan, jsonColumns, textColumns, related) {
       || requestSchemaJson !== original?.request_schema_json
       || disposition !== original?.disposition) {
       changes += updateInteraction.run(protocolRequestId, requestSchemaJson, disposition, original.id).changes;
+    }
+  }
+  if (related.embeddings.length > 0) {
+    const ftsTriggerBacked = !!db.prepare(`
+      SELECT name FROM sqlite_master
+      WHERE type = 'trigger' AND tbl_name = 'embeddings'
+        AND lower(sql) LIKE '%embeddings_fts%'
+      LIMIT 1
+    `).get();
+    const deleteFts = !ftsTriggerBacked && tableExists(db, "embeddings_fts")
+      ? db.prepare("DELETE FROM embeddings_fts WHERE id = ?")
+      : null;
+    const deleteEmbedding = db.prepare("DELETE FROM embeddings WHERE id = ?");
+    for (const embedding of related.embeddings) {
+      deleteFts?.run(embedding.id);
+      changes += deleteEmbedding.run(embedding.id).changes;
     }
   }
   return changes;

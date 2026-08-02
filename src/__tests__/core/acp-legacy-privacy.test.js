@@ -137,6 +137,37 @@ describe("legacy ACP session privacy migration", () => {
       ) VALUES ('compact-acp', 'run-raw', 1, 'manual', ?, ?, ?, 1)
     `).run(rawSession, JSON.stringify({ sessionId: rawSession, copied: rawSession }), malformedProviderId);
     db.prepare(`
+      INSERT INTO embeddings (
+        id, kind, ref, source_ref, title, chunk_text, vector_present,
+        content_hash, created_at, updated_at
+      ) VALUES ('embedding-comment', 'task_comment', ?, ?, 'ACP comment', ?, 0, 'hash-comment', 1, 1)
+    `).run(
+      "tasks/task-acp/comments/comment-acp#chunk-0",
+      "tasks/task-acp/comments/comment-acp#chunk-0",
+      `copied ${rawSession}`,
+    );
+    db.prepare(`
+      INSERT INTO embeddings_fts (id, kind, source_ref, title, chunk_text)
+      VALUES ('embedding-comment', 'task_comment', ?, 'ACP comment', ?)
+    `).run("tasks/task-acp/comments/comment-acp#chunk-0", `copied ${rawSession}`);
+    db.prepare(`
+      INSERT INTO embeddings (
+        id, kind, ref, source_ref, title, chunk_text, vector_present,
+        content_hash, created_at, updated_at
+      ) VALUES (
+        'embedding-unrelated', 'kb', 'knowledge/unrelated.md#chunk-0',
+        'knowledge/unrelated.md#chunk-0', 'Unrelated', 'safe content', 0,
+        'hash-unrelated', 1, 1
+      )
+    `).run();
+    db.prepare(`
+      INSERT INTO embeddings_fts (id, kind, source_ref, title, chunk_text)
+      VALUES (
+        'embedding-unrelated', 'kb', 'knowledge/unrelated.md#chunk-0',
+        'Unrelated', 'safe content'
+      )
+    `).run();
+    db.prepare(`
       INSERT INTO acp_interactions (
         id, profile_id, task_run_id, protocol_request_id, kind,
         request_schema_json, state, disposition, created_at, updated_at
@@ -212,6 +243,10 @@ describe("legacy ACP session privacy migration", () => {
       .toBe("copied [redacted] [redacted] [redacted]");
     expect(db.prepare("SELECT summary, metadata_json, error_text FROM run_compactions WHERE id = 'compact-acp'").get())
       .toEqual({ summary: "[redacted]", metadata_json: '{"copied":"[redacted]"}', error_text: "[redacted]" });
+    expect(db.prepare("SELECT id FROM embeddings ORDER BY id").all())
+      .toEqual([{ id: "embedding-unrelated" }]);
+    expect(db.prepare("SELECT id FROM embeddings_fts ORDER BY id").all())
+      .toEqual([{ id: "embedding-unrelated" }]);
     expect(db.prepare("SELECT protocol_request_id, request_schema_json, disposition FROM acp_interactions WHERE id = 'interaction-acp'").get())
       .toEqual({
         protocol_request_id: "legacy-redacted:interaction-acp",
