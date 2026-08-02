@@ -52,14 +52,20 @@ function getDerivedKeys(dataDir = loadConfig().dataDir) {
   const cacheKey = `${dataDir}:${envKey}`;
   if (cached?.cacheKey === cacheKey) return cached;
   const { raw, source } = loadOrCreateMasterKey(dataDir);
-  const providerKey = Buffer.from(hkdfSync("sha256", raw, Buffer.alloc(0), HKDF_INFO, KEY_BYTES));
-  const acpSessionTokenKey = Buffer.from(hkdfSync(
-    "sha256",
-    raw,
-    Buffer.alloc(0),
-    ACP_SESSION_TOKEN_HKDF_INFO,
-    KEY_BYTES,
-  ));
+  let providerKey;
+  let acpSessionTokenKey;
+  try {
+    providerKey = Buffer.from(hkdfSync("sha256", raw, Buffer.alloc(0), HKDF_INFO, KEY_BYTES));
+    acpSessionTokenKey = Buffer.from(hkdfSync(
+      "sha256",
+      raw,
+      Buffer.alloc(0),
+      ACP_SESSION_TOKEN_HKDF_INFO,
+      KEY_BYTES,
+    ));
+  } finally {
+    raw.fill(0);
+  }
   const fingerprint = createHash("sha256").update(providerKey).digest("hex").slice(0, 12);
   cached = { cacheKey, providerKey, acpSessionTokenKey, source, fingerprint };
   return cached;
