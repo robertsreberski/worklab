@@ -178,11 +178,15 @@ function flattenEvents(events) {
 // group so the child's thinking and tool
 // calls render nested under that call instead of interleaved with the parent's
 // own output — the same shape as the file_edit collapse below, one level down.
+function subagentParentToolUseId(event) {
+  return event?.subagent?.id || event?.subagent?.toolUseId || null;
+}
+
 function collectSubagentGroups(flat) {
   const byId = new Map();
   for (const event of flat) {
     if (event?.type !== "subagent_activity") continue;
-    const id = event.subagent?.id;
+    const id = subagentParentToolUseId(event);
     if (!id) continue;
     let group = byId.get(id);
     if (!group) {
@@ -203,8 +207,7 @@ function collectSubagentGroups(flat) {
     for (const [key, value] of Object.entries(event.subagent || {})) {
       if (group.subagent[key] == null && value != null) group.subagent[key] = value;
     }
-    if (event.subagent?.id) group.parentToolUseIds.add(event.subagent.id);
-    if (event.subagent?.toolUseId) group.parentToolUseIds.add(event.subagent.toolUseId);
+    group.parentToolUseIds.add(id);
     group.omittedRows = Math.max(
       group.omittedRows,
       Number(event._worklab_subagent_omitted_rows) || 0,
@@ -311,7 +314,7 @@ function groupEvents(events) {
       // which happens when the parent's tool_use fell outside a truncated log,
       // or on a run resumed after the delegation started. Emitted once, at its
       // first row, so it keeps its place in the timeline.
-      const group = subagentGroups.byId.get(event.subagent?.id);
+      const group = subagentGroups.byId.get(subagentParentToolUseId(event));
       if (!group || claimedSubagentIds.has(group._groupId)) continue;
       if (renderedSubagentIds.has(group._groupId)) continue;
       renderedSubagentIds.add(group._groupId);

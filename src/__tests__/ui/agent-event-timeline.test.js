@@ -383,6 +383,39 @@ describe("native subagent grouping", () => {
     expect(items[1]).toMatchObject({ type: "text", text: "Done." });
   });
 
+  it("attaches retained toolUseId-only activity to its parent tool call", () => {
+    const legacyActivity = (phase, extra = {}) => ({
+      type: "subagent_activity",
+      subagent: {
+        toolUseId: "toolu_parent",
+        nativeId: "legacy-a700",
+        name: "reviewer",
+        callIndex: 0,
+      },
+      phase,
+      ...extra,
+    });
+    const items = groupAgentTimelineEvents([
+      parentToolUse,
+      legacyActivity("agent_started", { id: "agent:legacy-a700" }),
+      legacyActivity("message", { id: "agent:legacy-a700:m1", kind: "text", content: "Legacy result" }),
+      legacyActivity("agent_completed", { id: "agent:legacy-a700", isError: false }),
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      _toolCall: true,
+      toolUse: { tool_use_id: "toolu_parent", name: "Agent" },
+      subagentGroup: {
+        _groupId: "toolu_parent",
+        done: true,
+        subagent: { toolUseId: "toolu_parent", nativeId: "legacy-a700" },
+      },
+    });
+    expect(items[0].subagentGroup.rows).toHaveLength(1);
+    expect(items[0].subagentGroup.rows[0]).toMatchObject({ phase: "message", content: "Legacy result" });
+  });
+
   it("renders an unclaimed delegation standalone rather than dropping it", () => {
     // No parent tool_use: a truncated log, or a run resumed mid-delegation.
     const items = groupAgentTimelineEvents([
