@@ -462,7 +462,7 @@ export function registerAcpRoutes(app, {
     }
   });
 
-  app.post("/api/acp/interactions/:id/url:open", (req, res) => {
+  app.post("/api/acp/interactions/:id/url\\:open", (req, res) => {
     const row = getAcpInteractionById(db, req.params.id);
     const owner = interactionUrlOwner(row);
     if (!row || row.state !== "pending" || row.kind !== "url" || !owner) {

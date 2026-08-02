@@ -6,6 +6,7 @@ const WILDCARD_HOSTS = new Set(["0.0.0.0", "::", "[::]"]);
 const ACTIVE_READ_PATHS = new Set(["/acp/discovery/mono"]);
 const CORS_METHODS = "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS";
 const CORS_HEADERS = "Authorization, Content-Type, Last-Event-ID, X-Attachment-Filename, X-Skill-Filename";
+const ACP_URL_OPEN_PATH = /^\/acp\/interactions\/[^/]+\/url:open$/iu;
 
 function bearerToken(req) {
   const value = req.get("authorization") || "";
@@ -104,6 +105,15 @@ function sameUiBoundary(req, { origins, hosts }) {
   return source.origin === target.origin;
 }
 
+function decodedRequestPath(req) {
+  const path = req.path.length > 1 ? req.path.replace(/\/+$/u, "") : req.path;
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return "";
+  }
+}
+
 /**
  * Worklab mutations can schedule tool-capable local agents and ACP processes.
  * Keep those actions unavailable to arbitrary websites: browser UI calls must
@@ -124,8 +134,7 @@ export function createApiMutationBoundary({
     const corsOrigin = configuredCorsOrigin(req, { origins, hosts });
     if (corsOrigin) setConfiguredCorsHeaders(res, corsOrigin);
 
-    const requestPath = (req.path.length > 1 ? req.path.replace(/\/+$/u, "") : req.path)
-      .toLowerCase();
+    const requestPath = decodedRequestPath(req).toLowerCase();
     const activeRead = new Set(["GET", "HEAD"]).has(req.method)
       && ACTIVE_READ_PATHS.has(requestPath);
     if (req.method === "OPTIONS") {
@@ -148,6 +157,19 @@ export function createApiMutationBoundary({
     }
     if (!activeRead && new Set(["GET", "HEAD"]).has(req.method)) {
       next();
+      return;
+    }
+    if (req.method === "POST" && ACP_URL_OPEN_PATH.test(requestPath)) {
+      if (sameUiBoundary(req, { origins, hosts })) {
+        next();
+        return;
+      }
+      res.status(403).json({
+        error: {
+          code: "forbidden_origin",
+          message: "ACP URL handoffs must be opened from the Worklab browser UI",
+        },
+      });
       return;
     }
     if (expectedToken && tokenMatches(bearerToken(req), expectedToken)) {

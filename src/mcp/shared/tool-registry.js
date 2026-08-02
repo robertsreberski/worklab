@@ -13,7 +13,9 @@ export async function apiRequest({ baseUrl, fetchImpl = fetch, token }, method, 
   if (typeof token === "string" && token.length > 0) {
     headers.authorization = `Bearer ${token}`;
   }
-  const init = { method: method.toUpperCase(), headers };
+  // Internal API helpers must never turn a Worklab redirect into a
+  // server-side request to an agent-controlled destination.
+  const init = { method: method.toUpperCase(), headers, redirect: "manual" };
   if (body !== undefined && init.method !== "GET" && init.method !== "HEAD") {
     headers["content-type"] = "application/json";
     init.body = JSON.stringify(body);

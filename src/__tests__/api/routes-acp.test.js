@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -759,6 +760,15 @@ describe("ACP API", () => {
     expect(JSON.stringify(server.db.prepare("SELECT * FROM acp_interactions").all()))
       .not.toContain(sentinel);
 
+    await server.agent.post(`/api/acp/interactions/${interactionId}/urlanything`)
+      .expect(404);
+    expect(urlHandoffStore.has({
+      interactionId,
+      ownerKind: "run",
+      ownerId: runId,
+      profileId: profile.id,
+    })).toBe(true);
+
     const opened = await server.agent.post(`/api/acp/interactions/${interactionId}/url:open`)
       .redirects(0)
       .expect(303);
@@ -791,6 +801,91 @@ describe("ACP API", () => {
       url: "https://user:password@example.test/private",
     })).toBe(false);
     urlHandoffStore.clear();
+  });
+
+  it("rejects service-token URL opens without reaching or consuming the private target", async () => {
+    const dataDir = workspace();
+    const cwd = workspace();
+    const urlHandoffStore = createAcpUrlHandoffStore();
+    let targetHits = 0;
+    const target = createHttpServer((_req, res) => {
+      targetHits += 1;
+      res.setHeader("Connection", "close");
+      res.end("private target reached");
+    });
+    await new Promise((resolve, reject) => {
+      target.once("error", reject);
+      target.listen(0, "127.0.0.1", resolve);
+    });
+
+    try {
+      const address = target.address();
+      const rawUrl = `http://127.0.0.1:${address.port}/private-target?state=PRIVATE_TARGET_STATE`;
+      const server = makeTestServer({ dataDir, acpUrlHandoffStore: urlHandoffStore });
+      const profile = (await createGeneric(server.agent, cwd)).body.profile;
+      const now = Date.now();
+      const runId = "run-url-browser-only";
+      const interactionId = newAcpInteractionId();
+      server.db.prepare(`
+        INSERT INTO task_runs (id, mode, stage, agent_name, status, process_status, started_at)
+        VALUES (?, 'execute', 'execute', ?, 'running', 'running', ?)
+      `).run(runId, profile.agentName, now);
+      insertAcpInteractionRequest(server.db, {
+        id: interactionId,
+        profileId: profile.id,
+        taskRunId: runId,
+        protocolRequestId: "browser-only-url-open",
+        kind: "url",
+        requestSchemaJson: JSON.stringify({
+          mode: "url",
+          message: "Continue in your browser.",
+          urlAvailable: true,
+        }),
+        createdAt: now,
+        updatedAt: now,
+      });
+      expect(urlHandoffStore.retain({
+        interactionId,
+        ownerKind: "run",
+        ownerId: runId,
+        profileId: profile.id,
+        url: rawUrl,
+      })).toBe(true);
+
+      for (const suffix of ["url:open", "url%3Aopen"]) {
+        const blocked = await server.rawAgent
+          .post(`/api/acp/interactions/${interactionId}/${suffix}`)
+          .set("authorization", `Bearer ${readMcpToken(dataDir)}`)
+          .redirects(1)
+          .expect(403);
+        expect(blocked.headers).not.toHaveProperty("location");
+      }
+      await server.rawAgent
+        .post(`/api/acp/interactions/${interactionId}/url:open`)
+        .set("authorization", `Bearer ${readMcpToken(dataDir)}`)
+        .set("origin", "https://evil.example")
+        .set("sec-fetch-site", "cross-site")
+        .redirects(1)
+        .expect(403);
+
+      expect(targetHits).toBe(0);
+      expect(urlHandoffStore.has({
+        interactionId,
+        ownerKind: "run",
+        ownerId: runId,
+        profileId: profile.id,
+      })).toBe(true);
+
+      await server.agent.post(`/api/acp/interactions/${interactionId}/url:open`)
+        .redirects(0)
+        .expect("location", rawUrl)
+        .expect(303);
+      expect(targetHits).toBe(0);
+      expect(urlHandoffStore.size).toBe(0);
+    } finally {
+      urlHandoffStore.clear();
+      await new Promise((resolve) => target.close(resolve));
+    }
   });
 
   it("returns 400 and keeps management permissions pending for unoffered options", async () => {
