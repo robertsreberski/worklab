@@ -16,6 +16,7 @@ import { runReview } from "./worker/review-runner.js";
 import { runLeadCycle } from "./worker/lead-cycle-runner.js";
 import { emitFinalResult } from "./worker/result-emitter.js";
 import { createApprovalChannel } from "./worker/approval-channel.js";
+import { createAcpInteractionChannel } from "./worker/acp-interaction-channel.js";
 
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -23,6 +24,7 @@ function emit(obj) {
 
 const liveInput = createLiveInputQueue();
 const approvalChannel = createApprovalChannel({ emit });
+const acpInteractionChannel = createAcpInteractionChannel({ emit });
 
 // R5: graceful drain protocol. The coordinator sends `{type:"worklab_drain"}`
 // on shutdown so the worker can finish the in-flight tool call instead of
@@ -30,7 +32,7 @@ const approvalChannel = createApprovalChannel({ emit });
 // in-flight provider streams unwind cleanly, and emit a `drained` event on
 // stdout so the coordinator can persist a resume snapshot tagged
 // `resume_kind: "drained"`.
-function createControlReaderState({ ac, emit }) {
+function createControlReaderState({ ac, emit, acpInteractionChannel }) {
   let drainRequested = false;
   return {
     isDraining() { return drainRequested; },
@@ -45,6 +47,7 @@ function createControlReaderState({ ac, emit }) {
         ...(deadlineAt ? { deadline_at: deadlineAt } : {}),
         ts: Date.now(),
       });
+      acpInteractionChannel.cancelAllPending();
       try { ac.abort(); } catch { /* already aborted */ }
     },
   };
@@ -67,6 +70,14 @@ function startControlReader({ controlState }) {
     }
     if (message?.type === "approval_decision") {
       approvalChannel.acceptDecision(message);
+      return;
+    }
+    if (message?.type === "acp_interaction_response") {
+      acpInteractionChannel.acceptResponse(message);
+      return;
+    }
+    if (message?.type === "acp_interaction_cancel") {
+      acpInteractionChannel.cancel(message.interaction_id || message.interactionId);
       return;
     }
     if (message?.type !== "live_user_message") return;
@@ -124,10 +135,14 @@ async function main() {
   const db = openDb(join(config.dataDir, "worklab.db"));
 
   const ac = new AbortController();
-  process.on("SIGTERM", () => { ac.abort(); });
-  process.on("SIGINT", () => { ac.abort(); });
+  const abortRun = () => {
+    acpInteractionChannel.cancelAllPending();
+    ac.abort();
+  };
+  process.on("SIGTERM", abortRun);
+  process.on("SIGINT", abortRun);
 
-  const controlState = createControlReaderState({ ac, emit });
+  const controlState = createControlReaderState({ ac, emit, acpInteractionChannel });
   startControlReader({ controlState });
 
   const ctx = {
@@ -137,6 +152,7 @@ async function main() {
     emit,
     liveInput,
     approvalChannel,
+    acpInteractionChannel,
     agentName,
     runId,
     taskId,
@@ -166,11 +182,13 @@ async function main() {
   if (controlState.isDraining()) {
     if (!result || result.cancelled || result.error) {
       approvalChannel.denyAllPending("coordinator_shutdown");
+      acpInteractionChannel.cancelAllPending();
       emit({ type: "cancelled", initiator: "coordinator_shutdown", drained: true });
       process.exit(0);
     }
   }
   approvalChannel.denyAllPending("run_terminated");
+  acpInteractionChannel.cancelAllPending();
 
   const exitCode = emitFinalResult(ctx, result);
   process.exit(exitCode);
