@@ -69,5 +69,17 @@ describe("ACP event privacy boundary", () => {
     expect(boundary.sanitizeEvent(tooDeep)).toBe(failure);
     expect(boundary.failedClosed).toBe(true);
     expect(boundary.sanitizeEvent({ type: "final", text: "otherwise safe" })).toBe(failure);
+    expect(boundary.redactText("untrusted stderr after failure")).toBe("[redacted]");
+  });
+
+  it("fails closed on non-string session identifier fields", () => {
+    const failure = { type: "privacy_failure" };
+    const boundary = createAcpEventPrivacyBoundary({
+      profileId: PROFILE_ID,
+      failureValue: failure,
+    });
+
+    expect(boundary.sanitizeEvent({ type: "event", sessionId: { hidden: "raw" } })).toBe(failure);
+    expect(boundary.failedClosed).toBe(true);
   });
 });

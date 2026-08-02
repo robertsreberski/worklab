@@ -3,7 +3,7 @@ import { normalizeAcpProviderSessionId } from "./acp-operations.js";
 const MAX_ACP_EVENT_DEPTH = 20;
 const MAX_ACP_EVENT_NODES = 50_000;
 const MAX_ACP_EVENT_STRING_CHARS = 4 * 1024 * 1024;
-const MAX_ACP_RAW_SESSION_IDS = 1_000;
+const MAX_ACP_RAW_SESSION_IDS = 128;
 const MAX_ACP_RAW_SESSION_ID_CHARS = 16 * 1024;
 const ACP_SESSION_ID_KEYS = new Set(["sessionId", "session_id"]);
 const ACP_PROVIDER_SESSION_ID_KEYS = new Set(["providerSessionId", "provider_session_id"]);
@@ -52,7 +52,8 @@ export function createAcpEventPrivacyBoundary({ profileId, failureValue = null }
   }
 
   function collectRawSessionId(value, collected) {
-    if (typeof value !== "string" || value.length === 0) return true;
+    if (value == null || value === "") return true;
+    if (typeof value !== "string") return false;
     if (value.length > MAX_ACP_RAW_SESSION_ID_CHARS) return false;
     if (rawSessionIds.has(value) || collected.has(value)) return true;
     if (rawSessionIds.size + collected.size >= MAX_ACP_RAW_SESSION_IDS) return false;
@@ -89,6 +90,7 @@ export function createAcpEventPrivacyBoundary({ profileId, failureValue = null }
   }
 
   function redactText(value) {
+    if (failedClosed) return "[redacted]";
     let result = String(value ?? "");
     const ordered = [...rawSessionIds].sort((a, b) => b.length - a.length);
     for (const rawSessionId of ordered) {
@@ -103,7 +105,7 @@ export function createAcpEventPrivacyBoundary({ profileId, failureValue = null }
     if (value == null || typeof value === "boolean" || typeof value === "number") return value;
     if (Array.isArray(value)) return value.map((entry) => copySanitized(entry, depth + 1));
     if (typeof value !== "object") return null;
-    const output = {};
+    const output = Object.create(null);
     for (const [key, entry] of Object.entries(value)) {
       if (ACP_SESSION_ID_KEYS.has(key)) continue;
       if (ACP_PROVIDER_SESSION_ID_KEYS.has(key)) {
