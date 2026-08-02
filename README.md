@@ -199,24 +199,32 @@ worklab mcp
 | `worklab doctor performance` | Measure endpoint timings, response sizes, database size, and large event logs. |
 | `worklab mcp` | Run the full-access Worklab admin MCP bridge over stdio. |
 | `worklab update --apply --version <latest>` | Apply a supported global npm update and restart the service. |
-| `worklab backup` | Create a privacy-scrubbed tar.gz backup of the active data directory. |
+| `worklab backup` | Create a credential-scrubbed tar.gz backup of the active data directory. |
 | `worklab compact-logs --apply` | Compact old large SQLite run logs while preserving raw JSONL logs. |
 
 ### Backups And Credentials
 
-`worklab backup` preserves the database and non-secret data-directory state,
-but deliberately leaves credentials out of the portable archive. It excludes
+`worklab backup` preserves application state while deliberately leaving known
+credentials out of the portable archive. It excludes
 `.env`, `pi-auth.json`, the legacy `auth.json`, `.provider-encryption-key`,
 `mcp-token`, `push-vapid.json`, and `config/mcp.json` (which can contain inline
 environment variables, headers, or arguments). It also removes encrypted
-custom-provider API keys and browser push subscriptions from the database copy.
-Runtime `logs`, `.coordinator.pid`, and SQLite WAL/SHM files remain excluded as
-before.
+custom-provider API keys, browser push subscriptions, inbound webhook IDs, and
+legacy raw ACP session identifiers from the database copy. Restored webhook
+automations are disabled and marked for reconfiguration. Runtime `logs`,
+`.coordinator.pid`, and SQLite WAL/SHM files remain excluded as before.
+
+This is credential scrubbing, not general content redaction. Tasks, comments,
+instructions, knowledge, agent memory, attachments, run results, and other
+application content remain in the archive and may be sensitive. Treat every
+backup as private data.
 
 The backup directory is mode `0700` and each archive is mode `0600`. After a
-restore, reconfigure provider/API and Pi OAuth credentials, MCP servers, and
-browser notifications before restarting Worklab; Worklab will generate a new
-service token, provider-encryption key, and VAPID key as needed.
+restore, reconfigure provider/API and Pi OAuth credentials, MCP servers,
+inbound webhook automations, and browser notifications before restarting
+Worklab; Worklab will generate a new service token, provider-encryption key,
+and VAPID key as needed. The output directory must be outside the active
+Worklab data directory.
 
 ## Configuration
 
