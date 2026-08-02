@@ -133,6 +133,89 @@ describe("ACP profile persistence", () => {
     expect(db.prepare("SELECT COUNT(*) AS count FROM acp_profiles").get().count).toBe(0);
   });
 
+  it("treats argv as non-secret configuration and rejects obvious credential flags", () => {
+    const db = makeTestDb();
+    const cwd = tempDir();
+    const sentinel = "SENTINEL_ACP_SECRET_MUST_NOT_PERSIST";
+    const base = {
+      agentName: "external",
+      displayName: "External",
+      command: process.execPath,
+      cwd,
+    };
+    const rejectedArgs = [
+      ["--api-key", sentinel],
+      [`--api_key=${sentinel}`],
+      ["--apiKey", sentinel],
+      ["--token", sentinel],
+      [`--access-token=${sentinel}`],
+      ["--secret", sentinel],
+      ["--client-secret", sentinel],
+      [`--client_secret=${sentinel}`],
+      ["--password", sentinel],
+      ["--credential", sentinel],
+      [`--credentials=${sentinel}`],
+      ["--authorization", sentinel],
+      [`--auth=${sentinel}`],
+      [`--authentication-header=${sentinel}`],
+      ["--bearer", sentinel],
+      [`--pass_phrase=${sentinel}`],
+      ["--private-key", sentinel],
+      [`--privateKeyPath=${sentinel}`],
+      ["--access-key", sentinel],
+      [`--accessKeyId=${sentinel}`],
+      [`--cookie=${sentinel}`],
+    ];
+
+    for (const args of rejectedArgs) {
+      expect(() => createAcpProfile({ db, input: { ...base, args } }))
+        .toThrow(/secret-bearing flag.*envKeys names only/i);
+    }
+    for (const configPolicy of [
+      { endpoint: sentinel },
+      { options: { value: sentinel } },
+      [],
+      null,
+    ]) {
+      expect(() => createAcpProfile({ db, input: { ...base, configPolicy } }))
+        .toThrow(/configPolicy is reserved and must be an empty object/i);
+    }
+    expect(() => createAcpProfile({
+      db,
+      input: {
+        ...base,
+        sessionPolicy: { configOptions: { endpoint: sentinel } },
+      },
+    })).toThrow(/sessionPolicy has unsupported fields: configOptions/i);
+    for (const sessionPolicy of [
+      { resumeStrategy: "restart" },
+      { modeId: 42 },
+      { modeId: "x".repeat(201) },
+      { resumeStrategy: "auto", arbitraryOptions: { value: sentinel } },
+    ]) {
+      expect(() => createAcpProfile({ db, input: { ...base, sessionPolicy } }))
+        .toThrow(/sessionPolicy/i);
+    }
+    expect(db.prepare("SELECT COUNT(*) AS count FROM acp_profiles").get()).toEqual({ count: 0 });
+
+    const profile = createAcpProfile({
+      db,
+      input: {
+        ...base,
+        args: ["bridge.mjs", "--stdio"],
+        envKeys: ["ACP_API_TOKEN"],
+        configPolicy: {},
+        sessionPolicy: { resume_strategy: "load", mode_id: "review" },
+      },
+    });
+    const stored = db.prepare("SELECT * FROM acp_profiles WHERE id = ?").get(profile.id);
+    expect(profile.configPolicy).toEqual({});
+    expect(profile.sessionPolicy).toEqual({ resumeStrategy: "load", modeId: "review" });
+    expect(stored.config_policy_json).toBe("{}");
+    expect(stored.session_policy_json).toBe(JSON.stringify({ resumeStrategy: "load", modeId: "review" }));
+    expect(JSON.stringify({ profile, stored })).not.toContain(sentinel);
+  });
+
   it("rejects an ordinary-agent name collision without rewriting the agent or its task and team references", () => {
     const db = makeTestDb();
     const cwd = tempDir();
@@ -323,7 +406,7 @@ describe("ACP profile persistence", () => {
     expect(db.prepare("SELECT COUNT(*) AS count FROM acp_profiles").get().count).toBe(0);
   });
 
-  it("updates identity and generic policy without breaking the profile binding", () => {
+  it("updates identity while keeping generic configuration policy empty", () => {
     const db = makeTestDb();
     const cwd = tempDir();
     const profile = createAcpProfile({
@@ -341,16 +424,22 @@ describe("ACP profile persistence", () => {
       input: {
         displayName: "New Name",
         enabled: false,
-        configPolicy: { promptContent: ["text"] },
+        configPolicy: {},
         probeTimeoutMs: 45_000,
       },
     });
     expect(updated).toMatchObject({
       probeTimeoutMs: 45_000,
-      configPolicy: { promptContent: ["text"] },
+      configPolicy: {},
       agent: { displayName: "New Name", enabled: false, sdk: "acp", executionMode: "acp" },
     });
     expect(updated.agent.model).toBe(`acp:${profile.id}`);
+    expect(() => updateAcpProfileRecord({
+      db,
+      id: profile.id,
+      input: { configPolicy: { endpoint: "not-supported" } },
+    })).toThrow(/configPolicy is reserved and must be an empty object/i);
+    expect(getAcpProfile({ db, id: profile.id }).configPolicy).toEqual({});
   });
 
   it("rejects unsupported client capabilities when patching a generic profile", () => {

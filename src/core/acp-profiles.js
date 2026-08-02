@@ -38,6 +38,14 @@ const MIN_PROBE_TIMEOUT_MS = 1_000;
 const MAX_PROBE_TIMEOUT_MS = 300_000;
 const DEFAULT_PROBE_TIMEOUT_MS = 30_000;
 const SECRET_FIELD_RE = /(?:secret|password|passphrase|token|api[_-]?key|credential|authorization|cookie|env(?:ironment)?_?values?)/iu;
+const SECRET_ARG_FLAG_RE = /(?:^|-)(?:api-key|apikey|access-key|accesskey|private-key|privatekey|client-secret|clientsecret|token|secret|password|passwd|passphrase|pass-phrase|credentials?|authorization|authentication|auth|bearer|cookies?)(?:$|-)/u;
+const GENERIC_SESSION_POLICY_KEYS = new Set([
+  "resumeStrategy",
+  "resume_strategy",
+  "modeId",
+  "mode_id",
+]);
+const RESUME_STRATEGIES = new Set(["auto", "load", "resume"]);
 
 const DEFAULT_PERMISSIONS_POLICY = Object.freeze({
   filesystem: false,
@@ -210,6 +218,53 @@ function normalizeStringArray(value, name, { maxItems, validate } = {}) {
 
 function normalizeArgs(value) {
   return normalizeStringArray(value, "args", { maxItems: MAX_ARGS });
+}
+
+function assertNoSecretBearingArgFlags(args) {
+  // Generic argv is persisted as non-secret launch configuration. This guard
+  // catches obvious credential flags, but cannot prove arbitrary positional
+  // text is secret-free. Credential values must be referenced via envKeys.
+  args.forEach((argument, index) => {
+    const match = argument.match(/^--?([^=]+)/u);
+    if (!match) return;
+    const flag = match[1]
+      .replace(/([a-z\d])([A-Z])/gu, "$1-$2")
+      .replace(/[^A-Za-z\d]+/gu, "-")
+      .replace(/^-+|-+$/gu, "")
+      .toLowerCase();
+    if (SECRET_ARG_FLAG_RE.test(flag)) {
+      throw acpError(`args[${index}] uses a secret-bearing flag; persist envKeys names only`);
+    }
+  });
+  return args;
+}
+
+function normalizeGenericSessionPolicy(value, fallback = {}) {
+  const source = value === undefined ? fallback : value;
+  if (!isPlainObject(source)) throw acpError("sessionPolicy must be an object");
+  const unknown = Object.keys(source).filter((key) => !GENERIC_SESSION_POLICY_KEYS.has(key));
+  if (unknown.length) {
+    throw acpError(`sessionPolicy has unsupported fields: ${unknown.join(", ")}`);
+  }
+  if (Object.hasOwn(source, "resumeStrategy") && Object.hasOwn(source, "resume_strategy")) {
+    throw acpError("sessionPolicy must not duplicate resumeStrategy");
+  }
+  if (Object.hasOwn(source, "modeId") && Object.hasOwn(source, "mode_id")) {
+    throw acpError("sessionPolicy must not duplicate modeId");
+  }
+  const resumeStrategy = inputValue(source, "resumeStrategy", "resume_strategy");
+  const modeId = inputValue(source, "modeId", "mode_id");
+  const policy = {};
+  if (resumeStrategy !== undefined) {
+    if (typeof resumeStrategy !== "string" || !RESUME_STRATEGIES.has(resumeStrategy)) {
+      throw acpError("sessionPolicy.resumeStrategy must be auto, load, or resume");
+    }
+    policy.resumeStrategy = resumeStrategy;
+  }
+  if (modeId !== undefined) {
+    policy.modeId = boundedString(modeId, "sessionPolicy.modeId", { required: true, max: 200 });
+  }
+  return policy;
 }
 
 function normalizeEnvKeys(value) {
@@ -394,7 +449,9 @@ function normalizeGenericProfile(input, current = null) {
   ensureNoSecretBearingFields(input, "profile");
   const identity = normalizeAgentIdentity(input, current?.agent);
   const command = normalizeExecutable(inputValue(input, "command", "command", current?.command));
-  const args = normalizeArgs(inputValue(input, "args", "args", current?.args || []));
+  const args = assertNoSecretBearingArgFlags(
+    normalizeArgs(inputValue(input, "args", "args", current?.args || [])),
+  );
   const cwd = normalizeDirectory(inputValue(input, "cwd", "cwd", current?.cwd), "cwd");
   const envKeys = normalizeEnvKeys(inputValue(input, "envKeys", "env_keys", current?.envKeys || []));
   const configurationOwner = normalizeOwner(
@@ -417,13 +474,14 @@ function normalizeGenericProfile(input, current = null) {
   const permissionsPolicy = assertSupportedPermissionsPolicy(normalizePermissionsPolicy(
     inputValue(input, "permissionsPolicy", "permissions_policy", current?.permissionsPolicy),
   ));
-  const configPolicy = normalizeJsonObject(
-    inputValue(input, "configPolicy", "config_policy", current?.configPolicy),
-    "configPolicy",
-  );
-  const sessionPolicy = normalizeJsonObject(
+  const configPolicyInput = inputValue(input, "configPolicy", "config_policy");
+  if (configPolicyInput !== undefined
+    && (!isPlainObject(configPolicyInput) || Object.keys(configPolicyInput).length !== 0)) {
+    throw acpError("configPolicy is reserved and must be an empty object");
+  }
+  const configPolicy = {};
+  const sessionPolicy = normalizeGenericSessionPolicy(
     inputValue(input, "sessionPolicy", "session_policy", current?.sessionPolicy),
-    "sessionPolicy",
   );
   const probeTimeoutMs = normalizeProbeTimeout(
     inputValue(input, "probeTimeoutMs", "probe_timeout_ms", current?.probeTimeoutMs),
@@ -544,8 +602,10 @@ function persistenceFields(profile, { id, createdAt, updatedAt }) {
     mcpOwner: profile.mcpOwner,
     canonicalWorkspace: profile.canonicalWorkspace,
     permissionsPolicyJson: JSON.stringify(profile.permissionsPolicy),
-    configPolicyJson: JSON.stringify(profile.configPolicy),
-    sessionPolicyJson: JSON.stringify(profile.sessionPolicy),
+    configPolicyJson: JSON.stringify(profile.driver === "generic" ? {} : profile.configPolicy),
+    sessionPolicyJson: JSON.stringify(
+      profile.driver === "generic" ? normalizeGenericSessionPolicy(profile.sessionPolicy) : profile.sessionPolicy,
+    ),
     probeTimeoutMs: profile.probeTimeoutMs,
     createdAt,
     updatedAt,
