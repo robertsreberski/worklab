@@ -151,6 +151,21 @@ export function expirePendingAcpInteractionsForOperation(db, operationId, {
   `).run(disposition, resolvedAt, resolvedAt, operationId);
 }
 
+export function expireUnresolvedAcpInteractionsForTerminalOperations(db, {
+  disposition = "operation_ended",
+  resolvedAt = Date.now(),
+} = {}) {
+  return db.prepare(`
+    UPDATE acp_interactions
+    SET state = 'expired', disposition = ?, updated_at = ?, resolved_at = ?
+    WHERE operation_id IN (
+      SELECT id FROM acp_operations
+      WHERE state IN ('succeeded', 'failed', 'cancelled')
+    )
+      AND (state = 'pending' OR (state = 'submitted' AND resolved_at IS NULL))
+  `).run(disposition, resolvedAt, resolvedAt);
+}
+
 export function expirePendingAcpInteractionsForRun(db, taskRunId, {
   disposition = "run_ended",
   resolvedAt = Date.now(),

@@ -9,6 +9,7 @@ import {
 import { createAcpOperationManager } from "../../coordinator/acp-operation-manager.js";
 import {
   claimAcpInteractionResponse,
+  finalizeAcpInteractionResponse,
   insertAcpInteractionRequest,
 } from "../../core/db/queries/acp-interactions.js";
 import {
@@ -176,5 +177,81 @@ describe("ACP operation startup reconciliation", () => {
       FROM acp_interactions
       WHERE id = 'orphan-interaction-atomic'
     `).get()).toEqual({ state: "pending", disposition: null, resolved_at: null });
+  });
+
+  it("expires unresolved interactions left behind after an operation was already terminalized", () => {
+    const db = makeTestDb();
+    const cwd = mkdtempSync(join(tmpdir(), "worklab-acp-terminal-interaction-"));
+    cleanup.push(cwd);
+    const profile = createProfile(db, cwd, "terminal");
+    const operationId = seedOrphanedOperation(db, profile.id, "running", "terminal", 10_000);
+    db.prepare(`
+      UPDATE acp_operations
+      SET state = 'failed', error_json = '{"code":"existing_failure"}', completed_at = 11000
+      WHERE id = ?
+    `).run(operationId);
+    insertAcpInteractionRequest(db, {
+      id: "terminal-submitted-unresolved",
+      profileId: profile.id,
+      operationId,
+      protocolRequestId: "terminal-submitted-unresolved",
+      kind: "form",
+      requestSchemaJson: "{}",
+      createdAt: 10_100,
+      updatedAt: 10_100,
+    });
+    claimAcpInteractionResponse(db, "terminal-submitted-unresolved", {
+      disposition: "accept",
+      updatedAt: 10_200,
+    });
+    insertAcpInteractionRequest(db, {
+      id: "terminal-submitted-resolved",
+      profileId: profile.id,
+      operationId,
+      protocolRequestId: "terminal-submitted-resolved",
+      kind: "form",
+      requestSchemaJson: "{}",
+      createdAt: 10_100,
+      updatedAt: 10_100,
+    });
+    claimAcpInteractionResponse(db, "terminal-submitted-resolved", {
+      disposition: "accept",
+      updatedAt: 10_200,
+    });
+    finalizeAcpInteractionResponse(db, "terminal-submitted-resolved", { resolvedAt: 10_300 });
+
+    createAcpOperationManager({ db, controls: {}, now: () => 20_000 });
+
+    expect(db.prepare("SELECT state, error_json, completed_at FROM acp_operations WHERE id = ?")
+      .get(operationId)).toEqual({
+      state: "failed",
+      error_json: '{"code":"existing_failure"}',
+      completed_at: 11_000,
+    });
+    expect(db.prepare(`
+      SELECT id, state, disposition, resolved_at
+      FROM acp_interactions
+      WHERE operation_id = ?
+      ORDER BY id
+    `).all(operationId)).toEqual([
+      {
+        id: "orphan-interaction-terminal",
+        state: "expired",
+        disposition: "operation_ended",
+        resolved_at: 20_000,
+      },
+      {
+        id: "terminal-submitted-resolved",
+        state: "submitted",
+        disposition: "accept",
+        resolved_at: 10_300,
+      },
+      {
+        id: "terminal-submitted-unresolved",
+        state: "expired",
+        disposition: "operation_ended",
+        resolved_at: 20_000,
+      },
+    ]);
   });
 });

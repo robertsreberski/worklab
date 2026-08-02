@@ -318,7 +318,7 @@ describe("AcpOperationManager", () => {
     let finishCleanup;
     const cleanupStarted = new Promise((resolve) => { beginCleanup = resolve; });
     const cleanupGate = new Promise((resolve) => { finishCleanup = resolve; });
-    const { profile, manager } = setup({
+    const { db, profile, manager } = setup({
       probe: async ({ signal }) => {
         await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
         beginCleanup();
@@ -337,12 +337,25 @@ describe("AcpOperationManager", () => {
       .toThrowError("ACP profile already has an active operation");
     let shutdownSettled = false;
     const shutdown = manager.shutdown().then(() => { shutdownSettled = true; });
+    const secondProfile = createAcpProfile({
+      db,
+      input: {
+        agentName: "external-after-shutdown",
+        displayName: "External after shutdown",
+        command: process.execPath,
+        cwd: profile.cwd,
+      },
+    });
+    expect(() => manager.start({ profileId: secondProfile.id, kind: "probe" }))
+      .toThrowError("ACP operation manager is shutting down");
     await Promise.resolve();
     expect(shutdownSettled).toBe(false);
 
     finishCleanup();
     await shutdown;
     expect(manager.isActive(operation.id)).toBe(false);
+    expect(() => manager.start({ profileId: secondProfile.id, kind: "probe" }))
+      .toThrowError("ACP operation manager is shutting down");
   });
 
   it("releases an aborted handler after the cleanup hard ceiling", async () => {
@@ -360,6 +373,24 @@ describe("AcpOperationManager", () => {
       interval: 5,
     });
     expect(manager.get(operation.id)?.state).toBe("cancelled");
+  });
+
+  it("persists deadline expiry as a failure instead of a user cancellation", async () => {
+    vi.useFakeTimers();
+    const { profile, manager } = setup({
+      probe: async ({ signal }) => new Promise((resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      }),
+    }, { probeTimeoutMs: 1_000 });
+    const operation = manager.start({ profileId: profile.id, kind: "probe" });
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(manager.get(operation.id)).toMatchObject({
+      state: "failed",
+      error: { code: "operation_timeout" },
+    });
+    expect(manager.isActive(operation.id)).toBe(false);
   });
 
   it("redacts credentials and query values from persisted interaction URLs", async () => {

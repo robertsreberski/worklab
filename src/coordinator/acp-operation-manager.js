@@ -25,6 +25,7 @@ import {
   cancelAcpInteraction,
   claimAcpInteractionResponse,
   expirePendingAcpInteractionsForOperation,
+  expireUnresolvedAcpInteractionsForTerminalOperations,
   finalizeAcpInteractionResponse,
   getAcpInteractionById,
   insertAcpInteractionRequest,
@@ -148,6 +149,7 @@ export class AcpOperationManager {
       ? abortCleanupTimeoutMs
       : DEFAULT_ABORT_CLEANUP_TIMEOUT_MS;
     this.active = new Map();
+    this.closing = false;
     this.#reconcileOrphanedOperations();
   }
 
@@ -155,7 +157,6 @@ export class AcpOperationManager {
     const completedAt = this.now();
     const reconcile = this.db.transaction(() => {
       let operations = 0;
-      let expiredInteractions = 0;
       const orphaned = listActiveAcpOperations(this.db)
         .filter((operation) => !this.active.has(operation.id));
       for (const operation of orphaned) {
@@ -172,15 +173,15 @@ export class AcpOperationManager {
         });
         if (terminalized.changes !== 1) continue;
         operations += 1;
-        expiredInteractions += expirePendingAcpInteractionsForOperation(this.db, operation.id, {
-          disposition: "operation_ended",
-          resolvedAt: completedAt,
-        }).changes;
       }
+      const expiredInteractions = expireUnresolvedAcpInteractionsForTerminalOperations(this.db, {
+        disposition: "operation_ended",
+        resolvedAt: completedAt,
+      }).changes;
       return { operations, expiredInteractions };
     });
     const result = reconcile();
-    if (result.operations > 0) {
+    if (result.operations > 0 || result.expiredInteractions > 0) {
       this.logger?.warn?.({
         operations: result.operations,
         expired_interactions: result.expiredInteractions,
@@ -207,6 +208,12 @@ export class AcpOperationManager {
   }
 
   start({ profileId, kind, remoteSessionId = null, authMethodId = null } = {}) {
+    if (this.closing) {
+      throw managerError("ACP operation manager is shutting down", {
+        code: "shutting_down",
+        status: 503,
+      });
+    }
     if (!this.supports(kind)) {
       throw managerError(`ACP ${kind || "operation"} control is not configured`, {
         code: "not_configured",
@@ -304,7 +311,8 @@ export class AcpOperationManager {
       }
       this.#broadcastOperation(record.id, "succeeded");
     } catch (error) {
-      const cancelled = record.controller.signal.aborted;
+      const cancelled = record.controller.signal.aborted
+        && record.controller.signal.reason?.code !== "operation_timeout";
       const sanitized = sanitizeAcpOperationError(record.kind, error, { cancelled });
       const completedAt = this.now();
       if (cancelled) {
@@ -496,6 +504,7 @@ export class AcpOperationManager {
   }
 
   async shutdown() {
+    this.closing = true;
     const records = [...this.active.values()];
     for (const record of records) this.abort(record.id, "Worklab is shutting down");
     await Promise.allSettled(records.map((record) => record.done));
