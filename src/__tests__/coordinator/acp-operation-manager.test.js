@@ -31,6 +31,7 @@ function setup(controls, {
   probeTimeoutMs = 5_000,
   abortCleanupTimeoutMs,
   urlHandoffTtlMs,
+  now,
 } = {}) {
   const db = makeTestDb();
   const cwd = mkdtempSync(join(tmpdir(), "worklab-acp-operation-"));
@@ -55,6 +56,7 @@ function setup(controls, {
     controls,
     abortCleanupTimeoutMs,
     urlHandoffStore,
+    now,
   });
   return { db, profile, events, manager, urlHandoffStore };
 }
@@ -64,6 +66,42 @@ async function waitForOperation(manager, operationId, state) {
     expect(manager.get(operationId)?.state).toBe(state);
   }, { timeout: 2_000, interval: 5 });
   return manager.get(operationId);
+}
+
+function observeTransactionMode(transaction, mode) {
+  const observed = (...args) => {
+    mode.value = "default";
+    return transaction(...args);
+  };
+  observed.immediate = (...args) => {
+    mode.value = "immediate";
+    return transaction.immediate(...args);
+  };
+  return observed;
+}
+
+function beforeNextTransaction(db, callback) {
+  const transaction = db.transaction.bind(db);
+  const mode = { value: null };
+  db.transaction = (handler) => {
+    delete db.transaction;
+    callback();
+    return observeTransactionMode(transaction(handler), mode);
+  };
+  return mode;
+}
+
+function insideNextTransaction(db, callback) {
+  const transaction = db.transaction.bind(db);
+  const mode = { value: null };
+  db.transaction = (handler) => {
+    delete db.transaction;
+    return observeTransactionMode(transaction(() => {
+      callback();
+      return handler();
+    }), mode);
+  };
+  return mode;
 }
 
 describe("AcpOperationManager", () => {
@@ -1399,6 +1437,120 @@ describe("AcpOperationManager", () => {
       firstDb.close();
       secondDb.close();
     }
+  });
+
+  it("serializes operation start against profile deletion in both lock orders", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "worklab-acp-operation-profile-race-"));
+    cleanup.push(cwd);
+    const databasePath = join(cwd, "worklab.db");
+    const firstDb = openDb(databasePath);
+    const secondDb = openDb(databasePath);
+    secondDb.pragma("busy_timeout = 0");
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    let manager;
+    try {
+      runMigrations(firstDb);
+      const startWinsProfile = createAcpProfile({
+        db: firstDb,
+        input: {
+          agentName: "start-wins",
+          displayName: "Start wins",
+          command: process.execPath,
+          cwd,
+        },
+      });
+      manager = createAcpOperationManager({
+        db: firstDb,
+        controls: { probe: async () => gate },
+      });
+      let concurrentDeleteError;
+      const startWinsMode = insideNextTransaction(firstDb, () => {
+        try {
+          deleteAcpProfileRecord({ db: secondDb, id: startWinsProfile.id });
+        } catch (error) {
+          concurrentDeleteError = error;
+        }
+      });
+
+      const operation = manager.start({ profileId: startWinsProfile.id, kind: "probe" });
+      expect(startWinsMode.value).toBe("immediate");
+      expect(concurrentDeleteError).toMatchObject({ code: "SQLITE_BUSY" });
+      expect(() => deleteAcpProfileRecord({ db: secondDb, id: startWinsProfile.id }))
+        .toThrow(expect.objectContaining({ code: "profile_in_use", status: 409 }));
+      release({ ok: true, status: "ready" });
+      await waitForOperation(manager, operation.id, "succeeded");
+
+      const deleteWinsProfile = createAcpProfile({
+        db: firstDb,
+        input: {
+          agentName: "delete-wins",
+          displayName: "Delete wins",
+          command: process.execPath,
+          cwd,
+        },
+      });
+      const deleteWinsMode = beforeNextTransaction(firstDb, () => {
+        deleteAcpProfileRecord({ db: secondDb, id: deleteWinsProfile.id });
+      });
+      let startError;
+      try {
+        manager.start({ profileId: deleteWinsProfile.id, kind: "probe" });
+      } catch (error) {
+        startError = error;
+      }
+      expect(deleteWinsMode.value).toBe("immediate");
+      expect(startError).toMatchObject({ code: "not_found", status: 404 });
+      expect(firstDb.prepare("SELECT id FROM acp_operations WHERE profile_id = ?")
+        .get(deleteWinsProfile.id)).toBeUndefined();
+    } finally {
+      release?.({ ok: true, status: "ready" });
+      await manager?.shutdown();
+      firstDb.close();
+      secondDb.close();
+    }
+  });
+
+  it("maps the partial unique constraint itself to operation_active", () => {
+    const { db, profile, manager } = setup({ probe: async () => ({ ok: true }) });
+    db.exec(`
+      CREATE TRIGGER inject_competing_acp_operation
+      BEFORE INSERT ON acp_operations
+      WHEN NEW.id <> 'acpo_constraint_race'
+      BEGIN
+        INSERT INTO acp_operations (
+          id, profile_id, kind, state, request_json, result_json, error_json,
+          created_at, updated_at
+        ) VALUES (
+          'acpo_constraint_race', NEW.profile_id, 'probe', 'queued', '{}', '{}', '{}',
+          NEW.created_at, NEW.updated_at
+        );
+      END;
+    `);
+
+    let conflict;
+    try {
+      manager.start({ profileId: profile.id, kind: "probe" });
+    } catch (error) {
+      conflict = error;
+    }
+    expect(conflict).toMatchObject({ code: "operation_active", status: 409 });
+    expect(db.prepare("SELECT COUNT(*) AS count FROM acp_operations").get()?.count).toBe(0);
+  });
+
+  it("samples the queued timestamp after acquiring the profile write lock", async () => {
+    let clock = 100;
+    const { db, profile, manager } = setup({
+      probe: async () => ({ ok: true, status: "ready" }),
+    }, { now: () => clock });
+    const transactionMode = insideNextTransaction(db, () => { clock = 200; });
+
+    const operation = manager.start({ profileId: profile.id, kind: "probe" });
+
+    expect(transactionMode.value).toBe("immediate");
+    expect(db.prepare("SELECT created_at, updated_at FROM acp_operations WHERE id = ?")
+      .get(operation.id)).toEqual({ created_at: 200, updated_at: 200 });
+    await waitForOperation(manager, operation.id, "succeeded");
   });
 
   it("requires a bounded explicit authentication method id", () => {

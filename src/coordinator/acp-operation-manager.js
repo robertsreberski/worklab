@@ -360,34 +360,46 @@ export class AcpOperationManager {
         status: 501,
       });
     }
-    const profile = assertAcpProfileBinding({ db: this.db, id: profileId });
-    if (this.#isProfileLocallyOccupied(profileId)) throw operationActiveError();
-    const providerSessionId = kind === "delete_session"
-      ? normalizeAcpProviderSessionId(remoteSessionId, profileId)
-      : null;
-    const methodId = kind === "authenticate" ? normalizeAcpAuthMethodId(authMethodId) : null;
-    const sessionCursor = kind === "list_sessions"
-      ? normalizeAcpSessionCursor(cursor, profileId)
-      : null;
-    const now = this.now();
     const id = newAcpOperationId();
-    const request = providerSessionId
-      ? { providerSessionId }
-      : methodId
-        ? { authMethodId: methodId }
-        : sessionCursor
-          ? { cursor: sessionCursor }
-          : {};
+    let now;
+    let profile;
+    let providerSessionId;
+    let methodId;
+    let sessionCursor;
+    let request;
     try {
-      insertAcpOperation(this.db, {
-        id,
-        profileId,
-        kind,
-        remoteSessionId: providerSessionId,
-        requestJson: JSON.stringify(request),
-        createdAt: now,
-        updatedAt: now,
+      const insert = this.db.transaction(() => {
+        profile = assertAcpProfileBinding({ db: this.db, id: profileId });
+        if (this.#isProfileLocallyOccupied(profileId)
+          || countActiveAcpOperationsForProfile(this.db, profileId) > 0) {
+          throw operationActiveError();
+        }
+        providerSessionId = kind === "delete_session"
+          ? normalizeAcpProviderSessionId(remoteSessionId, profileId)
+          : null;
+        methodId = kind === "authenticate" ? normalizeAcpAuthMethodId(authMethodId) : null;
+        sessionCursor = kind === "list_sessions"
+          ? normalizeAcpSessionCursor(cursor, profileId)
+          : null;
+        request = providerSessionId
+          ? { providerSessionId }
+          : methodId
+            ? { authMethodId: methodId }
+            : sessionCursor
+              ? { cursor: sessionCursor }
+              : {};
+        now = this.now();
+        insertAcpOperation(this.db, {
+          id,
+          profileId,
+          kind,
+          remoteSessionId: providerSessionId,
+          requestJson: JSON.stringify(request),
+          createdAt: now,
+          updatedAt: now,
+        });
       });
+      insert.immediate();
     } catch (error) {
       if (isActiveProfileConstraint(error)) throw operationActiveError();
       throw error;
