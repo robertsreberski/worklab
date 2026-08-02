@@ -168,6 +168,7 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "SummaryGrid", group: "layout", coverage: "visible" },
   { name: "Toolbar", group: "layout", coverage: "visible" },
   { name: "WorkflowLayout", group: "layout", coverage: "visible" },
+  { name: "AcpInteractionInbox", group: "component", coverage: "shell-hosted" },
   { name: "AdvancedMeta", group: "component", coverage: "visible" },
   { name: "AgentAvatar", group: "component", coverage: "visible" },
   { name: "AgentEventTimeline", group: "component", coverage: "visible" },
@@ -967,6 +968,7 @@ export function DesignSystem() {
         <section class="ds-catalog-section">
           <Card title="Shell Hosted Components">
             <PanelGrid class="ds-rubric-grid">
+              <div><strong>AcpInteractionInbox</strong><span>Mounted by AppShell when an ACP request needs a user response.</span></div>
               <div><strong>AppShell</strong><span>This catalog is rendered inside the shared shell.</span></div>
               <div><strong>AssistantDock</strong><span>Mounted by AppShell and opened from the global assistant control.</span></div>
               <div><strong>KeyboardHelpDrawer</strong><span>Mounted by AppShell and opened with the keyboard help shortcut.</span></div>

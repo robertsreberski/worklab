@@ -10,6 +10,7 @@ import { ToastHost } from "./Toast.jsx";
 import { Banner } from "./Banner.jsx";
 import { KeyboardHelpDrawer } from "./KeyboardHelpDrawer.jsx";
 import { AssistantDock } from "./AssistantDock.jsx";
+import { AcpInteractionInbox } from "./AcpInteractionInbox.jsx";
 import { Button } from "./primitives/Button.jsx";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { useSSE } from "../lib/useSSE.js";
@@ -627,6 +628,7 @@ export function AppShell({
           onResizeTo={resizeAssistantTo}
         />
         <AppTabbar route={route} />
+        <AcpInteractionInbox />
         <ToastHost />
         <KeyboardHelpDrawer open={helpOpen} onClose={() => setHelpOpen(false)} />
       </div>

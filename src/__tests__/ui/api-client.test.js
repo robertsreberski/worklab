@@ -286,6 +286,7 @@ describe("ui API client", () => {
     await api.listAcpOperationInteractions("operation/1");
     await api.listAcpInteractions({ state: "pending" });
     await api.respondAcpInteraction("interaction/1", { optionId: "allow" });
+    await api.cancelAcpInteraction("interaction/1");
     await api.discoverMonoAgents({ signal: controller.signal });
 
     expect(global.fetch.mock.calls.map(([url]) => url)).toEqual([
@@ -300,14 +301,15 @@ describe("ui API client", () => {
       "/api/acp/operations/operation%2F1/interactions",
       "/api/acp/interactions?state=pending",
       "/api/acp/interactions/interaction%2F1/respond",
+      "/api/acp/interactions/interaction%2F1/cancel",
       "/api/acp/discovery/mono",
     ]);
     expect(global.fetch.mock.calls.map(([, options]) => options.method)).toEqual([
-      "GET", "GET", "POST", "PATCH", "POST", "POST", "POST", "GET", "GET", "GET", "POST", "GET",
+      "GET", "GET", "POST", "PATCH", "POST", "POST", "POST", "GET", "GET", "GET", "POST", "POST", "GET",
     ]);
     expect(global.fetch.mock.calls[0][1].signal).toBe(controller.signal);
     expect(global.fetch.mock.calls[5][1].body).toBe(JSON.stringify({ authMethodId: "oauth-browser" }));
-    expect(global.fetch.mock.calls[11][1].signal).toBe(controller.signal);
+    expect(global.fetch.mock.calls[12][1].signal).toBe(controller.signal);
   });
 
   it("imports mono-agent discovery by source id only", async () => {

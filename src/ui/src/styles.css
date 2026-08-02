@@ -1455,6 +1455,46 @@ select,
   background: var(--status-progress);
 }
 
+.acp-interaction-launcher {
+  position: fixed;
+  right: max(var(--sp-4), var(--mobile-safe-right));
+  bottom: calc(max(var(--sp-4), var(--mobile-safe-bottom)) + 56px);
+  z-index: 71;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--status-progress-border);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
+  color: var(--text);
+  box-shadow: var(--elev-float);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+.acp-interaction-launcher:hover,
+.acp-interaction-launcher:focus-visible {
+  border-color: var(--status-progress);
+  color: var(--status-progress);
+  outline: none;
+}
+.acp-interaction-launcher strong {
+  min-width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--status-progress);
+  color: var(--text-inverse);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+}
+
 /* §3.10.1 Inline meta — borderless, secondary text. Use for info that matters
    but doesn't need visual weight (automation, schedule, secondary categorical).
    Per critique §09 chip system: "use when info matters but doesn't need
@@ -2546,6 +2586,165 @@ a.badge-token:focus-visible {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--sp-2);
+}
+.modal.acp-interaction-modal {
+  width: min(600px, 100%);
+}
+.acp-interaction-modal .modal-body {
+  gap: var(--sp-4);
+}
+.acp-interaction-context {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.acp-interaction-context span {
+  flex: 0 0 auto;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.acp-interaction-context code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-subtle);
+  font-size: inherit;
+}
+.acp-interaction-message {
+  margin: 0;
+  color: var(--text-subtle);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.acp-interaction-tool {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+.acp-interaction-tool > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--status-progress);
+}
+.acp-interaction-tool > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.acp-interaction-tool strong,
+.acp-interaction-tool span {
+  overflow-wrap: anywhere;
+}
+.acp-interaction-tool span {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.acp-interaction-permission,
+.acp-interaction-form,
+.acp-interaction-form-fields,
+.acp-interaction-url {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.acp-interaction-permission-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: var(--sp-2);
+}
+.acp-interaction-permission-options .button {
+  width: 100%;
+  min-height: 40px;
+  white-space: normal;
+}
+.acp-interaction-multiselect {
+  min-width: 0;
+  margin: 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.acp-interaction-multiselect legend {
+  padding: 0 var(--sp-1);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.acp-interaction-multiselect-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.acp-interaction-empty {
+  padding: var(--sp-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.acp-interaction-url-link {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  background: var(--accent-soft);
+  text-decoration: none;
+}
+.acp-interaction-url-link:hover,
+.acp-interaction-url-link:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent-hover);
+  outline: none;
+}
+.acp-interaction-url-link > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+.acp-interaction-url-link span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.acp-interaction-url .soft-meta {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.acp-interaction-footer {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.acp-interaction-queue-controls,
+.acp-interaction-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.acp-interaction-queue-controls > span {
+  min-width: 48px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-align: center;
 }
 .modal.resource-overlay-modal {
   width: min(max(1120px, 80vw), calc(100vw - 32px));
@@ -12536,7 +12735,8 @@ button.skill-file-tree-row.is-clickable:focus-visible {
   html.keyboard-open .app.responsive .task-mobile-action-dock,
   html.keyboard-open .entity-edit-mobile-dock,
   html.keyboard-open .app.responsive .entity-edit-mobile-dock,
-  html.keyboard-open .assistant-launcher {
+  html.keyboard-open .assistant-launcher,
+  html.keyboard-open .acp-interaction-launcher {
     display: none;
     pointer-events: none;
   }
@@ -14360,6 +14560,43 @@ button.skill-file-tree-row.is-clickable:focus-visible {
   .assistant-launcher {
     bottom: calc(var(--mobile-tabbar-height) + var(--sp-4));
     z-index: 72;
+  }
+  .acp-interaction-launcher {
+    right: auto;
+    left: max(var(--sp-4), var(--mobile-safe-left));
+    bottom: calc(var(--mobile-tabbar-height) + var(--sp-4));
+    z-index: 73;
+    max-width: calc(100vw - var(--sp-8) - var(--mobile-safe-left) - var(--mobile-safe-right) - 56px);
+  }
+  .app.responsive:has(.commander-new-task-fab) .acp-interaction-launcher,
+  .app.responsive:has(.resource-list-fab) .acp-interaction-launcher {
+    bottom: calc(var(--mobile-tabbar-height) + 56px + var(--sp-4) + var(--sp-3));
+  }
+  .app.responsive:has(.task-mobile-action-dock.review-idle) .acp-interaction-launcher {
+    bottom: calc(var(--mobile-action-dock-height) + var(--sp-4));
+  }
+  .acp-interaction-launcher > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .modal.acp-interaction-modal {
+    width: 100%;
+  }
+  .acp-interaction-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .acp-interaction-queue-controls,
+  .acp-interaction-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 112px), 1fr));
+  }
+  .acp-interaction-queue-controls > span {
+    display: grid;
+    place-items: center;
   }
   .app.responsive:has(.commander-new-task-fab) .assistant-launcher,
   .app.responsive:has(.resource-list-fab) .assistant-launcher {
