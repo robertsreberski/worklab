@@ -73,6 +73,65 @@ describe("Worklab ACP runtime profiles", () => {
     }
   });
 
+  it("uses the host allowlist for mono runtime processes", async () => {
+    const db = makeTestDb();
+    try {
+      createAcpProfile({
+        db,
+        input: { sourceId: "personal" },
+        mono: {
+          command: process.execPath,
+          args: ["bridge", "acp", "--source-id", "personal"],
+          envKeys: ["HOME", "PATH"],
+          descriptor: {
+            schema: "mono-agent.acp-source.v1",
+            bridgeVersion: 1,
+            protocolVersion: 1,
+            installedVersion: "0.18.0",
+            sourceId: "personal",
+            label: "Personal",
+            health: "running",
+            compatible: true,
+            workspace: { path: "/tmp", owner: "agent" },
+            ownership: { configuration: "agent", workspace: "agent", mcp: "agent" },
+            constraints: {
+              promptContent: ["text", "resource_link"],
+              clientMcp: false,
+              clientFilesystem: false,
+              clientTerminal: false,
+              attachments: false,
+              additionalDirectories: false,
+            },
+            warnings: [],
+          },
+        },
+        id: PROFILE_ID,
+      });
+      const resolveProfile = createWorklabAcpProfileResolver({
+        db,
+        env: {
+          HOME: "/tmp/home",
+          PATH: "/usr/bin",
+          TMPDIR: "/tmp/acp",
+          MONO_AGENT_TRACE_REGISTRY_DIR: "/tmp/trace-sources",
+          WORKLAB_MONO_AGENT_BIN: "/tmp/mono-agent",
+          WORKLAB_SERVICE_TOKEN: "sentinel-service-secret",
+          OPENAI_API_KEY: "sentinel-provider-secret",
+        },
+      });
+      const profile = await resolveProfile(PROFILE_ID);
+      expect(profile.env).toEqual({
+        HOME: "/tmp/home",
+        PATH: "/usr/bin",
+        TMPDIR: "/tmp/acp",
+        MONO_AGENT_TRACE_REGISTRY_DIR: "/tmp/trace-sources",
+      });
+      expect(JSON.stringify(profile.env)).not.toMatch(/sentinel|WORKLAB_MONO_AGENT_BIN/u);
+    } finally {
+      db.close();
+    }
+  });
+
   it("builds exact mono bridge argv from sanitized discovery", async () => {
     const descriptor = {
       sourceId: "personal",
