@@ -1,5 +1,4 @@
-const OWNER_VALUES = new Set(["worklab", "agent"]);
-const POLICY_VALUES = new Set(["deny", "prompt", "allow"]);
+const OWNER_VALUES = new Set(["client", "agent"]);
 
 function firstDefined(...values) {
   return values.find((value) => value !== undefined && value !== null);
@@ -18,14 +17,33 @@ function stringList(value) {
   return text(value).split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
 }
 
-function owner(value, fallback = "worklab") {
-  const normalized = text(value).toLowerCase();
+function owner(value, fallback = "client") {
+  const raw = text(value).toLowerCase();
+  const normalized = raw === "worklab" ? "client" : raw;
   return OWNER_VALUES.has(normalized) ? normalized : fallback;
 }
 
-function policy(value, fallback = "prompt") {
-  const normalized = text(value).toLowerCase();
-  return POLICY_VALUES.has(normalized) ? normalized : fallback;
+function plainObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function jsonObjectText(value) {
+  return JSON.stringify(plainObject(value), null, 2);
+}
+
+function parseJsonObject(value, label) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  const source = text(value) || "{}";
+  let parsed;
+  try {
+    parsed = JSON.parse(source);
+  } catch {
+    throw new Error(`${label} must be valid JSON.`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${label} must be a JSON object.`);
+  }
+  return parsed;
 }
 
 function finiteNumber(value, fallback) {
@@ -43,7 +61,7 @@ export function externalAgentKind(agent) {
 
 export function normalizeAcpProfile(profile = {}) {
   const nestedAgent = profile.agent && typeof profile.agent === "object" ? profile.agent : {};
-  const clientPolicy = firstDefined(profile.clientPolicy, profile.client_policy, {}) || {};
+  const permissionsPolicy = plainObject(firstDefined(profile.permissionsPolicy, profile.permissions_policy));
   return {
     id: text(profile.id),
     agentName: text(firstDefined(profile.agentName, profile.agent_name, nestedAgent.name)),
@@ -60,14 +78,15 @@ export function normalizeAcpProfile(profile = {}) {
     workspaceOwner: owner(firstDefined(profile.workspaceOwner, profile.workspace_owner)),
     mcpOwner: owner(firstDefined(profile.mcpOwner, profile.mcp_owner)),
     canonicalWorkspace: text(firstDefined(profile.canonicalWorkspace, profile.canonical_workspace)),
-    probeTimeoutMs: finiteNumber(firstDefined(profile.probeTimeoutMs, profile.probe_timeout_ms), 10_000),
-    clientPolicy: {
-      filesystem: policy(firstDefined(clientPolicy.filesystem, clientPolicy.fileSystem), "prompt"),
-      terminal: policy(clientPolicy.terminal, "prompt"),
-      network: policy(clientPolicy.network, "deny"),
-      mcp: policy(clientPolicy.mcp, "deny"),
-      timeoutMs: finiteNumber(firstDefined(clientPolicy.timeoutMs, clientPolicy.timeout_ms), 300_000),
+    probeTimeoutMs: finiteNumber(firstDefined(profile.probeTimeoutMs, profile.probe_timeout_ms), 30_000),
+    permissionsPolicy: {
+      filesystem: bool(permissionsPolicy.filesystem),
+      terminal: bool(permissionsPolicy.terminal),
+      network: bool(permissionsPolicy.network),
+      mcp: bool(permissionsPolicy.mcp),
     },
+    configPolicy: plainObject(firstDefined(profile.configPolicy, profile.config_policy)),
+    sessionPolicy: plainObject(firstDefined(profile.sessionPolicy, profile.session_policy)),
   };
 }
 
@@ -94,11 +113,12 @@ export function externalAgentDraft({ agent = {}, profile = {} } = {}) {
     mcpOwner: normalized.mcpOwner,
     canonicalWorkspace: normalized.canonicalWorkspace,
     probeTimeoutMs: normalized.probeTimeoutMs,
-    filesystemPolicy: normalized.clientPolicy.filesystem,
-    terminalPolicy: normalized.clientPolicy.terminal,
-    networkPolicy: normalized.clientPolicy.network,
-    mcpPolicy: normalized.clientPolicy.mcp,
-    operationTimeoutMs: normalized.clientPolicy.timeoutMs,
+    allowFilesystem: normalized.permissionsPolicy.filesystem,
+    allowTerminal: normalized.permissionsPolicy.terminal,
+    allowNetwork: normalized.permissionsPolicy.network,
+    allowMcp: normalized.permissionsPolicy.mcp,
+    configPolicyText: jsonObjectText(normalized.configPolicy),
+    sessionPolicyText: jsonObjectText(normalized.sessionPolicy),
   };
 }
 
@@ -117,14 +137,15 @@ export function externalAgentPayload(draft = {}) {
     workspaceOwner: owner(draft.workspaceOwner),
     mcpOwner: owner(draft.mcpOwner),
     canonicalWorkspace: text(draft.canonicalWorkspace) || null,
-    probeTimeoutMs: finiteNumber(draft.probeTimeoutMs, 10_000),
-    clientPolicy: {
-      filesystem: policy(draft.filesystemPolicy, "prompt"),
-      terminal: policy(draft.terminalPolicy, "prompt"),
-      network: policy(draft.networkPolicy, "deny"),
-      mcp: policy(draft.mcpPolicy, "deny"),
-      timeoutMs: finiteNumber(draft.operationTimeoutMs, 300_000),
+    probeTimeoutMs: finiteNumber(draft.probeTimeoutMs, 30_000),
+    permissionsPolicy: {
+      filesystem: !!draft.allowFilesystem,
+      terminal: !!draft.allowTerminal,
+      network: !!draft.allowNetwork,
+      mcp: !!draft.allowMcp,
     },
+    configPolicy: parseJsonObject(draft.configPolicyText, "Configuration policy"),
+    sessionPolicy: parseJsonObject(draft.sessionPolicyText, "Session policy"),
   };
 }
 

@@ -60,13 +60,15 @@ describe("external agent UI helpers", () => {
       argsText: "serve\n--stdio\n",
       cwd: " /workspace ",
       envKeysText: "AGENT_TOKEN\nPATH\nAGENT_TOKEN",
-      configurationOwner: "worklab",
+      configurationOwner: "client",
       workspaceOwner: "agent",
       mcpOwner: "agent",
-      filesystemPolicy: "allow",
-      terminalPolicy: "prompt",
-      networkPolicy: "deny",
-      mcpPolicy: "deny",
+      allowFilesystem: true,
+      allowTerminal: false,
+      allowNetwork: false,
+      allowMcp: false,
+      configPolicyText: '{"mode":"constrained"}',
+      sessionPolicyText: "{}",
     });
 
     expect(payload).toMatchObject({
@@ -75,9 +77,17 @@ describe("external agent UI helpers", () => {
       args: ["serve", "--stdio"],
       cwd: "/workspace",
       envKeys: ["AGENT_TOKEN", "PATH"],
-      clientPolicy: { filesystem: "allow", terminal: "prompt", network: "deny", mcp: "deny" },
+      configurationOwner: "client",
+      permissionsPolicy: { filesystem: true, terminal: false, network: false, mcp: false },
+      configPolicy: { mode: "constrained" },
+      sessionPolicy: {},
     });
     expect(JSON.stringify(payload)).not.toContain("TOKEN=");
+  });
+
+  it("rejects malformed advanced policy JSON", () => {
+    expect(() => externalAgentPayload({ displayName: "External", command: "/bin/agent", configPolicyText: "[]" }))
+      .toThrow("Configuration policy must be a JSON object");
   });
 
   it("projects mono discovery onto its public sanitized contract", () => {
