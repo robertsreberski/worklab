@@ -602,8 +602,9 @@ describe("spawnWorker ACP interactions", () => {
     }
   });
 
-  it("leaves the row pending when stdin delivery fails", async () => {
+  it("leaves the URL row and handoff pending when stdin delivery fails", async () => {
     const db = makeTestDb();
+    const urlHandoffStore = createAcpUrlHandoffStore();
     try {
       const { runId } = seed(db);
       insertAcpInteractionRequest(db, {
@@ -611,17 +612,28 @@ describe("spawnWorker ACP interactions", () => {
         profileId: "profile-1",
         taskRunId: runId,
         protocolRequestId: "rpc-retry",
-        kind: "form",
-        requestSchemaJson: "{}",
+        kind: "url",
+        requestSchemaJson: JSON.stringify({
+          mode: "url",
+          url: "https://example.test",
+        }),
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
+      expect(urlHandoffStore.retain({
+        interactionId: "interaction-retry",
+        ownerKind: "run",
+        ownerId: runId,
+        profileId: "profile-1",
+        url: "https://example.test/authorize?state=private",
+      })).toBe(true);
       const controls = createAcpInteractionControls({
         db,
         runId,
         writeControlMessage: async () => { throw new Error("stdin closed with delivery-secret"); },
         emitEvent: () => {},
         idFactory: () => "delivery-retry",
+        urlHandoffStore,
       });
 
       await expect(controls.respond({
@@ -632,8 +644,24 @@ describe("spawnWorker ACP interactions", () => {
       expect(db.prepare("SELECT state, disposition FROM acp_interactions WHERE id = ?")
         .get("interaction-retry"))
         .toMatchObject({ state: "pending", disposition: null });
+      expect(urlHandoffStore.has({
+        interactionId: "interaction-retry",
+        ownerKind: "run",
+        ownerId: runId,
+        profileId: "profile-1",
+      })).toBe(true);
+      await expect(controls.cancel({ interactionId: "interaction-retry" }))
+        .resolves.toMatchObject({ ok: false, code: "delivery_failed" });
+      expect(urlHandoffStore.has({
+        interactionId: "interaction-retry",
+        ownerKind: "run",
+        ownerId: runId,
+        profileId: "profile-1",
+      })).toBe(true);
       controls.close();
+      expect(urlHandoffStore.size).toBe(0);
     } finally {
+      urlHandoffStore.clear();
       db.close();
     }
   });

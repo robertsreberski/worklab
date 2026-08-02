@@ -478,11 +478,6 @@ export function createAcpInteractionControls({
 
   function resultForTerminalEvent(event) {
     const interactionId = boundedIdentifier(event.interaction_id);
-    urlHandoffStore?.remove?.(interactionId, {
-      ownerKind: "run",
-      ownerId: runId,
-      profileId: getAcpInteractionById(db, interactionId)?.profile_id,
-    });
     const outcome = TERMINAL_OUTCOMES.has(event.outcome) ? event.outcome : "stale";
     const deliveryId = boundedIdentifier(event.delivery_id);
     const delivery = deliveryId
@@ -515,6 +510,11 @@ export function createAcpInteractionControls({
 
     const accepted = Boolean(row);
     if (accepted) {
+      urlHandoffStore?.remove?.(interactionId, {
+        ownerKind: "run",
+        ownerId: runId,
+        profileId: row.profile_id,
+      });
       emitEvent({
         type: "acp_interaction_resolved",
         interaction_id: interactionId,
@@ -542,11 +542,6 @@ export function createAcpInteractionControls({
     if (!existing || existing.task_run_id !== runId || existing.state !== "pending") {
       return { ok: false, code: "no_pending_interaction", message: "ACP interaction is not pending for this run" };
     }
-    urlHandoffStore?.remove?.(interactionId, {
-      ownerKind: "run",
-      ownerId: runId,
-      profileId: existing.profile_id,
-    });
     if (action === "respond" && !permissionResponseIsOffered(existing, response, disposition)) {
       return { ok: false, code: "invalid_response", message: "permission option was not offered" };
     }

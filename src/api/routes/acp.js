@@ -474,7 +474,6 @@ export function registerAcpRoutes(app, {
     try {
       const row = interactionOr404(db, req.params.id);
       const owner = interactionUrlOwner(row);
-      if (owner) acpUrlHandoffStore?.remove?.(row.id, owner);
       const body = req.body || {};
       const response = Object.hasOwn(body, "response") ? body.response : body;
       const disposition = acpInteractionDisposition(
@@ -515,6 +514,7 @@ export function registerAcpRoutes(app, {
           });
         }
       }
+      if (owner) acpUrlHandoffStore?.remove?.(row.id, owner);
       res.json({ interaction });
     } catch (error) {
       sendError(res, error);
@@ -525,7 +525,6 @@ export function registerAcpRoutes(app, {
     try {
       const row = interactionOr404(db, req.params.id);
       const owner = interactionUrlOwner(row);
-      if (owner) acpUrlHandoffStore?.remove?.(row.id, owner);
       let interaction;
       if (row.operation_id) {
         interaction = acpOperationManager?.cancelInteraction?.({
@@ -555,6 +554,7 @@ export function registerAcpRoutes(app, {
           });
         }
       }
+      if (owner) acpUrlHandoffStore?.remove?.(row.id, owner);
       res.json({ interaction });
     } catch (error) {
       sendError(res, error);

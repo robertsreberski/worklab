@@ -655,6 +655,17 @@ describe("AcpOperationManager", () => {
       rows: db.prepare("SELECT * FROM acp_interactions").all(),
       events,
     })).not.toMatch(/one-time-secret|sensitive|fragment/u);
+    expect(() => manager.respond({
+      operationId: operation.id,
+      interactionId: interaction.id,
+      response: { action: "invented" },
+    })).toThrow(/invalid url interaction disposition/u);
+    expect(urlHandoffStore.has({
+      interactionId: interaction.id,
+      ownerKind: "operation",
+      ownerId: operation.id,
+      profileId: profile.id,
+    })).toBe(true);
     manager.cancelInteraction({ operationId: operation.id, interactionId: interaction.id });
     expect(urlHandoffStore.size).toBe(0);
     await waitForOperation(manager, operation.id, "succeeded");

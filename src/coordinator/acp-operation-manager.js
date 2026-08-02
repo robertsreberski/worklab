@@ -580,11 +580,6 @@ export class AcpOperationManager {
         status: 404,
       });
     }
-    this.urlHandoffStore?.remove?.(interactionId, {
-      ownerKind: "operation",
-      ownerId: operationId,
-      profileId: record.profile.id,
-    });
     const safeDisposition = acpInteractionDisposition(rowToAcpInteraction(row), response, disposition);
     assertOfferedPermissionResponse(row, response, safeDisposition);
     if (!record.privateResponses.rememberResponse(response)) {
@@ -608,6 +603,11 @@ export class AcpOperationManager {
       }
       return finalized;
     })();
+    this.urlHandoffStore?.remove?.(interactionId, {
+      ownerKind: "operation",
+      ownerId: operationId,
+      profileId: record.profile.id,
+    });
     record.pending.delete(interactionId);
     record.controller.signal.removeEventListener("abort", pending.abort);
     this.#armDeadline(record);
@@ -623,16 +623,16 @@ export class AcpOperationManager {
     if (!record) throw managerError("ACP operation is not active", { code: "not_active", status: 409 });
     const pending = record.pending.get(interactionId);
     if (!pending) throw managerError("ACP interaction is not pending", { code: "not_pending", status: 409 });
-    this.urlHandoffStore?.remove?.(interactionId, {
-      ownerKind: "operation",
-      ownerId: operationId,
-      profileId: record.profile.id,
-    });
     const cancelled = cancelAcpInteraction(this.db, interactionId, {
       disposition: "cancel",
       resolvedAt: this.now(),
     });
     if (!cancelled) throw managerError("ACP interaction is not pending", { code: "not_pending", status: 409 });
+    this.urlHandoffStore?.remove?.(interactionId, {
+      ownerKind: "operation",
+      ownerId: operationId,
+      profileId: record.profile.id,
+    });
     record.pending.delete(interactionId);
     record.controller.signal.removeEventListener("abort", pending.abort);
     if (record.pending.size === 0) {

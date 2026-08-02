@@ -743,6 +743,16 @@ describe("ACP API", () => {
       url: rawUrl,
     })).toBe(true);
 
+    await server.agent.post(`/api/acp/interactions/${interactionId}/respond`).send({
+      disposition: "invented",
+    }).expect(400);
+    expect(urlHandoffStore.has({
+      interactionId,
+      ownerKind: "run",
+      ownerId: runId,
+      profileId: profile.id,
+    })).toBe(true);
+
     const listed = await server.agent.get("/api/acp/interactions?state=pending").expect(200);
     expect(JSON.stringify(listed.body)).not.toContain(sentinel);
     expect(JSON.stringify(server.db.prepare("SELECT * FROM acp_interactions").all()))
