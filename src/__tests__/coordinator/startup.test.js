@@ -119,6 +119,47 @@ describe("coordinator startup services", () => {
     }
   });
 
+  it("wires ACP controls into the server and shuts their operation manager down", async () => {
+    const root = mkdtempSync(join(tmpdir(), "worklab-startup-acp-"));
+    roots.push(root);
+    const config = {
+      ...loadConfig({
+        WORKLAB_PORT: "7878",
+        WORKLAB_HOST: "127.0.0.1",
+        WORKLAB_DATA_DIR: join(root, "data"),
+        WORKLAB_WORKSPACE: join(root, "workspace"),
+      }),
+      port: 0,
+    };
+    const controls = { probe: vi.fn(async () => ({ ok: true })) };
+    const createWorklabAcpControls = vi.fn(() => controls);
+    const coordinator = await startCoordinator({
+      config,
+      optionalStartTimeoutMs: 10,
+      services: {
+        createWorklabAcpControls,
+        createTaskWatcher: vi.fn(() => watcherService()),
+        createConsolidationManager: vi.fn(() => lifecycleService()),
+        createAutomationManager: vi.fn(() => lifecycleService()),
+        createTeamLeadCron: vi.fn(() => ({ start: vi.fn(), stop: vi.fn() })),
+        startSearchIndexer: vi.fn(() => ({
+          shutdown: vi.fn(async () => {}),
+          reindexAll: vi.fn(async () => ({ sources: 0, chunks: 0 })),
+        })),
+        createWorklabPushNotificationService: vi.fn(() => ({ start: vi.fn(), stop: vi.fn() })),
+        createWorklabSlackService: vi.fn(() => lifecycleService({
+          status: vi.fn(() => ({ enabled: false })),
+        })),
+      },
+    });
+    const operationShutdown = vi.spyOn(coordinator.acpOperationManager, "shutdown");
+
+    expect(createWorklabAcpControls).toHaveBeenCalledWith({ db: coordinator.db });
+    expect(coordinator.acpOperationManager.supports("probe")).toBe(true);
+    await coordinator.shutdown();
+    expect(operationShutdown).toHaveBeenCalledTimes(1);
+  });
+
   it("logs startup phase timings for listener and optional service startup", async () => {
     const root = mkdtempSync(join(tmpdir(), "worklab-startup-timing-"));
     roots.push(root);

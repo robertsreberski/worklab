@@ -28,6 +28,7 @@ import { createBackgroundServiceRegistry, startDeferredService } from "./coordin
 import { createStartupTimer } from "./coordinator/startup-timer.js";
 import { mountStaticUi } from "./coordinator/static-ui.js";
 import { createWatcherProxy } from "./coordinator/watcher-proxy.js";
+import { createWorklabAcpControls } from "./core/index.js";
 
 const DEFAULT_OPTIONAL_SERVICE_START_TIMEOUT_MS = 5000;
 
@@ -49,6 +50,7 @@ export async function startCoordinator({
     startSearchIndexer,
     createWorklabSlackService,
     createWorklabPushNotificationService,
+    createWorklabAcpControls,
     ...services,
   };
   mkdirSync(config.dataDir, { recursive: true });
@@ -124,7 +126,8 @@ export async function startCoordinator({
     events,
     logger,
   });
-  const { app, broker } = createServer({
+  const acpControls = deps.createWorklabAcpControls({ db });
+  const { app, broker, acpOperationManager } = createServer({
     db,
     logger,
     watcher: watcherProxy,
@@ -137,6 +140,7 @@ export async function startCoordinator({
     slack: slackProxy,
     notifications: pushNotifications,
     serviceStatus,
+    acpControls,
   });
 
   watcherHolder.current = deps.createTaskWatcher({
@@ -293,6 +297,7 @@ export async function startCoordinator({
     optionalServicesHandle = null;
 
     try { await watcherHolder.current.shutdown({ drainTimeoutMs }); } catch (err) { logger.warn({ err }, "watcher shutdown error"); }
+    try { await acpOperationManager.shutdown(); } catch (err) { logger.warn({ err }, "ACP operation manager shutdown error"); }
     if (backgroundServices) {
       await backgroundServices.shutdownAll();
     } else {
@@ -332,6 +337,7 @@ export async function startCoordinator({
     watcher: watcherHolder.current,
     consolidation: consolidationHolder.current,
     automationManager: automationManagerHolder.current,
+    acpOperationManager,
     searchIndexer,
     eventLoopMonitor,
     slack: slackHolder.current,

@@ -163,6 +163,8 @@ export {
   sanitizeAcpOperationResult,
 } from "./acp-operations.js";
 
+export { createWorklabAcpControls } from "./acp-controls.js";
+
 // ---------- Settings + runtime ----------
 export {
   DEFAULT_SETTINGS,
