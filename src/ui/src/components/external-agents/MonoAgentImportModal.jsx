@@ -35,6 +35,7 @@ export function MonoAgentImportModal({ open, onClose, onImported }) {
   const [error, setError] = useState(null);
   const [unsupported, setUnsupported] = useState(false);
   const [busySourceId, setBusySourceId] = useState(null);
+  const busySourceRef = useRef(null);
   const importTokenRef = useRef(0);
   const openRef = useRef(open);
   openRef.current = open;
@@ -58,6 +59,7 @@ export function MonoAgentImportModal({ open, onClose, onImported }) {
   useEffect(() => {
     if (!open) {
       importTokenRef.current += 1;
+      busySourceRef.current = null;
       setBusySourceId(null);
       return undefined;
     }
@@ -66,10 +68,13 @@ export function MonoAgentImportModal({ open, onClose, onImported }) {
 
   useEffect(() => () => {
     openRef.current = false;
+    busySourceRef.current = null;
     importTokenRef.current += 1;
   }, []);
 
   async function importSource(source) {
+    if (busySourceRef.current) return;
+    busySourceRef.current = source.sourceId;
     const token = ++importTokenRef.current;
     setBusySourceId(source.sourceId);
     setError(null);
@@ -81,7 +86,10 @@ export function MonoAgentImportModal({ open, onClose, onImported }) {
       if (!openRef.current || token !== importTokenRef.current) return;
       setError(err?.message || "Import failed");
     } finally {
-      if (openRef.current && token === importTokenRef.current) setBusySourceId(null);
+      if (token === importTokenRef.current) {
+        busySourceRef.current = null;
+        if (openRef.current) setBusySourceId(null);
+      }
     }
   }
 

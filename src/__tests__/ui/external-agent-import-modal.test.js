@@ -12,6 +12,7 @@ describe("mono-agent import modal source", () => {
     expect(source).toContain("disabled={committing");
     expect(source).toContain("closeOnBackdrop={!committing}");
     expect(source).toContain("if (!committing) onClose?.();");
+    expect(source).toContain("if (busySourceRef.current) return;");
     expect(source).toContain("if (!openRef.current || token !== importTokenRef.current) return;");
   });
 
