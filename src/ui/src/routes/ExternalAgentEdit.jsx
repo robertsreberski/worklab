@@ -56,8 +56,14 @@ const SESSION_RESUME_OPTIONS = [
   { value: "resume", label: "Resume", description: "Resume the existing session through ACP." },
 ];
 
-const OPAQUE_SESSION_RE = /^acp:v1:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):[A-Za-z0-9_-]+$/u;
-const OPAQUE_CURSOR_RE = /^acp-cursor:v1:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):[A-Za-z0-9_-]+$/u;
+const OPAQUE_SESSION_RE = /^acp:v2:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([A-Za-z0-9_-]+)$/u;
+const OPAQUE_CURSOR_RE = /^acp-cursor:v2:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([A-Za-z0-9_-]+)$/u;
+const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const MIN_SEALED_TOKEN_BYTES = 12 + 1 + 16;
+const MAX_SEALED_TOKEN_BYTES = 12 + 4_096 + 16;
+const MAX_BASE64URL_TOKEN_CHARS = Math.ceil((MAX_SEALED_TOKEN_BYTES * 4) / 3);
+const MAX_OPAQUE_SESSION_CHARS = "acp:v2:".length + 128 + 1 + MAX_BASE64URL_TOKEN_CHARS;
+const MAX_OPAQUE_CURSOR_CHARS = "acp-cursor:v2:".length + 128 + 1 + MAX_BASE64URL_TOKEN_CHARS;
 const ACTIVE_OPERATION_STATES = new Set(["queued", "pending", "running", "waiting_for_interaction"]);
 
 function operationState(operation) {
@@ -84,16 +90,29 @@ function operationList(result) {
   )) : [];
 }
 
-function opaqueTokenForProfile(value, pattern, profileId) {
-  if (typeof value !== "string" || value.length > 5_600) return null;
+function structurallyCanonicalSealedPayload(value) {
+  const remainder = value.length % 4;
+  if (remainder === 1) return false;
+  const decodedBytes = Math.floor((value.length * 3) / 4);
+  if (decodedBytes < MIN_SEALED_TOKEN_BYTES || decodedBytes > MAX_SEALED_TOKEN_BYTES) return false;
+  const tailIndex = BASE64URL_ALPHABET.indexOf(value.at(-1));
+  if ((remainder === 2 && (tailIndex & 0x0f) !== 0)
+    || (remainder === 3 && (tailIndex & 0x03) !== 0)) return false;
+  return true;
+}
+
+function opaqueTokenForProfile(value, pattern, maxChars, profileId) {
+  if (typeof value !== "string" || value.length > maxChars) return null;
   const match = pattern.exec(value);
-  if (!match || (profileId && match[1] !== profileId)) return null;
+  if (!match
+    || (profileId && match[1] !== profileId)
+    || !structurallyCanonicalSealedPayload(match[2])) return null;
   return value;
 }
 
 function normalizedSession(session, profileId) {
   if (!session || typeof session !== "object") return null;
-  const id = opaqueTokenForProfile(session.id, OPAQUE_SESSION_RE, profileId);
+  const id = opaqueTokenForProfile(session.id, OPAQUE_SESSION_RE, MAX_OPAQUE_SESSION_CHARS, profileId);
   if (!id) return null;
   const safeDate = (value) => {
     if (typeof value !== "string" || !value) return null;
@@ -117,13 +136,23 @@ function normalizedSessionResult(operation, profileId) {
     : [];
   return {
     sessions,
-    nextCursor: opaqueTokenForProfile(result.nextCursor, OPAQUE_CURSOR_RE, profileId),
+    nextCursor: opaqueTokenForProfile(
+      result.nextCursor,
+      OPAQUE_CURSOR_RE,
+      MAX_OPAQUE_CURSOR_CHARS,
+      profileId,
+    ),
     truncated: result.truncated === true,
   };
 }
 
 function operationCursor(operation, profileId) {
-  return opaqueTokenForProfile(operation?.request?.cursor, OPAQUE_CURSOR_RE, profileId);
+  return opaqueTokenForProfile(
+    operation?.request?.cursor,
+    OPAQUE_CURSOR_RE,
+    MAX_OPAQUE_CURSOR_CHARS,
+    profileId,
+  );
 }
 
 function createdAtNumber(operation) {
@@ -192,7 +221,7 @@ export function restoreAcpSessionListing(operations = [], profileId = null) {
       || createdAtNumber(operation) < chainStartedAt
       || operation?.result?.deleted === false) return [];
     const candidate = operation?.result?.id || operation?.request?.providerSessionId;
-    const id = opaqueTokenForProfile(candidate, OPAQUE_SESSION_RE, profileId);
+    const id = opaqueTokenForProfile(candidate, OPAQUE_SESSION_RE, MAX_OPAQUE_SESSION_CHARS, profileId);
     return id ? [id] : [];
   }));
   const last = chain.at(-1).page;

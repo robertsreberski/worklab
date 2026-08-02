@@ -7,9 +7,19 @@ import {
 } from "../../ui/src/routes/ExternalAgentEdit.jsx";
 
 const PROFILE_ID = "3d6143ec-d863-4df5-ac27-9bf32832ae86";
-const SESSION_ONE = `acp:v1:${PROFILE_ID}:c2Vzc2lvbi1vbmU`;
-const SESSION_TWO = `acp:v1:${PROFILE_ID}:c2Vzc2lvbi10d28`;
-const CURSOR_ONE = `acp-cursor:v1:${PROFILE_ID}:Y3Vyc29yLW9uZQ`;
+
+function sealedToken(raw, { profileId = PROFILE_ID, prefix = "acp:v2:" } = {}) {
+  const sealed = Buffer.concat([
+    Buffer.alloc(12, 0x6e),
+    Buffer.from(raw),
+    Buffer.alloc(16, 0x74),
+  ]).toString("base64url");
+  return `${prefix}${profileId}:${sealed}`;
+}
+
+const SESSION_ONE = sealedToken("session-one");
+const SESSION_TWO = sealedToken("session-two");
+const CURSOR_ONE = sealedToken("cursor-one", { prefix: "acp-cursor:v2:" });
 
 function operation(overrides = {}) {
   return {
@@ -89,7 +99,7 @@ describe("external agent editor state", () => {
       truncated: false,
       restored: true,
     });
-    expect(opaqueSessionReference(SESSION_ONE)).toMatch(/^acp:v1:.*….*$/u);
+    expect(opaqueSessionReference(SESSION_ONE)).toMatch(/^acp:v2:.*….*$/u);
   });
 
   it("does not resurrect a session deleted after the restored listing", () => {
@@ -137,5 +147,46 @@ describe("external agent editor state", () => {
     expect(recovered.coordinatorRestartOperation).toBe(restarted);
     expect(recovered.sessionListing.sessions).toEqual([]);
     expect(JSON.stringify(recovered.sessionListing)).not.toContain("raw/provider/session");
+  });
+
+  it("rejects v1, malformed, short, oversized, and wrong-profile opaque history", () => {
+    const v1 = `acp:v1:${PROFILE_ID}:${Buffer.from("legacy-session").toString("base64url")}`;
+    const shortV2 = `acp:v2:${PROFILE_ID}:${Buffer.alloc(28).toString("base64url")}`;
+    const oversizedV2 = `acp:v2:${PROFILE_ID}:${Buffer.alloc(4_125).toString("base64url")}`;
+    const wrongProfile = sealedToken("wrong-profile", { profileId: "other-profile" });
+    const malformed = `${SESSION_ONE}=`;
+    const aliasSource = sealedToken("x");
+    const nonCanonical = `${aliasSource.slice(0, -1)}R`;
+    const listing = restoreAcpSessionListing([operation({
+      result: {
+        sessions: [v1, shortV2, oversizedV2, wrongProfile, malformed, nonCanonical]
+          .map((id) => ({ id, title: "Must not render" })),
+        nextCursor: `acp-cursor:v1:${PROFILE_ID}:${Buffer.from("legacy").toString("base64url")}`,
+        truncated: true,
+      },
+    })], PROFILE_ID);
+
+    expect(listing).toEqual({ sessions: [], nextCursor: null, truncated: true, restored: true });
+  });
+
+  it("accepts exact 4096-byte v2 session and cursor envelopes", () => {
+    const maxSession = sealedToken("s".repeat(4_096));
+    const maxCursor = sealedToken("c".repeat(4_096), { prefix: "acp-cursor:v2:" });
+    const listing = restoreAcpSessionListing([operation({
+      result: {
+        sessions: [{ id: maxSession, title: "Maximum" }],
+        nextCursor: maxCursor,
+        truncated: true,
+      },
+    })], PROFILE_ID);
+
+    expect(listing.sessions).toEqual([{
+      id: maxSession,
+      title: "Maximum",
+      status: "",
+      createdAt: null,
+      updatedAt: null,
+    }]);
+    expect(listing.nextCursor).toBe(maxCursor);
   });
 });
