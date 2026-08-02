@@ -15,6 +15,8 @@ import { syncRunWorktreeFromSource } from "../../core/worktrees.js";
 import { createAcpProfile } from "../../core/acp-profiles.js";
 import {
   claimAcpInteractionResponse,
+  expireUnresolvedAcpInteractionsForTerminalRuns,
+  finalizeAcpInteractionResponse,
   insertAcpInteractionRequest,
 } from "../../core/db/queries/acp-interactions.js";
 
@@ -2153,6 +2155,152 @@ describe("task-watcher", () => {
       .all(taskId);
     expect(comments.some((c) => c.author_type === "agent")).toBe(false);
     expect(comments.some((c) => c.author_type === "system" && c.body.includes("invalid worklab_result"))).toBe(true);
+  });
+
+  it("expires only unresolved ACP interactions whose runs are terminal", () => {
+    const db = makeTestDb();
+    const profile = createAcpProfile({
+      db,
+      input: {
+        agentName: "terminal-query-acp",
+        displayName: "Terminal query ACP",
+        command: process.execPath,
+        cwd: process.cwd(),
+      },
+    });
+    const taskId = seedTask(db);
+    const now = Date.now();
+    const insertRun = db.prepare(`
+      INSERT INTO task_runs (
+        id, task_id, mode, stage, agent_name, provider_kind, status,
+        process_status, started_at, ended_at
+      ) VALUES (?, ?, 'execute', 'execute', 'terminal-query-acp', 'acp', ?, ?, ?, ?)
+    `);
+    insertRun.run("terminal-query-run", taskId, "complete", "succeeded", now - 2_000, now - 1_000);
+    insertRun.run("active-query-run", taskId, "running", "running", now - 500, null);
+    for (const [id, runId] of [
+      ["terminal-pending", "terminal-query-run"],
+      ["terminal-submitted", "terminal-query-run"],
+      ["terminal-resolved", "terminal-query-run"],
+      ["active-pending", "active-query-run"],
+      ["active-submitted", "active-query-run"],
+    ]) {
+      insertAcpInteractionRequest(db, {
+        id,
+        profileId: profile.id,
+        taskRunId: runId,
+        protocolRequestId: `request-${id}`,
+        kind: "permission",
+        requestSchemaJson: "{}",
+        createdAt: now - 400,
+        updatedAt: now - 400,
+      });
+    }
+    for (const id of ["terminal-submitted", "terminal-resolved", "active-submitted"]) {
+      claimAcpInteractionResponse(db, id, { disposition: "selected", updatedAt: now - 300 });
+    }
+    finalizeAcpInteractionResponse(db, "terminal-resolved", { resolvedAt: now - 200 });
+
+    expect(expireUnresolvedAcpInteractionsForTerminalRuns(db, { resolvedAt: now }).changes).toBe(2);
+    const first = db.prepare(`
+      SELECT id, state, disposition, resolved_at
+      FROM acp_interactions ORDER BY id
+    `).all();
+    expect(first).toEqual([
+      { id: "active-pending", state: "pending", disposition: null, resolved_at: null },
+      { id: "active-submitted", state: "submitted", disposition: "selected", resolved_at: null },
+      { id: "terminal-pending", state: "expired", disposition: "run_ended", resolved_at: now },
+      { id: "terminal-resolved", state: "submitted", disposition: "selected", resolved_at: now - 200 },
+      { id: "terminal-submitted", state: "expired", disposition: "run_ended", resolved_at: now },
+    ]);
+    expect(expireUnresolvedAcpInteractionsForTerminalRuns(db, { resolvedAt: now + 1 }).changes).toBe(0);
+    expect(db.prepare(`
+      SELECT id, state, disposition, resolved_at
+      FROM acp_interactions ORDER BY id
+    `).all()).toEqual(first);
+  });
+
+  it("reconciles unresolved ACP interactions for already-terminal runs at boot", () => {
+    const db = makeTestDb();
+    const profile = createAcpProfile({
+      db,
+      input: {
+        agentName: "terminal-boot-acp",
+        displayName: "Terminal boot ACP",
+        command: process.execPath,
+        cwd: process.cwd(),
+      },
+    });
+    const taskId = seedTask(db);
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO task_runs (
+        id, task_id, mode, stage, agent_name, provider_kind, status,
+        process_status, started_at, ended_at
+      ) VALUES ('terminal-boot-run', ?, 'execute', 'execute', 'terminal-boot-acp',
+        'acp', 'complete', 'succeeded', ?, ?)
+    `).run(taskId, now - 2_000, now - 1_000);
+    for (const id of ["terminal-boot-pending", "terminal-boot-submitted"]) {
+      insertAcpInteractionRequest(db, {
+        id,
+        profileId: profile.id,
+        taskRunId: "terminal-boot-run",
+        protocolRequestId: `request-${id}`,
+        kind: "permission",
+        requestSchemaJson: "{}",
+        createdAt: now - 500,
+        updatedAt: now - 500,
+      });
+    }
+    claimAcpInteractionResponse(db, "terminal-boot-submitted", {
+      disposition: "selected",
+      updatedAt: now - 300,
+    });
+
+    const warn = vi.fn();
+    createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn: vi.fn(),
+      workerBinary: "/fake",
+      logger: { warn, info: vi.fn() },
+    });
+    const first = db.prepare(`
+      SELECT id, state, disposition, resolved_at
+      FROM acp_interactions WHERE task_run_id = 'terminal-boot-run' ORDER BY id
+    `).all();
+    expect(first).toEqual([
+      {
+        id: "terminal-boot-pending",
+        state: "expired",
+        disposition: "run_ended",
+        resolved_at: expect.any(Number),
+      },
+      {
+        id: "terminal-boot-submitted",
+        state: "expired",
+        disposition: "run_ended",
+        resolved_at: expect.any(Number),
+      },
+    ]);
+    expect(warn).toHaveBeenCalledWith(
+      { expired_interactions: 2 },
+      "expired unresolved ACP interactions for terminal runs at boot",
+    );
+
+    const secondWarn = vi.fn();
+    createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn: vi.fn(),
+      workerBinary: "/fake",
+      logger: { warn: secondWarn, info: vi.fn() },
+    });
+    expect(db.prepare(`
+      SELECT id, state, disposition, resolved_at
+      FROM acp_interactions WHERE task_run_id = 'terminal-boot-run' ORDER BY id
+    `).all()).toEqual(first);
+    expect(secondWarn).not.toHaveBeenCalled();
   });
 
   it("reconciles stale running runs at boot", async () => {

@@ -17,7 +17,7 @@
 
 import { buildTranscriptTailSnapshot } from "@mono-agent/agent-runtime/agent/transcript.js";
 import { readJsonlEventsFromFile } from "../../core/index.js";
-import { expirePendingAcpInteractionsForRun } from "../../core/db/queries/acp-interactions.js";
+import { expireUnresolvedAcpInteractionsForTerminalRuns } from "../../core/db/queries/acp-interactions.js";
 
 function unwrapSdkEvent(event) {
   return event?.type === "sdk_event" && event.event ? event.event : event;
@@ -65,7 +65,6 @@ export function reconcileStaleRunningRuns(db, logger, { dataDir = null } = {}) {
       `SELECT id, task_id, stage, raw_output_path FROM task_runs
        WHERE process_status = 'running' OR status = 'running'`,
     ).all();
-    if (stale.length === 0) return { abandoned: 0, recoveredDrained: 0, expiredInteractions: 0 };
     const markAbandonedRun = db.prepare(
       `UPDATE task_runs
        SET process_status = 'abandoned', status = 'error', ended_at = ?,
@@ -94,7 +93,6 @@ export function reconcileStaleRunningRuns(db, logger, { dataDir = null } = {}) {
     );
     let abandoned = 0;
     let recoveredDrained = 0;
-    let expiredInteractions = 0;
     for (const row of stale) {
       const retryStage = row.stage || "plan";
       const drained = recoverDrainedSnapshot(row, { dataDir, logger });
@@ -112,11 +110,11 @@ export function reconcileStaleRunningRuns(db, logger, { dataDir = null } = {}) {
         markTask.run(retryStage, "Previous run did not finish", "abandoned", now, row.task_id);
         abandoned += 1;
       }
-      expiredInteractions += expirePendingAcpInteractionsForRun(db, row.id, {
-        disposition: "run_ended",
-        resolvedAt: now,
-      }).changes;
     }
+    const expiredInteractions = expireUnresolvedAcpInteractionsForTerminalRuns(db, {
+      disposition: "run_ended",
+      resolvedAt: now,
+    }).changes;
     return { abandoned, recoveredDrained, expiredInteractions };
   });
   const counts = reconcile();
@@ -130,6 +128,11 @@ export function reconcileStaleRunningRuns(db, logger, { dataDir = null } = {}) {
         expired_interactions: counts.expiredInteractions,
       },
       "reconciled stale running runs at boot",
+    );
+  } else if (counts.expiredInteractions > 0) {
+    logger?.warn?.(
+      { expired_interactions: counts.expiredInteractions },
+      "expired unresolved ACP interactions for terminal runs at boot",
     );
   }
   return count;

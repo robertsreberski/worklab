@@ -177,3 +177,19 @@ export function expirePendingAcpInteractionsForRun(db, taskRunId, {
       AND (state = 'pending' OR (state = 'submitted' AND resolved_at IS NULL))
   `).run(disposition, resolvedAt, resolvedAt, taskRunId);
 }
+
+export function expireUnresolvedAcpInteractionsForTerminalRuns(db, {
+  disposition = "run_ended",
+  resolvedAt = Date.now(),
+} = {}) {
+  return db.prepare(`
+    UPDATE acp_interactions
+    SET state = 'expired', disposition = ?, updated_at = ?, resolved_at = ?
+    WHERE task_run_id IN (
+      SELECT id FROM task_runs
+      WHERE COALESCE(status, 'running') NOT IN ('queued', 'running')
+        AND COALESCE(process_status, 'running') NOT IN ('queued', 'running')
+    )
+      AND (state = 'pending' OR (state = 'submitted' AND resolved_at IS NULL))
+  `).run(disposition, resolvedAt, resolvedAt);
+}
