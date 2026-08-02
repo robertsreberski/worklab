@@ -329,16 +329,19 @@ function permissionOptionId(response) {
   return nested?.optionId || nested?.option_id || response?.optionId || response?.option_id || null;
 }
 
-function permissionResponseIsOffered(row, response, disposition) {
+function permissionResponseMatchesOffer(row, response, disposition) {
   if (row.kind !== "permission") return true;
   const selected = permissionOptionId(response);
-  if (!selected) return disposition === "cancel";
+  if (disposition === "cancel") return selected == null;
   let schema = {};
   try { schema = JSON.parse(row.request_schema_json || "{}"); } catch { /* invalid rows fail closed below */ }
-  const offered = new Set((Array.isArray(schema.options) ? schema.options : [])
-    .map((option) => option?.optionId)
-    .filter((value) => typeof value === "string"));
-  return offered.has(selected);
+  const offered = new Map((Array.isArray(schema.options) ? schema.options : [])
+    .map((option) => [option?.optionId || option?.id, option])
+    .filter(([optionId]) => typeof optionId === "string" && optionId.length > 0));
+  const option = typeof selected === "string" ? offered.get(selected) : null;
+  if (!option) return false;
+  const optionKind = typeof option.kind === "string" ? option.kind.trim().toLowerCase() : "";
+  return disposition === "selected" || disposition === optionKind;
 }
 
 function expireInteraction(db, interactionId, disposition, now = Date.now()) {
@@ -554,8 +557,12 @@ export function createAcpInteractionControls({
     if (!existing || existing.task_run_id !== runId || existing.state !== "pending") {
       return { ok: false, code: "no_pending_interaction", message: "ACP interaction is not pending for this run" };
     }
-    if (action === "respond" && !permissionResponseIsOffered(existing, response, disposition)) {
-      return { ok: false, code: "invalid_response", message: "permission option was not offered" };
+    if (action === "respond" && !permissionResponseMatchesOffer(existing, response, disposition)) {
+      return {
+        ok: false,
+        code: "invalid_response",
+        message: "permission response does not match an offered option",
+      };
     }
     if (action === "respond" && !rememberPrivateResponse(response)) {
       return { ok: false, code: "invalid_response", message: "private response is too deeply nested or complex" };

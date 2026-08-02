@@ -817,6 +817,141 @@ describe("spawnWorker ACP interactions", () => {
     }
   });
 
+  it.each([
+    [
+      "allow-always for an allow-once option",
+      "allow_always",
+      { outcome: { outcome: "selected", optionId: "allow-once" } },
+    ],
+    [
+      "cancellation with an option selection",
+      "cancel",
+      { outcome: { outcome: "selected", optionId: "allow-once" } },
+    ],
+    [
+      "allow-once for a reject-always option",
+      "allow_once",
+      { outcome: { outcome: "selected", optionId: "reject-always" } },
+    ],
+  ])("rejects a permission response that contradicts its offer: %s", async (
+    _label,
+    disposition,
+    response,
+  ) => {
+    const db = makeTestDb();
+    try {
+      const { runId } = seed(db);
+      insertAcpInteractionRequest(db, {
+        id: "interaction-permission-mismatch",
+        profileId: "profile-1",
+        taskRunId: runId,
+        protocolRequestId: "rpc-permission-mismatch",
+        kind: "permission",
+        requestSchemaJson: JSON.stringify({
+          options: [
+            { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+            { optionId: "reject-always", name: "Always reject", kind: "reject_always" },
+          ],
+        }),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const writeControlMessage = vi.fn();
+      const controls = createAcpInteractionControls({
+        db,
+        runId,
+        writeControlMessage,
+        emitEvent: () => {},
+      });
+
+      await expect(controls.respond({
+        interactionId: "interaction-permission-mismatch",
+        disposition,
+        response,
+      })).resolves.toEqual({
+        ok: false,
+        code: "invalid_response",
+        message: "permission response does not match an offered option",
+      });
+      expect(writeControlMessage).not.toHaveBeenCalled();
+      expect(db.prepare("SELECT state, disposition FROM acp_interactions WHERE id = ?")
+        .get("interaction-permission-mismatch"))
+        .toEqual({ state: "pending", disposition: null });
+      controls.close();
+    } finally {
+      db.close();
+    }
+  });
+
+  it.each([
+    [
+      "generic selected disposition",
+      "selected",
+      { outcome: { outcome: "selected", optionId: "allow-once" } },
+    ],
+    [
+      "matching option kind",
+      "allow_once",
+      { outcome: { outcome: "selected", optionId: "allow-once" } },
+    ],
+    [
+      "bare cancellation",
+      "cancel",
+      { outcome: { outcome: "cancelled" } },
+    ],
+  ])("delivers a permission response that agrees with its offer: %s", async (
+    _label,
+    disposition,
+    response,
+  ) => {
+    const db = makeTestDb();
+    try {
+      const { runId } = seed(db);
+      insertAcpInteractionRequest(db, {
+        id: "interaction-permission-match",
+        profileId: "profile-1",
+        taskRunId: runId,
+        protocolRequestId: "rpc-permission-match",
+        kind: "permission",
+        requestSchemaJson: JSON.stringify({
+          options: [{ optionId: "allow-once", name: "Allow once", kind: "allow_once" }],
+        }),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      let controlMessage;
+      const controls = createAcpInteractionControls({
+        db,
+        runId,
+        writeControlMessage: async (message) => { controlMessage = message; },
+        emitEvent: () => {},
+        idFactory: () => "delivery-permission-match",
+      });
+
+      const delivered = controls.respond({
+        interactionId: "interaction-permission-match",
+        disposition,
+        response,
+      });
+      await vi.waitFor(() => expect(controlMessage?.delivery_id).toBe("delivery-permission-match"));
+      expect(controlMessage.response).toEqual(response);
+      controls.handleWorkerEvent({
+        type: "acp_interaction_acknowledged",
+        interaction_id: "interaction-permission-match",
+        delivery_id: "delivery-permission-match",
+        outcome: "submitted",
+      });
+
+      await expect(delivered).resolves.toMatchObject({ ok: true });
+      expect(db.prepare("SELECT state, disposition FROM acp_interactions WHERE id = ?")
+        .get("interaction-permission-match"))
+        .toEqual({ state: "submitted", disposition });
+      controls.close();
+    } finally {
+      db.close();
+    }
+  });
+
   it("waits for a matching worker ack and rejects unoffered permission ids", async () => {
     const db = makeTestDb();
     try {
