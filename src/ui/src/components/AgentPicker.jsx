@@ -3,6 +3,7 @@
 import { Select } from "./primitives/Select.jsx";
 import { AgentAvatar } from "./AgentAvatar.jsx";
 import { agentModelEffortLabel, humanizeSlug } from "../lib/display.js";
+import { externalAgentKind } from "../lib/externalAgents.js";
 
 function normalizeRoleForAvatar(role) {
   const normalized = String(role || "").trim().toLowerCase();
@@ -10,7 +11,54 @@ function normalizeRoleForAvatar(role) {
   return undefined;
 }
 
-export function agentPickerOptions({ agents = [], value = null, allowClear = true } = {}) {
+function eligibilityEntry(source, name) {
+  if (source instanceof Map) return source.get(name);
+  if (typeof source === "function") return source(name);
+  return source?.[name];
+}
+
+export function agentAssignmentEligibility(agent, eligibility = null, disabledReasons = null) {
+  const name = agent?.name;
+  const supplied = eligibilityEntry(eligibility, name);
+  const suppliedReason = eligibilityEntry(disabledReasons, name);
+  const directEligible = agent?.assignment_eligible ?? agent?.assignmentEligible;
+  const directReason = agent?.assignment_disabled_reason ?? agent?.assignmentDisabledReason;
+  const entry = supplied ?? (directEligible === undefined && !directReason ? null : { eligible: directEligible, reason: directReason });
+  const reason = typeof suppliedReason === "string"
+    ? suppliedReason
+    : typeof entry === "string"
+      ? entry
+      : entry?.reason || entry?.disabledReason || entry?.disabled_reason || directReason || "";
+  const eligible = typeof entry === "boolean"
+    ? entry
+    : entry && typeof entry === "object"
+      ? entry.eligible !== false && entry.disabled !== true
+      : !reason;
+  return { eligible, reason: reason || (eligible ? "" : "Unavailable for this assignment") };
+}
+
+function pickerOption(agent, value, eligibility, disabledReasons) {
+  const isDisabled = agent.enabled === false;
+  const assignment = agentAssignmentEligibility(agent, eligibility, disabledReasons);
+  if (isDisabled && agent.name !== value) return null;
+  const kind = externalAgentKind(agent);
+  const metadata = kind === "external"
+    ? ["ACP", agent.driver || agent.external_driver].filter(Boolean).join(" · ")
+    : agentModelEffortLabel(agent);
+  return {
+    value: agent.name,
+    label: agent.display_name || humanizeSlug(agent.name),
+    description: [
+      isDisabled ? "disabled" : null,
+      !assignment.eligible ? assignment.reason : null,
+      metadata || null,
+    ].filter(Boolean).join(" · ") || undefined,
+    disabled: isDisabled || !assignment.eligible,
+    _agent: agent,
+  };
+}
+
+export function agentPickerOptions({ agents = [], value = null, allowClear = true, eligibility = null, disabledReasons = null } = {}) {
   const options = [];
   if (allowClear) {
     options.push({
@@ -19,20 +67,12 @@ export function agentPickerOptions({ agents = [], value = null, allowClear = tru
       _unassigned: true,
     });
   }
-  for (const a of agents) {
-    const isDisabled = a.enabled === false;
-    if (isDisabled && a.name !== value) continue;
-    const metadata = agentModelEffortLabel(a);
-    options.push({
-      value: a.name,
-      label: a.display_name || humanizeSlug(a.name),
-      description: [
-        isDisabled ? "disabled" : null,
-        metadata || null,
-      ].filter(Boolean).join(" · ") || undefined,
-      disabled: isDisabled,
-      _agent: a,
-    });
+  for (const [kind, label] of [["local", "Local agents"], ["external", "External agents"]]) {
+    const grouped = agents
+      .filter((agent) => externalAgentKind(agent) === kind)
+      .map((agent) => pickerOption(agent, value, eligibility, disabledReasons))
+      .filter(Boolean);
+    if (grouped.length) options.push({ label, options: grouped });
   }
   return options;
 }
@@ -44,10 +84,12 @@ export function AgentPicker({
   placeholder = "Select agent",
   allowClear = true,
   role,
+  eligibility = null,
+  disabledReasons = null,
   class: className = "",
   ariaLabel,
 }) {
-  const options = agentPickerOptions({ agents, value, allowClear });
+  const options = agentPickerOptions({ agents, value, allowClear, eligibility, disabledReasons });
 
   const unassignedAvatar = (
     <span class="agent-avatar unassigned agent-avatar-sm" aria-hidden="true">
