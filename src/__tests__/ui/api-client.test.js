@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../ui/src/lib/api.js";
+import { structuralAcpProviderSessionId } from "../helpers/acp-tokens.js";
 
 function uiSourceFiles(dir) {
   const files = [];
@@ -265,6 +266,82 @@ describe("ui API client", () => {
       controller.signal,
       controller.signal,
     ]);
+  });
+
+  it("uses named ACP profile, operation, and mono discovery helpers", async () => {
+    const controller = new AbortController();
+    const providerSessionId = structuralAcpProviderSessionId("profile-1", "opaque");
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    }));
+
+    await api.listAcpProfiles({ signal: controller.signal });
+    await api.getAcpProfile("profile/1");
+    await api.createAcpProfile({ driver: "generic", command: "/usr/local/bin/agent" });
+    await api.patchAcpProfile("profile/1", { cwd: "/workspace" });
+    await api.probeAcpProfile("profile/1");
+    await api.authenticateAcpProfile("profile/1", "oauth-browser");
+    await api.logoutAcpProfile("profile/1");
+    await api.listAcpProfileSessions("profile/1");
+    await api.deleteAcpProfileSession("profile/1", providerSessionId);
+    await api.listAcpProfileOperations("profile/1", { limit: 25, signal: controller.signal });
+    await api.getAcpOperation("operation/1");
+    await api.cancelAcpOperation("operation/1");
+    await api.listAcpOperationInteractions("operation/1");
+    await api.listAcpInteractions({ state: "pending" });
+    await api.respondAcpInteraction("interaction/1", { optionId: "allow" });
+    await api.cancelAcpInteraction("interaction/1");
+    await api.discoverMonoAgents({ signal: controller.signal });
+
+    expect(global.fetch.mock.calls.map(([url]) => url)).toEqual([
+      "/api/acp/profiles",
+      "/api/acp/profiles/profile%2F1",
+      "/api/acp/profiles",
+      "/api/acp/profiles/profile%2F1",
+      "/api/acp/profiles/profile%2F1/probe",
+      "/api/acp/profiles/profile%2F1/authenticate",
+      "/api/acp/profiles/profile%2F1/logout",
+      "/api/acp/profiles/profile%2F1/sessions:list",
+      `/api/acp/profiles/profile%2F1/sessions/${encodeURIComponent(providerSessionId)}`,
+      "/api/acp/profiles/profile%2F1/operations?limit=25",
+      "/api/acp/operations/operation%2F1",
+      "/api/acp/operations/operation%2F1/cancel",
+      "/api/acp/operations/operation%2F1/interactions",
+      "/api/acp/interactions?state=pending",
+      "/api/acp/interactions/interaction%2F1/respond",
+      "/api/acp/interactions/interaction%2F1/cancel",
+      "/api/acp/discovery/mono",
+    ]);
+    expect(global.fetch.mock.calls.map(([, options]) => options.method)).toEqual([
+      "GET", "GET", "POST", "PATCH", "POST", "POST", "POST", "POST", "DELETE", "GET", "GET", "POST", "GET", "GET", "POST", "POST", "GET",
+    ]);
+    expect(global.fetch.mock.calls[0][1].signal).toBe(controller.signal);
+    expect(global.fetch.mock.calls[5][1].body).toBe(JSON.stringify({ authMethodId: "oauth-browser" }));
+    expect(global.fetch.mock.calls[9][1].signal).toBe(controller.signal);
+    expect(global.fetch.mock.calls[16][1].signal).toBe(controller.signal);
+  });
+
+  it("imports mono-agent discovery by source id only", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 201,
+      json: async () => ({ profile: { id: "profile-1" } }),
+    }));
+
+    await api.importMonoAgent("mono-source-1");
+
+    expect(global.fetch).toHaveBeenCalledWith("/api/acp/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceId: "mono-source-1" }),
+      signal: undefined,
+    });
+  });
+
+  it("refuses to start ACP authentication without an advertised method id", () => {
+    expect(() => api.authenticateAcpProfile("profile-1")).toThrow("authMethodId is required");
   });
 });
 

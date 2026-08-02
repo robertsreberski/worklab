@@ -19,6 +19,14 @@ function seedAgent(db, name = "maintainer") {
   `).run(name, name, now, now);
 }
 
+function seedAcpAgent(db, name = "external") {
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO agents (name, display_name, sdk, model, execution_mode, created_at, updated_at)
+    VALUES (?, ?, 'acp', 'acp:external-profile', 'acp', ?, ?)
+  `).run(name, name, now, now);
+}
+
 function seedTask(db, { id = "task_1", owner = "maintainer", planner = null, stage = "execute" } = {}) {
   const now = Date.now();
   db.prepare(`
@@ -37,6 +45,82 @@ function spawnFake() {
 }
 
 describe("automation manager", () => {
+  it("rejects standalone ACP automations before recording or spawning a run", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const now = Date.UTC(2026, 0, 5, 9, 0, 0, 0);
+    seedAcpAgent(db);
+    db.prepare(`
+      INSERT INTO automations (
+        id, title, instructions, agent_name, tags, trigger_json,
+        enabled, next_fire_at, created_at, updated_at
+      ) VALUES (?, ?, '', ?, '[]', ?, 1, ?, ?, ?)
+    `).run(
+      "auto_acp",
+      "External automation",
+      "external",
+      JSON.stringify({ type: "daily", hour: 9, minute: 0 }),
+      now,
+      now - 10_000,
+      now - 10_000,
+    );
+    const spawn = vi.fn(spawnFake);
+    const manager = createAutomationManager({ db, broker, spawn });
+
+    await expect(manager.runNow("auto_acp", { now })).rejects.toThrow(
+      "external ACP agents currently support task runs only",
+    );
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(db.prepare("SELECT COUNT(*) AS count FROM task_runs").get().count).toBe(0);
+    expect(db.prepare("SELECT COUNT(*) AS count FROM automation_runs").get().count).toBe(0);
+    expect(db.prepare("SELECT COUNT(*) AS count FROM automation_triggers").get().count).toBe(0);
+    expect(db.prepare("SELECT last_fired_at, last_run_id, last_status FROM automations WHERE id = 'auto_acp'").get())
+      .toMatchObject({ last_fired_at: null, last_run_id: null, last_status: null });
+  });
+
+  it("keeps task-owned ACP automations on the task watcher path", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const now = Date.UTC(2026, 0, 5, 9, 0, 0, 0);
+    seedAcpAgent(db);
+    const taskId = seedTask(db, { owner: "external" });
+    const watcher = {
+      handleRunRequested: vi.fn(async (id) => {
+        const runId = "run_acp_task_auto";
+        db.prepare(`
+          INSERT INTO task_runs (id, task_id, mode, stage, agent_name, started_at, status, process_status)
+          VALUES (?, ?, 'execute', 'execute', 'external', ?, 'running', 'running')
+        `).run(runId, id, now);
+        return { runId };
+      }),
+      isActive: () => false,
+    };
+    db.prepare(`
+      INSERT INTO automations (
+        id, task_id, title, instructions, agent_name, tags, trigger_json,
+        enabled, next_fire_at, created_at, updated_at
+      ) VALUES (?, ?, ?, '', NULL, '[]', ?, 1, ?, ?, ?)
+    `).run(
+      "auto_acp_task",
+      taskId,
+      "External task automation",
+      JSON.stringify({ type: "daily", hour: 9, minute: 0 }),
+      now,
+      now - 10_000,
+      now - 10_000,
+    );
+    const spawn = vi.fn(spawnFake);
+    const manager = createAutomationManager({ db, broker, watcher, spawn });
+
+    await expect(manager.runNow("auto_acp_task", { now })).resolves.toEqual({ runId: "run_acp_task_auto" });
+
+    expect(watcher.handleRunRequested).toHaveBeenCalledWith(taskId);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(db.prepare("SELECT automation_id FROM automation_runs WHERE run_id = 'run_acp_task_auto'").get())
+      .toMatchObject({ automation_id: "auto_acp_task" });
+  });
+
   it("starts due automations as taskless runs and advances next_fire_at", async () => {
     const db = makeTestDb();
     const broker = stubBroker();

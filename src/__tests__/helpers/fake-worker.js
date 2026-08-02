@@ -1,6 +1,6 @@
 // src/__tests__/helpers/fake-worker.js
 import { spawn } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { writeFileSync, writeSync } from "node:fs";
 
 // Run as a child process; emits events per FAKE_WORKER_SCRIPT env var
 // Script format: JSON {
@@ -8,9 +8,12 @@ import { writeFileSync } from "node:fs";
 //   "exitCode": 0,
 //   "exitAfterMs": 100,
 //   "echoControls": false,
+//   "echoControlsToStderr": false,
+//   "ackAcpControls": false,
 //   "drain": {
 //     "emitDrained": true,         // emit a `drained` event on receipt
 //     "emitCancelled": true,       // emit `{type:"cancelled", drained:true}` after `drained`
+//     "providerSessionId": "...", // optional opaque session id on cancellation
 //     "exitCode": 0,               // exit code on drain
 //     "exitAfterMs": 0             // delay between handling drain and exit
 //   },
@@ -22,6 +25,14 @@ const script = JSON.parse(process.env.FAKE_WORKER_SCRIPT || '{"events":[],"exitC
 
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
+}
+
+function emitPrivateUrlHandoff(frame) {
+  const payload = Buffer.from(`${JSON.stringify(frame)}\n`, "utf8");
+  let offset = 0;
+  while (offset < payload.length) {
+    offset += writeSync(3, payload, offset, payload.length - offset);
+  }
 }
 
 let aborted = false;
@@ -52,13 +63,18 @@ function handleDrainMessage(message) {
   }
   setTimeout(() => {
     if (cfg.emitCancelled !== false) {
-      emit({ type: "cancelled", initiator: "coordinator_shutdown", drained: true });
+      emit({
+        type: "cancelled",
+        initiator: "coordinator_shutdown",
+        drained: true,
+        ...(cfg.providerSessionId ? { provider_session_id: cfg.providerSessionId } : {}),
+      });
     }
     process.exit(cfg.exitCode ?? 0);
   }, Math.max(0, Number(cfg.exitAfterMs) || 0));
 }
 
-if (script.echoControls || drainConfig || script.ignoreDrain) {
+if (script.echoControls || script.echoControlsToStderr || script.ackAcpControls || drainConfig || script.ignoreDrain) {
   let buffer = "";
   process.stdin.on("data", (chunk) => {
     buffer += chunk.toString();
@@ -75,16 +91,44 @@ if (script.echoControls || drainConfig || script.ignoreDrain) {
         continue;
       }
       if (script.echoControls) emit({ type: "control_seen", message: parsed });
+      if (script.echoControlsToStderr) process.stderr.write(`${JSON.stringify(parsed)}\n`);
+      if (script.ackAcpControls && parsed?.type === "acp_interaction_response") {
+        emit({
+          type: "acp_interaction_acknowledged",
+          interaction_id: parsed.interaction_id,
+          delivery_id: parsed.delivery_id,
+          outcome: "submitted",
+        });
+      }
+      if (script.ackAcpControls && parsed?.type === "acp_interaction_cancel") {
+        emit({
+          type: "acp_interaction_acknowledged",
+          interaction_id: parsed.interaction_id,
+          delivery_id: parsed.delivery_id,
+          outcome: "cancelled",
+        });
+      }
       if (parsed?.type === "worklab_drain") handleDrainMessage(parsed);
     }
   });
 }
 
 async function run() {
-  for (const e of script.events) {
+  for (const frame of script.privateUrlHandoffs || []) emitPrivateUrlHandoff(frame);
+  if (script.eventsInOneChunk) {
+    process.stdout.write((script.events || []).map((event) => {
+      const payload = { ...event };
+      delete payload.delayMs;
+      delete payload.stderr;
+      return `${JSON.stringify(payload)}\n`;
+    }).join(""));
+    if (script.stderrAfterEvents) process.stderr.write(String(script.stderrAfterEvents));
+  }
+  for (const e of script.eventsInOneChunk ? [] : script.events) {
     if (aborted) { emit({ type: "cancelled" }); process.exit(130); }
-    const { delayMs = 0, ...payload } = e;
+    const { delayMs = 0, stderr, ...payload } = e;
     if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+    if (stderr) process.stderr.write(String(stderr));
     emit(payload);
   }
   if (script.exitAfterMs) await new Promise(r => setTimeout(r, script.exitAfterMs));

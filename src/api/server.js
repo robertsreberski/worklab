@@ -1,5 +1,4 @@
 import express from "express";
-import cors from "cors";
 import { SCHEMA_VERSION } from "../core/db/index.js";
 import { readPackageMetadata } from "../core/platform/index.js";
 import { getSchemaVersion, tableExists } from "../core/db/queries/schema.js";
@@ -26,7 +25,17 @@ import { registerSlackRoutes } from "./routes/slack.js";
 import { registerAssistantRoutes } from "./routes/assistant.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
 import { registerUpdateRoutes } from "./routes/update.js";
+import { registerAcpRoutes } from "./routes/acp.js";
+import { createApiMutationBoundary } from "./acp-request-boundary.js";
 import { registerAdminMcpRoutes } from "../mcp/admin/server.js";
+import { createAcpOperationManager } from "../coordinator/acp-operation-manager.js";
+import {
+  coordinatorIncarnationDigest,
+  coordinatorShutdownProof,
+  createAcpUrlHandoffStore,
+  ensureMcpToken,
+  tokenMatches,
+} from "../core/index.js";
 
 const DEFAULT_SLOW_API_MS = 250;
 
@@ -102,12 +111,57 @@ function serviceStatusPayload(serviceStatus) {
   }
 }
 
-export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls, updateControls, slack, assistant: assistantOptions, notifications, serviceStatus }) {
+export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls, updateControls, slack, assistant: assistantOptions, notifications, serviceStatus, acpControls, acpOperationManager, acpUrlHandoffStore, coordinatorControl }) {
   const app = express();
   const broker = createSseBroker();
+  const coordinatorProof = coordinatorControl?.incarnation
+    ? coordinatorShutdownProof(
+        ensureMcpToken(dataDir || config?.dataDir),
+        coordinatorControl.incarnation,
+      )
+    : null;
+  let coordinatorShutdownRequested = false;
+  const urlHandoffs = acpUrlHandoffStore || createAcpUrlHandoffStore();
+  const acpOperations = acpOperationManager || createAcpOperationManager({
+    db,
+    broker,
+    controls: acpControls,
+    logger,
+    urlHandoffStore: urlHandoffs,
+  });
 
-  app.use(cors());
+  // This local process-control route sits before the browser/service-token
+  // mutation boundary because it authenticates an incarnation-scoped HMAC.
+  // Neither the persistent bearer nor the raw incarnation crosses the socket.
+  if (coordinatorProof && typeof coordinatorControl?.requestShutdown === "function") {
+    app.post("/api/runtime/shutdown", (req, res) => {
+      if (!tokenMatches(req.get("x-worklab-coordinator-shutdown-proof"), coordinatorProof)) {
+        res.status(409).json({ error: { code: "coordinator_incarnation_mismatch", message: "Coordinator incarnation changed" } });
+        return;
+      }
+      if (!coordinatorShutdownRequested) {
+        coordinatorShutdownRequested = true;
+        res.once("finish", () => {
+          setImmediate(() => {
+            Promise.resolve(coordinatorControl.requestShutdown()).catch((error) => {
+              logger?.error?.({ error }, "coordinator control shutdown failed");
+            });
+          });
+        });
+      }
+      res.status(202).json({ ok: true, pid: process.pid });
+    });
+  }
+
+  // Inbound webhook ids are capability URLs and intentionally accept
+  // server-to-server POSTs. Every other state-changing API call is UI-origin
+  // or service-token scoped; browser CORS grants are restricted to exact UI
+  // origins configured through WORKLAB_ACP_ALLOWED_ORIGINS.
   registerAutomationWebhookRoutes(app, { db, broker, automationManager });
+  app.use("/api", createApiMutationBoundary({
+    dataDir: dataDir || config?.dataDir,
+    config,
+  }));
   app.use(express.json({ limit: "10mb" }));
   // SSE drives all freshness for client state. Caching /api responses (browser,
   // service worker, or shared proxy) would risk stale views without buying any
@@ -121,6 +175,12 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   app.get("/api/health", (_req, res) => res.json({
     ok: true,
     pid: process.pid,
+    coordinator: coordinatorControl?.incarnation
+      ? {
+          claim_format: "v2",
+          incarnation_sha256: coordinatorIncarnationDigest(coordinatorControl.incarnation),
+        }
+      : null,
     node: process.version,
     uptime_ms: Math.round(process.uptime() * 1000),
     schema: {
@@ -156,6 +216,14 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   registerAutomationRoutes(app, { db, broker, automationManager });
   registerSlackRoutes(app, { db, config, slack });
   registerNotificationRoutes(app, { db, dataDir, notifications });
+  registerAcpRoutes(app, {
+    db,
+    broker,
+    watcher,
+    acpControls,
+    acpOperationManager: acpOperations,
+    acpUrlHandoffStore: urlHandoffs,
+  });
   const assistant = registerAssistantRoutes(app, { db, broker, logger, config, ...(assistantOptions || {}) });
   if (config) registerAdminMcpRoutes(app, { config, logger });
 
@@ -168,5 +236,11 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
     res.status(500).json({ error: { code: "internal", message: err.message } });
   });
 
-  return { app, broker, assistant };
+  return {
+    app,
+    broker,
+    assistant,
+    acpOperationManager: acpOperations,
+    acpUrlHandoffStore: urlHandoffs,
+  };
 }

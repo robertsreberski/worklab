@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 import { statusMeta } from "../../ui/src/components/primitives/StatusPill.jsx";
 
@@ -30,5 +32,11 @@ describe("statusMeta", () => {
     expect(statusMeta("complete").color).toBe("var(--status-done)");
     expect(statusMeta("failed").color).toBe("var(--status-error)");
     expect(statusMeta("cancelled").color).toBe("var(--status-muted)");
+  });
+
+  it("keeps a stable accessible button name while loading", () => {
+    const button = readFileSync(resolve(import.meta.dirname, "../../ui/src/components/primitives/Button.jsx"), "utf8");
+    expect(button).toContain('aria-busy={loading ? "true" : undefined}');
+    expect(button).toContain('<span class="sr-only">{children}</span>');
   });
 });

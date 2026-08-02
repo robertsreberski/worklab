@@ -112,6 +112,9 @@ export { readPiAuthFile } from "./pi-oauth.js";
 
 // ---------- IDs + slugs ----------
 export {
+  newAcpInteractionId,
+  newAcpOperationId,
+  newAcpProfileId,
   newAttachmentId,
   newAttachmentUploadId,
   newAgentLogId,
@@ -131,6 +134,56 @@ export {
 } from "./ids.js";
 
 export { isValidSlug, slugify, uniqueSlug } from "./slugs.js";
+
+export {
+  ACP_BRIDGE_VERSION,
+  ACP_DISCOVERY_SCHEMA,
+  ACP_PROTOCOL_VERSION,
+  ACP_SOURCE_SCHEMA,
+  assertAcpProfileBinding,
+  createAcpProfile,
+  deleteAcpProfileRecord,
+  getAcpProfile,
+  getAcpProfileForAgent,
+  getAcpProfiles,
+  normalizeMonoDiscovery,
+  normalizeMonoSourceDescriptor,
+  rowToAcpProfile,
+  updateAcpProfileRecord,
+} from "./acp-profiles.js";
+
+export {
+  acpInteractionDisposition,
+  normalizeAcpAuthMethodId,
+  normalizeAcpProviderSessionId,
+  rowToAcpInteraction,
+  rowToAcpOperation,
+  sanitizeAcpInteractionSchema,
+  sanitizeAcpOperationError,
+  sanitizeAcpOperationResult,
+} from "./acp-operations.js";
+
+export {
+  MAX_ACP_CURSOR_TOKEN_BYTES,
+  normalizeAcpPaginationCursorKey,
+  parseAcpSessionCursor,
+  selectAcpPaginationCursorEntry,
+} from "./acp-session-cursors.js";
+
+export { createWorklabAcpControls } from "./acp-controls.js";
+
+export { createWorklabAcpProfileResolver } from "./acp-runtime-profile.js";
+export { WORKLAB_RUNTIME_BRAND } from "./runtime-brand.js";
+
+export {
+  ACP_PRIVATE_URL_HANDOFF,
+  ACP_URL_HANDOFF_LIMITS,
+  ACP_URL_PUBLIC_REQUEST,
+  createAcpUrlPublicRequest,
+  createAcpUrlHandoffStore,
+  inspectAcpUrlHandoff,
+  normalizeAcpUrlHandoff,
+} from "./acp-url-handoff.js";
 
 // ---------- Settings + runtime ----------
 export {
@@ -187,6 +240,7 @@ export { logger, createLogger } from "./logger.js";
 export {
   decrypt,
   encrypt,
+  getAcpSessionTokenKey,
   getKeyFingerprint,
   getKeySource,
 } from "./crypto.js";
@@ -197,6 +251,22 @@ export {
   readMcpToken,
   tokenMatches,
 } from "./service-token.js";
+
+export {
+  coordinatorIncarnationDigest,
+  coordinatorShutdownProof,
+  coordinatorClaimPaths,
+  createCoordinatorClaim,
+  parseCoordinatorClaim,
+  parseCoordinatorPid,
+  readCoordinatorClaimFile,
+} from "./coordinator-pid.js";
+
+export {
+  releaseCoordinatorLock,
+  tryAcquireCoordinatorLock,
+  unlinkCoordinatorClaimIfMatching,
+} from "./db/coordinator-lock.js";
 
 export { serviceStatus } from "./host-service-status.js";
 

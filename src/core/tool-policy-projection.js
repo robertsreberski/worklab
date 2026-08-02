@@ -23,11 +23,12 @@
 // toolset — wider than WORKLAB_BUILTIN_TOOLS. Collapsing there would silently
 // hand Claude agents tools Worklab never granted.
 //
-// The planning stage is the one restriction that *is* translatable. It asks for
-// read-only, which these runtimes express as `permissionMode: "plan"` rather
-// than as a tool list. Without the translation a Codex planner cannot run at
-// all: the read-only planning policy adds `disallowedTools: ["Write","Edit"]`,
-// and every non-empty denylist fails closed there.
+// One exact planning restriction is translatable. Worklab's full "read-only
+// shell" shape asks for every read/search/web tool plus Bash while denying only
+// Write/Edit. These runtimes express that as `permissionMode: "plan"` rather
+// than as a tool list. Narrower shapes are not equivalent: notably, native plan
+// mode would re-enable Bash for `read_only_no_shell` and would widen a custom
+// subset. Those shapes must stay intact so the runtime fails closed.
 //
 // This requires agent-runtime >= 0.15.3 and will break if that floor is lowered.
 // Under Codex's read-only sandbox every MCP tool call is gated behind
@@ -64,6 +65,8 @@ const PLAN_PERMISSION_MODE = "plan";
 // away, because agent-runtime pins `networkAccess: false` there. Kept in sync
 // with READ_ONLY_TOOLS in planning-harness.js.
 const NETWORK_TOOLS = ["WebFetch", "WebSearch"];
+const NATIVE_PLAN_ALLOWED_TOOLS = ["Read", "Glob", "Grep", ...NETWORK_TOOLS, "Bash"];
+const NATIVE_PLAN_DISALLOWED_TOOLS = ["Write", "Edit"];
 
 // Index RUNTIME_CAPABILITIES directly — runtimeCapabilities() throws on an
 // unknown sdk (same reasoning as core/execenv.js). An absent or unrecognized
@@ -77,6 +80,24 @@ function coversEveryBuiltin(allowed) {
   if (allowed.includes(WILDCARD)) return true;
   const granted = new Set(allowed);
   return WORKLAB_BUILTIN_TOOLS.every((tool) => granted.has(tool));
+}
+
+export function toolPolicyIsUnrestricted({ allowedTools, disallowedTools } = {}) {
+  const allowed = Array.isArray(allowedTools) ? allowedTools : null;
+  const disallowed = Array.isArray(disallowedTools) ? disallowedTools : [];
+  return disallowed.length === 0
+    && (allowed === null || allowed.includes(WILDCARD) || coversEveryBuiltin(allowed));
+}
+
+function hasExactly(tools, expected) {
+  if (!Array.isArray(tools)) return false;
+  const actual = new Set(tools);
+  return actual.size === expected.length && expected.every((tool) => actual.has(tool));
+}
+
+function isNativePlanShape(allowed, disallowed) {
+  return hasExactly(allowed, NATIVE_PLAN_ALLOWED_TOOLS)
+    && hasExactly(disallowed, NATIVE_PLAN_DISALLOWED_TOOLS);
 }
 
 /**
@@ -114,11 +135,10 @@ export function projectToolPolicy(resolved, {
     return { ...unchanged, allowedTools: [WILDCARD], disallowedTools: [] };
   }
 
-  // The planning stage asks for read-only. These runtimes cannot say that with a
-  // tool list, but they enforce it natively through `permissionMode: "plan"` —
-  // which is stricter on the filesystem than the allowlist Worklab asked for,
-  // because it also stops writes issued through a shell.
-  if (planning) {
+  // Translate only the full read-only-shell contract. Native plan mode is
+  // stricter for filesystem writes through Bash, but otherwise grants exactly
+  // the tools in this shape. Any narrower planning policy must fail closed.
+  if (planning && isNativePlanShape(allowed, disallowed)) {
     return {
       allowedTools: [WILDCARD],
       disallowedTools: [],
@@ -131,6 +151,8 @@ export function projectToolPolicy(resolved, {
       unenforceable: false,
     };
   }
+
+  if (planning) return { ...unchanged, unenforceable: true };
 
   // An arbitrary subset has no native equivalent — a read-only sandbox
   // constrains writes, not *which* tools exist — so there is nothing honest to

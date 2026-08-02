@@ -88,12 +88,16 @@ export function listAgentsWithRunStats(db, since) {
       a.subagent_mode,
       a.execution_mode,
       a.enabled,
+      CASE WHEN p.id IS NULL THEN 'local' ELSE 'external' END AS kind,
+      p.id AS acp_profile_id,
+      p.driver AS driver,
       a.created_at,
       a.updated_at,
       last_runs.last_run_at,
       COALESCE(recent_runs.run_count_30d, 0) AS run_count_30d,
       recent_runs.avg_run_duration_ms
     FROM agents a
+    LEFT JOIN acp_profiles p ON p.agent_name = a.name
     LEFT JOIN (
       SELECT agent_name, MAX(started_at) AS last_run_at
       FROM task_runs
@@ -127,12 +131,16 @@ export function listAgentSummariesWithRunStats(db, since) {
       a.subagent_mode,
       a.execution_mode,
       a.enabled,
+      CASE WHEN p.id IS NULL THEN 'local' ELSE 'external' END AS kind,
+      p.id AS acp_profile_id,
+      p.driver AS driver,
       a.created_at,
       a.updated_at,
       last_runs.last_run_at,
       COALESCE(recent_runs.run_count_30d, 0) AS run_count_30d,
       recent_runs.avg_run_duration_ms
     FROM agents a
+    LEFT JOIN acp_profiles p ON p.agent_name = a.name
     LEFT JOIN (
       SELECT agent_name, MAX(started_at) AS last_run_at
       FROM task_runs

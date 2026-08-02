@@ -3,7 +3,13 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { _resetForTests, decrypt, encrypt, getKeyFingerprint } from "../../core/crypto.js";
+import {
+  _resetForTests,
+  decrypt,
+  encrypt,
+  getAcpSessionTokenKey,
+  getKeyFingerprint,
+} from "../../core/crypto.js";
 
 let dataDir;
 
@@ -52,5 +58,18 @@ describe("provider credential crypto", () => {
     _resetForTests();
     expect(getKeyFingerprint({ dataDir })).not.toBe(firstFingerprint);
     expect(() => decrypt(payload, { dataDir })).toThrow();
+  });
+
+  it("derives a stable isolated ACP session-token key and returns defensive copies", () => {
+    const first = getAcpSessionTokenKey({ dataDir });
+    expect(first).toHaveLength(32);
+    first.fill(0);
+
+    const second = getAcpSessionTokenKey({ dataDir });
+    expect(second).toHaveLength(32);
+    expect(second.equals(Buffer.alloc(32))).toBe(false);
+
+    _resetForTests();
+    expect(getAcpSessionTokenKey({ dataDir })).toEqual(second);
   });
 });

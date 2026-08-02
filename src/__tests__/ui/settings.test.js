@@ -3,7 +3,6 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   COMPACTION_OVERRIDE_KEYS,
-  COMPACTION_OVERRIDE_SEED,
   compactionIsAdaptive,
   mcpAvailabilitySummary,
   mcpRowsFromServers,
@@ -311,10 +310,30 @@ describe("settings UI duration conversions", () => {
   });
 
   it("treats compaction as adaptive only when every override is unset", () => {
-    expect(COMPACTION_OVERRIDE_KEYS).toEqual(Object.keys(COMPACTION_OVERRIDE_SEED));
+    expect(COMPACTION_OVERRIDE_KEYS).toHaveLength(4);
     expect(compactionIsAdaptive({})).toBe(true);
     expect(compactionIsAdaptive({ agent_compaction_trigger_ratio: null })).toBe(true);
     expect(compactionIsAdaptive({ agent_compaction_trigger_ratio: 0.7 })).toBe(false);
+  });
+
+  it("represents partial compaction overrides without materializing adaptive values", () => {
+    const source = readFileSync(compactionSourcePath, "utf8");
+    const payload = settingsPayload({
+      agent_compaction_trigger_ratio: 0.7,
+      agent_compaction_keep_recent_tokens: null,
+      agent_compaction_summary_max_tokens: "",
+      agent_compaction_min_savings_tokens: null,
+    });
+
+    expect(source).not.toContain("COMPACTION_OVERRIDE_SEED");
+    expect(source).toContain('value={settings.agent_compaction_keep_recent_tokens ?? ""}');
+    expect(source).toContain('value === "" ? null : value');
+    expect(source).toContain("Adaptive when blank.");
+    expect(source).toContain("Reset all to adaptive");
+    expect(payload.agent_compaction_trigger_ratio).toBe(0.7);
+    expect(payload.agent_compaction_keep_recent_tokens).toBeNull();
+    expect(payload.agent_compaction_summary_max_tokens).toBeNull();
+    expect(payload.agent_compaction_min_savings_tokens).toBeNull();
   });
 
   it("defaults the Pi Codex transport payload to SSE", () => {

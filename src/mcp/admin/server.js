@@ -49,6 +49,7 @@ export function registerAdminMcpRoutes(app, { config, logger }) {
     const server = createAdminMcpServer({
       baseUrl: `http://${config.host}:${config.port}`,
       config,
+      token: expectedToken,
     });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     try {

@@ -2,12 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   generateResponse: vi.fn(),
+  agentSdk: "pi",
 }));
 
 vi.mock("../../core/index.js", () => ({
   buildTaskRunInput: vi.fn(() => ({
     task: { stage: "execute" },
-    agent: { model: "pi:openai-codex:gpt-5.5", effort: "medium" },
+    agent: { sdk: mocks.agentSdk, model: "pi:openai-codex:gpt-5.5", effort: "medium" },
     skills: [],
     mcpServers: {},
     allowedTools: [],
@@ -15,6 +16,7 @@ vi.mock("../../core/index.js", () => ({
     systemPrompt: "system",
     messages: [],
   })),
+  createWorklabAcpProfileResolver: vi.fn(() => vi.fn()),
   generateResponse: mocks.generateResponse,
   resolveModel: vi.fn((model) => ({ sdk: "pi", provider: "openai-codex", model: "gpt-5.5", reference: model })),
 }));
@@ -38,6 +40,35 @@ function taskContext() {
 describe("task runner result parsing", () => {
   beforeEach(() => {
     mocks.generateResponse.mockReset();
+    mocks.agentSdk = "pi";
+  });
+
+  it("rejects delegation results from ACP agents", async () => {
+    mocks.agentSdk = "acp";
+    mocks.generateResponse.mockResolvedValue({
+      text: JSON.stringify({
+        schema: "worklab.v2",
+        stage: "execute",
+        decision: "delegate",
+        summary: "Create an unauthorized child.",
+        details: "",
+        artifacts: {},
+        blocking_issues: [],
+        pending_actions: [],
+        subtasks: [{ title: "Unauthorized child", instructions: "Do work." }],
+      }),
+      usage: {},
+      durationMs: 1,
+      numTurns: 1,
+      model: "acp:external",
+      effort: "medium",
+    });
+
+    const result = await runTask(taskContext());
+
+    expect(result.parsedResultFatal).toBe(true);
+    expect(result.worklabResult).toBeNull();
+    expect(result.parsedResultError).toBe("delegation is unavailable for this agent runtime");
   });
 
   it("treats malformed worklab JSON as fatal instead of synthesizing advance", async () => {

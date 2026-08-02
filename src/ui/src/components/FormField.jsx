@@ -9,6 +9,7 @@ export function FormField({
   required = false,
   hint,
   error,
+  errorId,
   helpTooltip,
   htmlFor,
   switchInside = false,
@@ -38,7 +39,7 @@ export function FormField({
       )}
       {children}
       {hint && <div class="form-field-hint">{hint}</div>}
-      {error && <div class="form-field-error" role="alert">{error}</div>}
+      {error && <div id={errorId} class="form-field-error" role="alert">{error}</div>}
     </div>
   );
 }

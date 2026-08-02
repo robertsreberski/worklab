@@ -15,6 +15,11 @@ the document from source; do not reintroduce legacy behavior.
   `src/coordinator/watcher/`
 - Worker entry points: `src/worker.js` and `src/worker/`
 - Agent runtime package: `@mono-agent/agent-runtime`
+- ACP profiles and runtime resolution: `src/core/acp-profiles.js`,
+  `src/core/acp-runtime-profile.js`, and `src/core/acp-controls.js`
+- ACP operations and interactions: `src/coordinator/acp-operation-manager.js`,
+  `src/coordinator/spawn-worker/acp-interactions.js`, and
+  `src/api/routes/acp.js`
 
 ## Current Workflow Model
 
@@ -49,6 +54,57 @@ schema correction, finalization, and coordinator resume. `parent_run_id` is
 disambiguated by relationship metadata so stage progression, manual retry, and
 recovery continuation are not treated as the same behavior.
 
+## External ACP Agents
+
+An ACP-backed agent is stored as `sdk = 'acp'`, model
+`acp:<profile-id>`, and execution mode `acp`. The coordinator preflights that
+binding before spawn. The worker resolves the profile through the shared
+runtime and receives permission or elicitation responses over its private
+stdin control channel. A task worker sends an exact browser continuation URL
+to the coordinator over a dedicated inherited pipe rather than stdout or
+stderr; a management operation carries it through a non-enumerable in-process
+handoff. The coordinator retains either form only in its bounded, owner-bound,
+one-use memory store. Operation and task-run interaction schemas are sanitized
+before persistence or broadcast; response values and exact continuation URLs
+are process-only data and must never enter SQLite, run events, logs, or backups.
+
+Generic profiles are client-owned but limited to the services Worklab actually
+implements. Filesystem, terminal, and client-MCP requests are rejected during
+profile validation. Mono profiles come from a sanitized discovery descriptor;
+their command, environment-key set, configuration, workspace, MCP ownership,
+session policy, and probe timeout are agent-owned and immutable in Worklab.
+Both discovery and runtime processes receive an explicit environment allowlist.
+
+Agent-owned turns use `src/core/acp-task-input.js`. They receive task-owned
+state, comments, saved plans, prior outcomes, review evidence, workspace/result
+contracts, and file `resource_link` attachments. They do not receive Worklab
+persona instructions, memory, knowledge, skills, tools, MCP configuration,
+repository instructions, webhooks, resume payloads, or delegation policy.
+
+ACP provider session identifiers are opaque runtime values. Worklab may store
+and return the encoded identifier, but must not persist the remote raw session
+id or let one profile delete another profile's session. Cancellation is
+semantic: task aborts reach `session/cancel`, pending interactions settle
+fail-closed, and late protocol updates remain bounded and typed.
+
+Profile controls are asynchronous operations. One operation may be active for
+a profile at a time. The profile's bounded timeout applies while a control is
+starting or running, pauses for an explicit user interaction, and is rearmed
+when the operation resumes. Cancellation aborts the runtime request and gives
+its handler a bounded cleanup interval. During coordinator startup, queued,
+running, and interaction-waiting operations left by the previous process are
+atomically failed as `coordinator_restarted`; unresolved interactions for
+terminal operations are expired so profiles do not remain permanently busy.
+
+Generic ACP profiles launch a canonical absolute executable directly, without
+a shell, and project only the values of explicitly named host environment
+variables. Their persisted client capability policy must keep filesystem,
+terminal, network, and client-MCP services disabled. Those flags describe
+services Worklab will provide over ACP; they do not sandbox the child process
+from resources available to the Worklab OS user. ACP bindings currently accept
+task runs only. Agent-owned workspaces must match the canonical profile
+workspace and cannot be paired with a Worklab-created run worktree.
+
 ## Team Lead Cycles
 
 Team leads run as `task_runs.kind = 'lead_cycle'` against synthetic team-root
@@ -69,6 +125,14 @@ UI layers should consume core through public seams or documented query helpers.
 
 SQL belongs in `src/core/db/queries/` or schema/migration files. API routes must
 not use `db.prepare()` directly.
+
+All state-changing `/api` routes and active reads that can start a process use
+the API mutation boundary. Browser calls need an accepted `Origin`/`Referer`;
+non-browser automation needs the local service bearer token.
+`WORKLAB_ACP_ALLOWED_ORIGINS` adds exact HTTP(S) browser origins for trusted
+proxy layouts. This boundary mitigates cross-site request triggering but is not
+network authentication: listener exposure and tailnet membership remain an
+operator-owned trust decision.
 
 ## Audit Checklist
 

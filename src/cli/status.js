@@ -1,8 +1,14 @@
 // src/cli/status.js
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { loadConfig, serviceStatus, worklabBaseUrl } from "../core/index.js";
+import {
+  loadConfig,
+  serviceStatus,
+} from "../core/index.js";
 import { applyConfigArgs } from "./args.js";
+import {
+  coordinatorHealthMatchesClaim,
+  readCoordinatorHealth,
+} from "./coordinator-control.js";
+import { inspectCoordinatorStateOnce } from "./coordinator-state.js";
 import { inspectServiceRuntime, serviceRuntimeProblems } from "./service-runtime.js";
 
 export async function status(args = []) {
@@ -12,25 +18,27 @@ export async function status(args = []) {
   const runtime = inspectServiceRuntime(config);
   console.log(`service: ${JSON.stringify({ ...svc, runtime, problems: serviceRuntimeProblems(runtime) })}`);
 
-  const pidFile = join(config.dataDir, ".coordinator.pid");
-  if (!existsSync(pidFile)) {
+  const coordinator = inspectCoordinatorStateOnce({ dataDir: config.dataDir });
+  if (coordinator.status === "not_running") {
     console.log("coordinator: not running");
     return;
   }
-  const pid = parseInt(readFileSync(pidFile, "utf8").trim(), 10);
-  let alive = true;
-  try { process.kill(pid, 0); } catch { alive = false; }
-
-  if (!alive) {
-    console.log(`coordinator: stale pid file (pid ${pid} not alive)`);
+  if (coordinator.status === "stale_pid") {
+    console.log(`coordinator: stale pid file${coordinator.pid ? ` (pid ${coordinator.pid})` : ""}`);
     return;
   }
-
-  try {
-    const res = await fetch(`${worklabBaseUrl(config)}/api/health`);
-    const json = await res.json();
-    console.log(`coordinator: running pid=${pid} port=${config.port} health=${JSON.stringify(json)}`);
-  } catch (err) {
-    console.log(`coordinator: pid=${pid} alive but health check failed: ${err.message}`);
+  const response = await readCoordinatorHealth({ config });
+  if (coordinator.status === "ownership_busy") {
+    if (!coordinatorHealthMatchesClaim(response.health, coordinator)) {
+      console.log("coordinator: lifetime lock active; ownership identity is not yet confirmed");
+      return;
+    }
+    console.log(`coordinator: running pid=${coordinator.pid} identity=verified port=${config.port} health=${JSON.stringify(response.health)}`);
+    return;
+  }
+  if (response.status === "ok" && Number(response.health?.pid) === coordinator.pid) {
+    console.log(`coordinator: running pid=${coordinator.pid} identity=legacy port=${config.port} health=${JSON.stringify(response.health)}`);
+  } else {
+    console.log(`coordinator: legacy pid=${coordinator.pid} alive but health check failed`);
   }
 }

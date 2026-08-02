@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import Database from "better-sqlite3";
 import { compactLogs } from "../../cli/compact-logs.js";
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
@@ -163,10 +164,29 @@ describe("compact logs CLI helpers", () => {
     const dataDir = createDataDir();
     dirs.push(dataDir);
     seedDb(dataDir);
-    writeFileSync(join(dataDir, ".coordinator.pid"), String(process.pid));
+    const claim = `${process.pid}\nv2:compact-logs-test-incarnation`;
+    writeFileSync(join(dataDir, ".coordinator.pid"), claim);
+    const lock = new Database(join(dataDir, ".coordinator.lock"), { timeout: 0 });
+    lock.exec("BEGIN EXCLUSIVE");
+    try {
+      expect(() => compactLogs({ dataDir, apply: true, minAgeDays: 0, minBytes: 1 })).toThrow(/coordinator is running/i);
+      expect(existsSync(join(dataDir, ".coordinator.pid"))).toBe(true);
+      expect(readFileSync(join(dataDir, ".coordinator.pid"), "utf8")).toBe(claim);
+    } finally {
+      lock.exec("ROLLBACK");
+      lock.close();
+    }
+  });
 
-    expect(() => compactLogs({ dataDir, apply: true, minAgeDays: 0, minBytes: 1 })).toThrow(/coordinator is running/i);
-    expect(existsSync(join(dataDir, ".coordinator.pid"))).toBe(true);
-    expect(readFileSync(join(dataDir, ".coordinator.pid"), "utf8")).toBe(String(process.pid));
+  it("reclaims a stale v2 claim and holds the lifetime lock while applying", () => {
+    const dataDir = createDataDir();
+    dirs.push(dataDir);
+    seedDb(dataDir);
+    writeFileSync(join(dataDir, ".coordinator.pid"), `${process.pid}\nv2:stale-compact-incarnation`);
+
+    const report = compactLogs({ dataDir, apply: true, minAgeDays: 0, minBytes: 1 });
+
+    expect(report.dry_run).toBe(false);
+    expect(existsSync(join(dataDir, ".coordinator.pid"))).toBe(false);
   });
 });

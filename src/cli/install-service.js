@@ -4,7 +4,12 @@ import { homedir, platform, userInfo } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.js";
 import { applyConfigArgs } from "./args.js";
-import { gracefulStopCoordinator, gracefulStopTimeoutMs } from "./service-drain.js";
+import {
+  coordinatorStopComplete,
+  gracefulStopCoordinator,
+  gracefulStopTimeoutMs,
+  waitForCoordinatorRelease,
+} from "./service-drain.js";
 
 const LAUNCHD_LABEL = "ai.worklab";
 
@@ -180,6 +185,22 @@ function disableLaunchdService() {
   try { execFileSync("launchctl", ["disable", launchdTarget()], { stdio: "ignore" }); } catch { /* not loaded */ }
 }
 
+async function stopLaunchdCoordinator({ config, file }) {
+  const timeoutMs = gracefulStopTimeoutMs(config);
+  const graceful = await gracefulStopCoordinator({ config, timeoutMs });
+  if (coordinatorStopComplete(graceful)) return graceful;
+
+  // launchd owns the service identity, so bootout is the safe fallback when a
+  // pre-control Worklab or an unhealthy HTTP listener cannot authenticate the
+  // incarnation-scoped shutdown request. Never fall back to signaling a v2 PID.
+  try { execFileSync("launchctl", ["bootout", launchdDomain(), file], { stdio: "ignore" }); } catch { /* not loaded */ }
+  const stopped = await waitForCoordinatorRelease({ config, timeoutMs });
+  if (!coordinatorStopComplete(stopped)) {
+    throw new Error(`Worklab coordinator did not stop (${graceful.status} -> ${stopped.status})`);
+  }
+  return stopped;
+}
+
 export async function startUserService({ config = loadConfig() } = {}) {
   const p = platform();
   const file = serviceFilePath(p);
@@ -201,7 +222,7 @@ export async function restartUserService({ config = loadConfig() } = {}) {
   const file = serviceFilePath(p);
   if (p === "darwin") {
     disableLaunchdService();
-    await gracefulStopCoordinator({ config, timeoutMs: gracefulStopTimeoutMs(config) });
+    await stopLaunchdCoordinator({ config, file });
     bootstrapLaunchdService(file);
     return { platform: p, file };
   }
@@ -219,7 +240,7 @@ export async function stopUserService({ config = loadConfig() } = {}) {
   if (p === "darwin") {
     if (!existsSync(file)) throw new Error(`launchd service is not installed: ${file}`);
     disableLaunchdService();
-    await gracefulStopCoordinator({ config, timeoutMs: gracefulStopTimeoutMs(config) });
+    await stopLaunchdCoordinator({ config, file });
     try { execFileSync("launchctl", ["bootout", launchdDomain(), file], { stdio: "ignore" }); } catch { /* not loaded */ }
     return { platform: p, file };
   }

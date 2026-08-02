@@ -1,39 +1,85 @@
 import { describe, expect, it, vi } from "vitest";
-import { emitFinalResult } from "../../worker/result-emitter.js";
+import { emitCancelledEvent, emitFinalResult } from "../../worker/result-emitter.js";
+import { structuralAcpProviderSessionId } from "../helpers/acp-tokens.js";
+
+const PROVIDER_SESSION_ID = structuralAcpProviderSessionId("profile-1", "opaque-session");
+const RAW_PROTOCOL_RESULT = {
+  sessionId: "upstream-session-id",
+  messages: [{ role: "assistant", content: "raw protocol output must stay private" }],
+};
+
+function expectSanitizedProviderSession(event) {
+  expect(event).toMatchObject({ provider_session_id: PROVIDER_SESSION_ID });
+  expect(event).not.toHaveProperty("providerSessionId");
+  expect(event).not.toHaveProperty("protocolResult");
+  expect(JSON.stringify(event)).not.toContain("raw protocol output must stay private");
+}
 
 describe("emitFinalResult", () => {
-  it("includes provider session ids on successful final events", () => {
+  it.each([
+    ["consolidate", {}],
+    ["automation", {}],
+    ["task", { worklabResult: { schema: "worklab.v2" } }],
+    ["review", { worklabResult: { schema: "worklab.v2" }, verdict: "APPROVE", notes: "Looks good." }],
+    ["lead_cycle", { leadCycleResult: { schema: "worklab.lead_cycle.v1" } }],
+  ])("includes only the sanitized provider session payload on successful %s final events", (kind, extra) => {
     const emit = vi.fn();
 
     const exitCode = emitFinalResult({ emit }, {
-      kind: "task",
+      kind,
       text: "done",
       usage: {},
       durationMs: 10,
       numTurns: 1,
       model: "claude-sonnet-4-6",
       effort: "medium",
-      providerSessionId: "claude-session-1",
-      worklabResult: {
-        schema: "worklab.v2",
-        stage: "execute",
-        decision: "advance",
-        summary: "Done.",
-        details: "Done.",
-        final_text: "Done.",
-        artifacts: {},
-        blocking_issues: [],
-        pending_actions: [],
-        questions: [],
-        subtasks: [],
-      },
+      providerSessionId: PROVIDER_SESSION_ID,
+      protocolResult: RAW_PROTOCOL_RESULT,
+      ...extra,
     });
 
     expect(exitCode).toBe(0);
-    expect(emit).toHaveBeenCalledWith(expect.objectContaining({
-      type: "final",
-      provider_session_id: "claude-session-1",
-    }));
+    const finalEvent = emit.mock.calls.find(([event]) => event.type === "final")?.[0];
+    expect(finalEvent).toBeTruthy();
+    expectSanitizedProviderSession(finalEvent);
+  });
+
+  it("includes only the sanitized provider session payload on cancellations", () => {
+    const emit = vi.fn();
+
+    const exitCode = emitFinalResult({ emit }, {
+      kind: "task",
+      cancelled: true,
+      providerSessionId: PROVIDER_SESSION_ID,
+      protocolResult: RAW_PROTOCOL_RESULT,
+    });
+
+    expect(exitCode).toBe(130);
+    expect(emit).toHaveBeenCalledTimes(1);
+    const event = emit.mock.calls[0][0];
+    expect(event.type).toBe("cancelled");
+    expectSanitizedProviderSession(event);
+  });
+
+  it("preserves provider sessions on coordinator drain cancellation events", () => {
+    const emit = vi.fn();
+
+    emitCancelledEvent(emit, {
+      providerSessionId: PROVIDER_SESSION_ID,
+      protocolResult: RAW_PROTOCOL_RESULT,
+    }, {
+      initiator: "coordinator_shutdown",
+      drained: true,
+    });
+
+    expect(emit).toHaveBeenCalledTimes(1);
+    const event = emit.mock.calls[0][0];
+    expect(event).toMatchObject({
+      type: "cancelled",
+      initiator: "coordinator_shutdown",
+      drained: true,
+    });
+    expectSanitizedProviderSession(event);
   });
 
   it("emits runtime warnings before terminal provider errors", () => {
@@ -70,6 +116,8 @@ describe("emitFinalResult", () => {
       failureKind: "provider_unavailable",
       errorDetails: { pi_transport: "sse" },
       diagnostics: { pi_transport: "sse", turn_count: 19 },
+      providerSessionId: PROVIDER_SESSION_ID,
+      protocolResult: RAW_PROTOCOL_RESULT,
     });
 
     expect(exitCode).toBe(1);
@@ -79,7 +127,9 @@ describe("emitFinalResult", () => {
       failureKind: "provider_unavailable",
       details: { pi_transport: "sse" },
       diagnostics: { pi_transport: "sse", turn_count: 19 },
+      provider_session_id: PROVIDER_SESSION_ID,
     });
+    expectSanitizedProviderSession(emit.mock.calls[0][0]);
   });
 
   it("emits parse-failure diagnostics with terminal worklab_result_error events", () => {
@@ -99,6 +149,8 @@ describe("emitFinalResult", () => {
         last_tool_name: "journal_summary",
         structured_output_finalization_retry_attempts: 1,
       },
+      providerSessionId: PROVIDER_SESSION_ID,
+      protocolResult: RAW_PROTOCOL_RESULT,
     });
 
     expect(exitCode).toBe(1);
@@ -120,7 +172,46 @@ describe("emitFinalResult", () => {
         last_tool_name: "journal_summary",
         structured_output_finalization_retry_attempts: 1,
       },
+      provider_session_id: PROVIDER_SESSION_ID,
     });
+    expectSanitizedProviderSession(emit.mock.calls[2][0]);
+  });
+
+  it.each([
+    ["review", { parsedResultFatalMessage: "invalid reviewer result" }],
+    ["lead_cycle", {}],
+  ])("includes only the sanitized provider session payload on %s parse errors", (kind, extra) => {
+    const emit = vi.fn();
+
+    const exitCode = emitFinalResult({ emit }, {
+      kind,
+      parsedResultError: "invalid structured result",
+      parsedResultFatal: true,
+      providerSessionId: PROVIDER_SESSION_ID,
+      protocolResult: RAW_PROTOCOL_RESULT,
+      ...extra,
+    });
+
+    expect(exitCode).toBe(1);
+    const errorEvent = emit.mock.calls.find(([event]) => event.type === "worklab_result_error")?.[0];
+    expect(errorEvent).toBeTruthy();
+    expectSanitizedProviderSession(errorEvent);
+  });
+
+  it("includes only the sanitized provider session payload on unknown-runner errors", () => {
+    const emit = vi.fn();
+
+    const exitCode = emitFinalResult({ emit }, {
+      kind: "unexpected",
+      providerSessionId: PROVIDER_SESSION_ID,
+      protocolResult: RAW_PROTOCOL_RESULT,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(emit).toHaveBeenCalledTimes(1);
+    const event = emit.mock.calls[0][0];
+    expect(event).toMatchObject({ type: "error", message: "unknown runner kind: unexpected" });
+    expectSanitizedProviderSession(event);
   });
 
   it("forwards capabilitiesUsed, failoverHistory, and observerSnapshot on the final event", () => {

@@ -98,6 +98,27 @@ describe("consolidation manager", () => {
     }));
   });
 
+  it("skips scheduled ACP consolidation before recording or spawning a run", () => {
+    const { db, spawn, manager } = fixture();
+    db.prepare(`
+      UPDATE agents
+      SET sdk = 'acp', model = 'acp:external-profile', execution_mode = 'acp'
+      WHERE name = 'alice'
+    `).run();
+
+    expect(manager.runNow("alice")).toEqual({
+      skipped: true,
+      reason: "external ACP agents currently support task runs only",
+    });
+    expect(manager.tick(new Date("2026-04-22T03:10:00Z"))).toEqual({
+      started: [],
+      at: "2026-04-22T03:10:00.000Z",
+    });
+    expect(spawn).not.toHaveBeenCalled();
+    expect(db.prepare("SELECT COUNT(*) AS count FROM task_runs").get().count).toBe(0);
+    expect(db.prepare("SELECT COUNT(*) AS count FROM agent_consolidations").get().count).toBe(0);
+  });
+
   it("scheduled ticks run at the configured hour and skip unchanged journals", async () => {
     const { db, spawn, manager } = fixture();
     const first = manager.tick(new Date("2026-04-22T03:10:00Z"));

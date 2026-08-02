@@ -23,6 +23,7 @@ import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
 import { createTaskWatcher } from "../../coordinator/task-watcher.js";
 import { spawnWorker } from "../../coordinator/spawn-worker.js";
+import { sameOriginFetch } from "../helpers/test-server.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fakeBinary = resolve(__dirname, "../helpers/fake-worker.js");
@@ -52,7 +53,7 @@ async function pollTaskUntil(baseUrl, taskId, predicate, { timeoutMs = 5000, ste
   const deadline = Date.now() + timeoutMs;
   let last = null;
   while (Date.now() < deadline) {
-    const resp = await fetch(`${baseUrl}/api/tasks/${taskId}`).then((r) => r.json());
+    const resp = await sameOriginFetch(`${baseUrl}/api/tasks/${taskId}`).then((r) => r.json());
     last = resp;
     if (predicate(resp)) return resp;
     await new Promise((r) => setTimeout(r, stepMs));
@@ -61,7 +62,7 @@ async function pollTaskUntil(baseUrl, taskId, predicate, { timeoutMs = 5000, ste
 }
 
 async function createAgent(baseUrl, name, display_name) {
-  const res = await fetch(`${baseUrl}/api/agents`, {
+  const res = await sameOriginFetch(`${baseUrl}/api/agents`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, display_name, sdk: "claude", model: "claude:claude-sonnet-4-6" }),
@@ -144,7 +145,7 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     await createAgent(ctx.baseUrl, "exec", "Exec Agent");
     await createAgent(ctx.baseUrl, "reviewer", "Reviewer Agent");
 
-    const taskRes = await fetch(`${ctx.baseUrl}/api/tasks`, {
+    const taskRes = await sameOriginFetch(`${ctx.baseUrl}/api/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: "e2e approve", instructions: "End-to-end review-lifecycle harness: executor runs and reviewer should APPROVE, sending the task into done.", owner_agent: "exec", reviewer_agent: "reviewer", stage: "execute", run_policy: "manual" }),
@@ -152,7 +153,7 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     expect(taskRes.status).toBe(201);
     const { task } = await taskRes.json();
 
-    const runRes = await fetch(`${ctx.baseUrl}/api/tasks/${task.id}/run`, { method: "POST" });
+    const runRes = await sameOriginFetch(`${ctx.baseUrl}/api/tasks/${task.id}/run`, { method: "POST" });
     expect(runRes.status).toBe(200);
 
     const reviewReady = await pollTaskUntil(
@@ -163,7 +164,7 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     );
     expect(reviewReady.task.stage).toBe("review");
 
-    const reviewRunRes = await fetch(`${ctx.baseUrl}/api/tasks/${task.id}/run`, { method: "POST" });
+    const reviewRunRes = await sameOriginFetch(`${ctx.baseUrl}/api/tasks/${task.id}/run`, { method: "POST" });
     expect(reviewRunRes.status).toBe(200);
 
     const finalResp = await pollTaskUntil(
@@ -218,7 +219,7 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     await createAgent(ctx.baseUrl, "exec", "Exec Agent");
     await createAgent(ctx.baseUrl, "reviewer", "Reviewer Agent");
 
-    const taskRes = await fetch(`${ctx.baseUrl}/api/tasks`, {
+    const taskRes = await sameOriginFetch(`${ctx.baseUrl}/api/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: "e2e reject", instructions: "End-to-end review-lifecycle harness: executor runs and reviewer should REJECT with notes, bouncing the task back to execute.", owner_agent: "exec", reviewer_agent: "reviewer", stage: "execute", run_policy: "manual" }),
@@ -226,7 +227,7 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     expect(taskRes.status).toBe(201);
     const { task } = await taskRes.json();
 
-    const runRes = await fetch(`${ctx.baseUrl}/api/tasks/${task.id}/run`, { method: "POST" });
+    const runRes = await sameOriginFetch(`${ctx.baseUrl}/api/tasks/${task.id}/run`, { method: "POST" });
     expect(runRes.status).toBe(200);
 
     const reviewReady = await pollTaskUntil(
@@ -237,7 +238,7 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     );
     expect(reviewReady.task.stage).toBe("review");
 
-    const reviewRunRes = await fetch(`${ctx.baseUrl}/api/tasks/${task.id}/run`, { method: "POST" });
+    const reviewRunRes = await sameOriginFetch(`${ctx.baseUrl}/api/tasks/${task.id}/run`, { method: "POST" });
     expect(reviewRunRes.status).toBe(200);
 
     // Wait for the reviewer to bounce it back to the retryable execute stage.

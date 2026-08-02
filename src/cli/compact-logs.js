@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   autoPromotedRunResultInfo,
@@ -7,6 +7,7 @@ import {
   kbRead,
   loadConfig,
   openDb,
+  releaseCoordinatorLock,
   runMigrations,
   SQLITE_LOG_COMPACTION_STRATEGY,
   SQLITE_LOG_COMPACTION_VERSION,
@@ -14,6 +15,7 @@ import {
   jsonByteLength,
 } from "../core/index.js";
 import { argValue, hasFlag } from "./args.js";
+import { inspectCoordinatorStateOnce } from "./coordinator-state.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -44,25 +46,6 @@ function parseEvents(value) {
     return Array.isArray(parsed) ? parsed : null;
   } catch {
     return null;
-  }
-}
-
-function activeCoordinatorPid(dataDir) {
-  const pidPath = join(dataDir, ".coordinator.pid");
-  if (!existsSync(pidPath)) return null;
-  let pid = null;
-  try {
-    pid = Number(String(readFileSync(pidPath, "utf8")).trim());
-  } catch {
-    return null;
-  }
-  if (!Number.isInteger(pid) || pid <= 0) return null;
-  try {
-    process.kill(pid, 0);
-    return pid;
-  } catch (err) {
-    if (err?.code === "ESRCH") return null;
-    return pid;
   }
 }
 
@@ -180,7 +163,7 @@ function eventBlobStats(db) {
   `).get();
 }
 
-export function compactLogs({
+function compactLogsUnlocked({
   dataDir = loadConfig().dataDir,
   apply = false,
   minAgeDays = 7,
@@ -193,11 +176,6 @@ export function compactLogs({
   vacuum = false,
   now = Date.now(),
 } = {}) {
-  if (apply) {
-    const pid = activeCoordinatorPid(dataDir);
-    if (pid) throw new Error(`coordinator is running for ${dataDir} (pid ${pid}); stop Worklab before compacting logs`);
-  }
-
   const dbPath = join(dataDir, "worklab.db");
   if (!existsSync(dbPath)) {
     return {
@@ -285,6 +263,24 @@ export function compactLogs({
     uncompacted_bytes: Number(beforeStats.uncompacted_bytes || 0),
     vacuumed: Boolean(apply && vacuum),
   };
+}
+
+export function compactLogs(options = {}) {
+  const dataDir = options.dataDir || loadConfig().dataDir;
+  const apply = options.apply === true;
+  let lease = null;
+  if (apply) {
+    const coordinator = inspectCoordinatorStateOnce({ dataDir, retainLease: true });
+    if (coordinator.status === "running" || coordinator.status === "ownership_busy") {
+      throw new Error(`coordinator is running for ${dataDir}${coordinator.pid ? ` (pid ${coordinator.pid})` : ""}; stop Worklab before compacting logs`);
+    }
+    lease = coordinator.lease;
+  }
+  try {
+    return compactLogsUnlocked({ ...options, dataDir, apply });
+  } finally {
+    releaseCoordinatorLock(lease);
+  }
 }
 
 function printReport(report) {

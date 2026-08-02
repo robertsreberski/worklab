@@ -33,7 +33,7 @@ export function Library({ tab = "agents", rest = [], query = {}, detailOnly = fa
 
   let body;
   if (activeTab === "agents") {
-    body = <AgentsTab selectedName={item || null} detailOnly={detailOnly} />;
+    body = <AgentsTab selectedName={item || null} createMode={mode || null} detailOnly={detailOnly} />;
   } else if (activeTab === "teams") {
     body = <TeamsTab selectedId={item || null} mode={mode || null} detailOnly={detailOnly} />;
   } else if (activeTab === "skills") {

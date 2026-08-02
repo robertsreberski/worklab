@@ -1,0 +1,159 @@
+import { constants, accessSync, realpathSync, statSync } from "node:fs";
+import { delimiter, isAbsolute, join } from "node:path";
+
+import { assertAcpProfileBinding } from "./acp-profiles.js";
+import {
+  discoverMonoAcpAgents,
+  monoAcpHostEnvironment,
+} from "./acp-mono-discovery.js";
+
+const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const MAX_ACP_LINE_BYTES = 16 * 1024 * 1024;
+const ACP_MANAGEMENT_OPERATIONS = new Set([
+  "probe",
+  "authenticate",
+  "logout",
+  "list_sessions",
+  "delete_session",
+]);
+
+function runtimeProfileError(code, message) {
+  return Object.assign(new Error(message), { code, publicMessage: message });
+}
+
+function selectedEnvironment(keys, env) {
+  const result = {};
+  const missing = [];
+  for (const key of keys) {
+    if (!ENV_KEY_RE.test(key)) throw runtimeProfileError("profile_invalid", "ACP profile contains an invalid environment key");
+    if (typeof env[key] !== "string") missing.push(key);
+    else result[key] = env[key];
+  }
+  if (missing.length) {
+    throw runtimeProfileError(
+      "environment_missing",
+      `ACP profile requires unavailable environment keys: ${missing.join(", ")}`,
+    );
+  }
+  return result;
+}
+
+function sessionConfiguration(profile) {
+  const policy = profile.sessionPolicy && typeof profile.sessionPolicy === "object"
+    ? profile.sessionPolicy
+    : {};
+  const resumeStrategy = ["auto", "load", "resume"].includes(policy.resumeStrategy)
+    ? policy.resumeStrategy
+    : "auto";
+  const configOptions = policy.configOptions && typeof policy.configOptions === "object" && !Array.isArray(policy.configOptions)
+    ? policy.configOptions
+    : {};
+  return {
+    additionalDirectories: [],
+    mcpServers: [],
+    resumeStrategy,
+    ...(profile.configurationOwner === "client" && typeof policy.modeId === "string"
+      ? { modeId: policy.modeId }
+      : {}),
+    ...(profile.configurationOwner === "client" ? { configOptions } : {}),
+  };
+}
+
+export function createWorklabAcpProfileResolver({
+  db,
+  env = process.env,
+  urlHandoffAvailable = false,
+} = {}) {
+  return async function resolveAcpProfile(profileId, context = {}) {
+    const profile = assertAcpProfileBinding({ db, id: profileId });
+    const operation = typeof context?.operation === "string" ? context.operation : "";
+    if (!profile.agent.enabled && !ACP_MANAGEMENT_OPERATIONS.has(operation)) {
+      throw runtimeProfileError("profile_disabled", "ACP profile agent is disabled");
+    }
+    const unsupported = ["filesystem", "terminal", "network", "mcp"]
+      .filter((capability) => profile.permissionsPolicy?.[capability] === true);
+    if (unsupported.length) {
+      throw runtimeProfileError(
+        "capability_unsupported",
+        `Worklab does not enable ACP client ${unsupported.join(", ")} capabilities`,
+      );
+    }
+    const environment = profile.driver === "mono"
+      ? monoAcpHostEnvironment(env)
+      : selectedEnvironment(profile.envKeys, env);
+    return {
+      command: profile.command,
+      args: profile.args,
+      cwd: profile.cwd || profile.canonicalWorkspace || undefined,
+      env: environment,
+      configurationOwner: profile.configurationOwner,
+      workspaceOwner: profile.workspaceOwner,
+      mcpOwner: profile.mcpOwner,
+      ...(profile.canonicalWorkspace ? { workspacePath: profile.canonicalWorkspace } : {}),
+      capabilityPolicy: {
+        filesystem: { readTextFile: false, writeTextFile: false },
+        terminal: false,
+        elicitation: { form: true, url: urlHandoffAvailable === true },
+        sessionConfig: { boolean: false },
+        mcp: { stdio: false, http: false, sse: false },
+      },
+      sessionConfig: sessionConfiguration(profile),
+      process: {
+        startupTimeoutMs: profile.probeTimeoutMs,
+        requestTimeoutMs: 0,
+        shutdownGraceMs: 1_000,
+        killGraceMs: 1_000,
+        stderrTailBytes: 8 * 1024,
+        maxLineBytes: MAX_ACP_LINE_BYTES,
+      },
+    };
+  };
+}
+
+export function resolveExecutable(command, env = process.env) {
+  const candidates = isAbsolute(command)
+    ? [command]
+    : String(env.PATH || "").split(delimiter).filter(Boolean).map((directory) => join(directory, command));
+  for (const candidate of candidates) {
+    try {
+      const canonical = realpathSync(candidate);
+      if (!statSync(canonical).isFile()) continue;
+      accessSync(canonical, constants.X_OK);
+      return canonical;
+    } catch { /* try next PATH entry */ }
+  }
+  throw runtimeProfileError("mono_agent_not_found", "mono-agent executable was not found");
+}
+
+export function createMonoAcpDiscoveryControls({
+  command,
+  env = process.env,
+  discover = discoverMonoAcpAgents,
+  resolveExecutableImpl = resolveExecutable,
+} = {}) {
+  const hostEnv = monoAcpHostEnvironment(env);
+  const configuredCommand = command || env.WORKLAB_MONO_AGENT_BIN || "mono-agent";
+  const executable = () => resolveExecutableImpl(configuredCommand, hostEnv);
+  async function discoverMono(options = {}) {
+    const resolvedCommand = executable();
+    return discover({ ...options, command: resolvedCommand, env: hostEnv });
+  }
+  async function resolveMonoSource({ sourceId, signal, timeoutMs } = {}) {
+    if (signal?.aborted) throw signal.reason || runtimeProfileError("cancelled", "mono-agent discovery was cancelled");
+    const resolvedCommand = executable();
+    const discovery = await discover({ signal, timeoutMs, command: resolvedCommand, env: hostEnv });
+    const descriptor = discovery.sources.find((source) => source.sourceId === sourceId);
+    if (!descriptor) throw runtimeProfileError("source_not_found", "mono-agent source was not found");
+    if (!descriptor.compatible) throw runtimeProfileError("source_incompatible", "mono-agent source is not compatible");
+    if (descriptor.health !== "running") {
+      throw runtimeProfileError("source_not_running", "mono-agent source is not running");
+    }
+    return {
+      descriptor,
+      command: resolvedCommand,
+      args: ["bridge", "acp", "--source-id", descriptor.sourceId],
+      envKeys: Object.keys(hostEnv),
+    };
+  }
+  return { discoverMono, resolveMonoSource };
+}

@@ -74,6 +74,66 @@ describe("admin MCP tools", () => {
     await expect(apiRequest({ baseUrl: "http://127.0.0.1:1" }, "GET", "/mcp")).rejects.toThrow(/\/api/);
   });
 
+  it("never follows API redirects from the Worklab process", async () => {
+    let targetHits = 0;
+    const fetchImpl = vi.fn(async (_url, init) => {
+      if (init.redirect !== "manual") targetHits += 1;
+      return new Response(null, {
+        status: 303,
+        headers: { location: "http://127.0.0.1:9/private-agent-target" },
+      });
+    });
+
+    await expect(apiRequest({
+      baseUrl: "http://localhost:7878",
+      token: "service-token",
+      fetchImpl,
+    }, "POST", "/api/acp/interactions/interaction-1/url:open"))
+      .rejects.toThrow(/failed \(303\)/u);
+
+    expect(targetHits).toBe(0);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0][1]).toMatchObject({ redirect: "manual" });
+  });
+
+  it("blocks private ACP browser handoffs from the admin API escape hatch", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const handlers = createAdminToolHandlers({
+      baseUrl: "http://localhost:7878",
+      token: "test-service-token",
+      fetchImpl,
+    });
+    const paths = [
+      "/api/acp/interactions/interaction-1/url:open",
+      "/api/acp/interactions/interaction-1/url%3Aopen?source=mcp",
+      "/api/other/../acp/interactions/interaction-1/url:open/",
+    ];
+
+    for (const path of paths) {
+      await expect(handlers.worklab_api_request({ method: "POST", path }))
+        .rejects.toThrow("ACP URL handoffs can only be opened by the Worklab browser UI");
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("authenticates internal API mutations with the configured service token", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    const handlers = createAdminToolHandlers({
+      baseUrl: "http://localhost:7878",
+      token: "test-service-token",
+      fetchImpl,
+    });
+
+    await handlers.worklab_task_create({ title: "Authenticated internal request" });
+
+    const [, init] = fetchImpl.mock.calls[0];
+    expect(new Headers(init.headers).get("authorization")).toBe("Bearer test-service-token");
+    expect(init.redirect).toBe("manual");
+  });
+
   it("maps wrapper tools onto existing HTTP API routes", async () => {
     const fetchImpl = vi.fn(async (url, init) => new Response(JSON.stringify({
       url: String(url),

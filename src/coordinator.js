@@ -1,9 +1,10 @@
 // src/coordinator.js
 import { createServer as createHttpServer } from "node:http";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { promisify } from "node:util";
+import Database from "better-sqlite3";
 import { createServer } from "./api/server.js";
 import {
   closeDb,
@@ -28,11 +29,104 @@ import { createBackgroundServiceRegistry, startDeferredService } from "./coordin
 import { createStartupTimer } from "./coordinator/startup-timer.js";
 import { mountStaticUi } from "./coordinator/static-ui.js";
 import { createWatcherProxy } from "./coordinator/watcher-proxy.js";
+import { reconcileOrphanedAcpOperations } from "./coordinator/acp-operation-manager.js";
+import { createAcpUrlHandoffStore, createWorklabAcpControls } from "./core/index.js";
+import {
+  createCoordinatorClaim,
+  parseCoordinatorClaim,
+  parseCoordinatorPid,
+} from "./core/process/index.js";
 
 const DEFAULT_OPTIONAL_SERVICE_START_TIMEOUT_MS = 5000;
+const COORDINATOR_LOCK_FILE = ".coordinator.lock";
+const COORDINATOR_PID_FILE = ".coordinator.pid";
 
 export { startDeferredService } from "./coordinator/service-registry.js";
 export { createWatcherProxy } from "./coordinator/watcher-proxy.js";
+
+function coordinatorProcessAlive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+function readFileOrNull(path) {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+function unlinkMatchingFile(path, expected) {
+  try {
+    if (readFileSync(path, "utf8") !== expected) return false;
+    unlinkSync(path);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+function coordinatorActiveError(dataDir, pid) {
+  return new Error(`Worklab is already running for ${dataDir}${pid ? ` (pid ${pid})` : ""}`);
+}
+
+function closeCoordinatorLock(lockDb) {
+  try {
+    if (lockDb?.inTransaction) lockDb.exec("ROLLBACK");
+  } finally {
+    try { lockDb?.close(); } catch {}
+  }
+}
+
+function claimCoordinatorOwnership(dataDir) {
+  const lockFile = join(dataDir, COORDINATOR_LOCK_FILE);
+  const pidFile = join(dataDir, COORDINATOR_PID_FILE);
+  const lockDb = new Database(lockFile, { timeout: 0 });
+  lockDb.pragma("busy_timeout = 0");
+  try {
+    // The open transaction is the ownership token. SQLite releases its kernel
+    // lock if the process exits, so there is no stale file to reclaim.
+    lockDb.exec("BEGIN EXCLUSIVE");
+  } catch (error) {
+    closeCoordinatorLock(lockDb);
+    if (error?.code === "SQLITE_BUSY" || error?.code === "SQLITE_LOCKED") {
+      throw coordinatorActiveError(dataDir, parseCoordinatorPid(readFileOrNull(pidFile)));
+    }
+    throw error;
+  }
+  try {
+    const previousClaim = parseCoordinatorClaim(readFileOrNull(pidFile));
+    // A numeric-only file can belong to a still-running pre-v2 coordinator,
+    // which did not hold the SQLite lock. A v2 claim cannot: acquiring the
+    // lifetime lock proves that incarnation is gone, even if its PID was reused.
+    if (previousClaim.format === "legacy" && coordinatorProcessAlive(previousClaim.pid)) {
+      throw coordinatorActiveError(dataDir, previousClaim.pid);
+    }
+    const pidContent = createCoordinatorClaim(process.pid);
+    writeFileSync(pidFile, pidContent, { mode: 0o600 });
+    return { lockDb, pidFile, pidContent };
+  } catch (error) {
+    closeCoordinatorLock(lockDb);
+    throw error;
+  }
+}
+
+function releaseCoordinatorOwnership(ownership) {
+  if (!ownership) return false;
+  try {
+    return unlinkMatchingFile(ownership.pidFile, ownership.pidContent);
+  } finally {
+    closeCoordinatorLock(ownership.lockDb);
+  }
+}
 
 export async function startCoordinator({
   config = loadConfig(),
@@ -49,33 +143,24 @@ export async function startCoordinator({
     startSearchIndexer,
     createWorklabSlackService,
     createWorklabPushNotificationService,
+    createWorklabAcpControls,
     ...services,
   };
   mkdirSync(config.dataDir, { recursive: true });
   mkdirSync(config.workspace, { recursive: true });
+  const ownership = claimCoordinatorOwnership(config.dataDir);
 
-  const pidFile = join(config.dataDir, ".coordinator.pid");
-  if (existsSync(pidFile)) {
-    const pid = parseInt(readFileSync(pidFile, "utf8").trim(), 10);
-    if (Number.isFinite(pid) && pid !== process.pid) {
-      try {
-        process.kill(pid, 0);
-        throw new Error(`Worklab is already running for ${config.dataDir} (pid ${pid})`);
-      } catch (err) {
-        if (err?.code !== "ESRCH") throw err;
-        try { unlinkSync(pidFile); } catch {}
-      }
-    } else {
-      try { unlinkSync(pidFile); } catch {}
-    }
-  }
-
+  try {
   const templateDir = join(config.repoRoot, "data-template");
   const seedResult = seedDataFromTemplate({ templateDir, dataDir: config.dataDir });
   if (seedResult.seeded) logger.info("seeded data dir from template");
 
   const dbPath = join(config.dataDir, "worklab.db");
   const db = getDb(dbPath);
+  // The atomic ownership claim above is the process boundary for crash recovery.
+  // Manager instances can also be created by tests and embedded servers, so
+  // they must never reinterpret another live manager's rows as orphaned.
+  reconcileOrphanedAcpOperations({ db, logger });
 
   // Seed the default planner / executor / reviewer trio if missing. Idempotent —
   // existing rows with the same name are left alone, so users can rename or
@@ -124,7 +209,15 @@ export async function startCoordinator({
     events,
     logger,
   });
-  const { app, broker } = createServer({
+  const acpUrlHandoffStore = createAcpUrlHandoffStore();
+  const coordinatorClaim = parseCoordinatorClaim(ownership.pidContent);
+  const shutdownRequest = { current: null };
+  const acpControls = deps.createWorklabAcpControls({
+    db,
+    dataDir: config.dataDir,
+    urlHandoffAvailable: acpUrlHandoffStore.available === true,
+  });
+  const { app, broker, acpOperationManager } = createServer({
     db,
     logger,
     watcher: watcherProxy,
@@ -137,10 +230,24 @@ export async function startCoordinator({
     slack: slackProxy,
     notifications: pushNotifications,
     serviceStatus,
+    acpControls,
+    acpUrlHandoffStore,
+    coordinatorControl: {
+      incarnation: coordinatorClaim.incarnation,
+      requestShutdown: () => {
+        if (!shutdownRequest.current) throw new Error("coordinator shutdown control is not ready");
+        return shutdownRequest.current();
+      },
+    },
+  });
+
+  const spawnRuntimeWorker = (options) => spawnWorker({
+    ...options,
+    acpUrlHandoffStore,
   });
 
   watcherHolder.current = deps.createTaskWatcher({
-    db, broker, spawn: spawnWorker, workerBinary, logger,
+    db, broker, spawn: spawnRuntimeWorker, workerBinary, logger,
     repoRoot: config.repoRoot, dataDir: config.dataDir, workspace: config.workspace,
     runTimeoutMs: config.runTimeoutMs,
     runIdleWarningMs: config.runIdleWarningMs,
@@ -148,14 +255,14 @@ export async function startCoordinator({
     events,
   });
   consolidationHolder.current = deps.createConsolidationManager({
-    db, broker, spawn: spawnWorker, workerBinary, logger,
+    db, broker, spawn: spawnRuntimeWorker, workerBinary, logger,
     repoRoot: config.repoRoot, dataDir: config.dataDir, config,
     runTimeoutMs: config.runTimeoutMs,
     runIdleWarningMs: config.runIdleWarningMs,
     logInlineLimit: config.logInlineLimit,
   });
   automationManagerHolder.current = deps.createAutomationManager({
-    db, broker, spawn: spawnWorker, watcher: watcherHolder.current, workerBinary, logger,
+    db, broker, spawn: spawnRuntimeWorker, watcher: watcherHolder.current, workerBinary, logger,
     repoRoot: config.repoRoot, dataDir: config.dataDir, workspace: config.workspace,
     runTimeoutMs: config.runTimeoutMs,
     runIdleWarningMs: config.runIdleWarningMs,
@@ -180,8 +287,6 @@ export async function startCoordinator({
   });
   logger.info({ host: config.host, port: config.port }, "coordinator listening");
   markStartup("http_listen", { host: config.host, port: http.address()?.port || config.port });
-
-  writeFileSync(pidFile, String(process.pid));
 
   function startOptionalServices() {
     if (optionalServicesStarted || shuttingDown) return;
@@ -293,6 +398,8 @@ export async function startCoordinator({
     optionalServicesHandle = null;
 
     try { await watcherHolder.current.shutdown({ drainTimeoutMs }); } catch (err) { logger.warn({ err }, "watcher shutdown error"); }
+    try { await acpOperationManager.shutdown(); } catch (err) { logger.warn({ err }, "ACP operation manager shutdown error"); }
+    try { acpUrlHandoffStore.clear(); } catch (err) { logger.warn({ err }, "ACP URL handoff cleanup error"); }
     if (backgroundServices) {
       await backgroundServices.shutdownAll();
     } else {
@@ -311,7 +418,7 @@ export async function startCoordinator({
 
     try { await closeHttp(); } catch (err) { logger.warn({ err }, "http close error"); }
     try { closeDb(); } catch (err) { logger.warn({ err }, "db close error"); }
-    try { unlinkSync(pidFile); } catch {}
+    try { releaseCoordinatorOwnership(ownership); } catch (err) { logger.warn({ err }, "coordinator ownership cleanup error"); }
 
     if (watchdog) clearTimeout(watchdog);
     if (exit) process.exit(0);
@@ -320,6 +427,7 @@ export async function startCoordinator({
 
   const onSigterm = () => shutdown({ exit: true });
   const onSigint = () => shutdown({ exit: true });
+  shutdownRequest.current = () => shutdown({ exit: true });
   process.on("SIGTERM", onSigterm);
   process.on("SIGINT", onSigint);
 
@@ -332,8 +440,14 @@ export async function startCoordinator({
     watcher: watcherHolder.current,
     consolidation: consolidationHolder.current,
     automationManager: automationManagerHolder.current,
+    acpOperationManager,
     searchIndexer,
     eventLoopMonitor,
     slack: slackHolder.current,
   };
+  } catch (error) {
+    try { closeDb(); } catch {}
+    try { releaseCoordinatorOwnership(ownership); } catch {}
+    throw error;
+  }
 }

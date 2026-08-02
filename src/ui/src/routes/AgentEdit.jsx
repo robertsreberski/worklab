@@ -36,6 +36,7 @@ import { claudeModelSupportsOneMillionContext, normalizeContextWindow } from "@m
 import { codexModelSupportsFastMode, normalizeFastMode } from "@mono-agent/agent-runtime/ai/runtime/fast-mode.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 import { useAppResume } from "../lib/pageVisibility.js";
+import { ExternalAgentEdit } from "./ExternalAgentEdit.jsx";
 
 const EFFORT_OPTIONS = ["none", "low", "medium", "high", "xhigh", "max"];
 const BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
@@ -381,7 +382,7 @@ function CapabilityGroup({
   );
 }
 
-export function AgentEdit({ name, onSaved, onDeleted }) {
+export function LocalAgentEdit({ name, onSaved, onDeleted }) {
   const isNew = name === "new";
   const [agent, setAgent] = useState(isNew ? emptyAgent : null);
   const [baseline, setBaseline] = useState(isNew ? emptyAgent : null);
@@ -1229,4 +1230,14 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
       </Modal>
     </>
   );
+}
+
+// AgentEdit is the route-level shell. Local and external agents keep separate
+// forms so volatile ACP state and ownership rules cannot leak into local model
+// configuration (or dirty either form through cross-runtime conditionals).
+export function AgentEdit({ mode = null, kind = null, ...props }) {
+  if (mode === "external" || kind === "external") {
+    return <ExternalAgentEdit {...props} />;
+  }
+  return <LocalAgentEdit {...props} />;
 }

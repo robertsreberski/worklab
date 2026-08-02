@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { makeTestServer } from "../helpers/test-server.js";
 import { indexPath, indexSource } from "../../core/embeddings.js";
 import { kbCreate, kbPath } from "../../core/kb.js";
+import { readMcpToken } from "../../core/service-token.js";
 
 describe("search routes", () => {
   const dirs = [];
@@ -78,6 +79,35 @@ describe("search routes", () => {
       dimensions: 0,
     });
     expect(result.body.test.error).toContain("returned 404");
+  });
+
+  it("rejects cross-site embedding tests before the provider request", async () => {
+    const { agent, rawAgent, db } = server();
+    const dataDir = dirs[dirs.length - 1];
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")
+      .run("default_embedding_model", JSON.stringify("ollama:nomic-embed-text"));
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ embeddings: [[1, 0, 0]] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    for (const method of ["get", "head"]) {
+      await rawAgent[method]("/api/search/embedding-test")
+        .set("origin", "https://evil.example")
+        .set("sec-fetch-site", "cross-site")
+        .expect(403);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await agent.get("/api/search/embedding-test").expect(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    fetchMock.mockClear();
+    await rawAgent.get("/api/search/embedding-test")
+      .set("authorization", `Bearer ${readMcpToken(dataDir)}`)
+      .expect(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("searches indexed knowledge with offline FTS fallback", async () => {

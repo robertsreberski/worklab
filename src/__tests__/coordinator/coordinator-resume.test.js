@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { structuralAcpProviderSessionId } from "../helpers/acp-tokens.js";
 import { makeTestDb } from "../helpers/test-db.js";
 import { createTaskWatcher } from "../../coordinator/task-watcher.js";
 import { newRunId, newTaskId } from "../../core/ids.js";
@@ -35,7 +36,12 @@ function seedTask(db, { owner = "coder", stage = "execute" } = {}) {
   return id;
 }
 
-function seedDrainedRun(db, taskId, { stage = "execute", mode = "execute", agentName = "coder" } = {}) {
+function seedDrainedRun(db, taskId, {
+  stage = "execute",
+  mode = "execute",
+  agentName = "coder",
+  providerSessionId = null,
+} = {}) {
   const runId = newRunId();
   const now = Date.now() - 60_000;
   const transcript = JSON.stringify({
@@ -49,10 +55,10 @@ function seedDrainedRun(db, taskId, { stage = "execute", mode = "execute", agent
   db.prepare(
     `INSERT INTO task_runs
       (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status,
-       failure_kind, cancel_initiator, cancel_reason, transcript_tail_json)
+       failure_kind, cancel_initiator, cancel_reason, transcript_tail_json, provider_session_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, 'cancelled', 'cancelled',
-             'cancelled_shutdown', 'coordinator_shutdown', 'coordinator stopping', ?)`,
-  ).run(runId, taskId, mode, stage, agentName, now, now + 5_000, transcript);
+             'cancelled_shutdown', 'coordinator_shutdown', 'coordinator stopping', ?, ?)`,
+  ).run(runId, taskId, mode, stage, agentName, now, now + 5_000, transcript, providerSessionId);
   return runId;
 }
 
@@ -102,7 +108,8 @@ describe("coordinator resume — drained-snapshot recovery", () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
     const taskId = seedTask(db);
-    const drainedRunId = seedDrainedRun(db, taskId);
+    const providerSessionId = structuralAcpProviderSessionId("external", "drained-session");
+    const drainedRunId = seedDrainedRun(db, taskId, { providerSessionId });
 
     const broker = stubBroker();
     const spawn = vi.fn(() => ({
@@ -126,6 +133,7 @@ describe("coordinator resume — drained-snapshot recovery", () => {
     expect(spawnCall.diagnosticsSeed.continuation_of_run_id).toBe(drainedRunId);
     expect(spawnCall.diagnosticsSeed.resume_snapshot.resume_kind).toBe("drained");
     expect(spawnCall.diagnosticsSeed.resume_snapshot.turns?.length).toBeGreaterThan(0);
+    expect(spawnCall.env.WORKLAB_PROVIDER_SESSION_ID).toBe(providerSessionId);
 
     const continuationRun = db.prepare(
       "SELECT id FROM task_runs WHERE task_id = ? AND id <> ? ORDER BY started_at DESC LIMIT 1",

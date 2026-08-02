@@ -45,6 +45,12 @@ function pathSegment(value) {
   return encodeURIComponent(String(value ?? ""));
 }
 
+function requiredText(value, label) {
+  const result = typeof value === "string" ? value.trim() : "";
+  if (!result) throw new Error(`${label} is required`);
+  return result;
+}
+
 function withQuery(path, query) {
   return `${path}${query ? `?${new URLSearchParams(query)}` : ""}`;
 }
@@ -164,6 +170,32 @@ export const api = {
   consolidateAgent: (name) => request("POST", `/agents/${pathSegment(name)}/consolidate`),
   listAgentRuns: (name, limit = 20) => request("GET", `/agents/${pathSegment(name)}/runs?limit=${limit}`),
   getAgentJournal: (name, runId) => request("GET", `/agents/${pathSegment(name)}/journal?run=${encodeURIComponent(runId)}`),
+  // ACP-backed external agents
+  listAcpProfiles: (options) => request("GET", "/acp/profiles", null, options),
+  getAcpProfile: (id, options) => request("GET", `/acp/profiles/${pathSegment(id)}`, null, options),
+  createAcpProfile: (data) => request("POST", "/acp/profiles", data),
+  importMonoAgent: (sourceId) => request("POST", "/acp/profiles", { sourceId }),
+  patchAcpProfile: (id, patch) => request("PATCH", `/acp/profiles/${pathSegment(id)}`, patch),
+  deleteAcpProfile: (id) => request("DELETE", `/acp/profiles/${pathSegment(id)}`),
+  probeAcpProfile: (id) => request("POST", `/acp/profiles/${pathSegment(id)}/probe`),
+  authenticateAcpProfile: (id, authMethodId) => request("POST", `/acp/profiles/${pathSegment(id)}/authenticate`, {
+    authMethodId: requiredText(authMethodId, "authMethodId"),
+  }),
+  logoutAcpProfile: (id) => request("POST", `/acp/profiles/${pathSegment(id)}/logout`),
+  listAcpProfileSessions: (id, data = {}) => request("POST", `/acp/profiles/${pathSegment(id)}/sessions:list`, data),
+  deleteAcpProfileSession: (id, sessionId) => request("DELETE", `/acp/profiles/${pathSegment(id)}/sessions/${pathSegment(sessionId)}`),
+  listAcpProfileOperations: (id, query, options) => {
+    [query, options] = splitQueryAndOptions(query, options);
+    return request("GET", withQuery(`/acp/profiles/${pathSegment(id)}/operations`, query), null, options);
+  },
+  getAcpOperation: (id, options) => request("GET", `/acp/operations/${pathSegment(id)}`, null, options),
+  cancelAcpOperation: (id) => request("POST", `/acp/operations/${pathSegment(id)}/cancel`),
+  listAcpOperationInteractions: (id, options) => request("GET", `/acp/operations/${pathSegment(id)}/interactions`, null, options),
+  listAcpInteractions: (query, options) => request("GET", withQuery("/acp/interactions", query), null, options),
+  acpInteractionUrlOpenPath: (id) => `/api/acp/interactions/${pathSegment(id)}/url:open`,
+  respondAcpInteraction: (id, data) => request("POST", `/acp/interactions/${pathSegment(id)}/respond`, data),
+  cancelAcpInteraction: (id) => request("POST", `/acp/interactions/${pathSegment(id)}/cancel`),
+  discoverMonoAgents: (options) => request("GET", "/acp/discovery/mono", null, options),
   // skills
   listSkills: (options) => request("GET", "/skills", null, options),
   getSkill: (name) => request("GET", `/skills/${pathSegment(name)}`),

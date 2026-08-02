@@ -13,6 +13,13 @@ import { getEnabledAgentByName, listEnabledAgentNames } from "../core/db/queries
 import { getAgentConsolidationHash, upsertAgentConsolidation } from "../core/db/queries/agent-consolidations.js";
 
 const TICK_MS = 60_000;
+const ACP_TASK_ONLY_MESSAGE = "external ACP agents currently support task runs only";
+
+function isAcpAgent(agent) {
+  return agent?.sdk === "acp"
+    || String(agent?.model || "").startsWith("acp:")
+    || agent?.execution_mode === "acp";
+}
 
 function hashFile(path) {
   if (!existsSync(path)) return null;
@@ -67,6 +74,7 @@ export function createConsolidationManager({
   function runNow(agentName, { force = true } = {}) {
     const agent = getEnabledAgentByName(db, agentName);
     if (!agent) throw new Error(`enabled agent not found: ${agentName}`);
+    if (isAcpAgent(agent)) return { skipped: true, reason: ACP_TASK_ONLY_MESSAGE };
     if (active.has(agentName)) throw new Error(`consolidation already running for ${agentName}`);
     const journalPath = agentJournalPath(dataDir, agentName);
     const journalHash = hashFile(journalPath);
