@@ -185,9 +185,19 @@ export function restoreAcpSessionListing(operations = [], profileId = null) {
       sessions.push(session);
     }
   }
+  const chainStartedAt = createdAtNumber(chain[0].operation);
+  const deletedIds = new Set(operations.flatMap((operation) => {
+    if (operation?.kind !== "delete_session"
+      || !operationSucceeded(operation)
+      || createdAtNumber(operation) < chainStartedAt
+      || operation?.result?.deleted === false) return [];
+    const candidate = operation?.result?.id || operation?.request?.providerSessionId;
+    const id = opaqueTokenForProfile(candidate, OPAQUE_SESSION_RE, profileId);
+    return id ? [id] : [];
+  }));
   const last = chain.at(-1).page;
   return {
-    sessions,
+    sessions: sessions.filter((session) => !deletedIds.has(session.id)),
     nextCursor: last.nextCursor,
     truncated: last.truncated,
     restored: true,

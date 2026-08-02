@@ -71,6 +71,13 @@ describe("external agent editor state", () => {
         result: { sessions: [{ id: SESSION_ONE, title: "First" }], nextCursor: CURSOR_ONE, truncated: true },
         createdAt: 1_754_136_001_000,
       }),
+      operation({
+        id: "acpo-old-delete",
+        kind: "delete_session",
+        request: { providerSessionId: SESSION_ONE },
+        result: { deleted: true, id: SESSION_ONE },
+        createdAt: 1_754_135_000_000,
+      }),
     ];
 
     expect(restoreAcpSessionListing(operations, PROFILE_ID)).toEqual({
@@ -83,6 +90,26 @@ describe("external agent editor state", () => {
       restored: true,
     });
     expect(opaqueSessionReference(SESSION_ONE)).toMatch(/^acp:v1:.*….*$/u);
+  });
+
+  it("does not resurrect a session deleted after the restored listing", () => {
+    const listing = operation({
+      id: "acpo-list-before-delete",
+      result: { sessions: [{ id: SESSION_ONE, title: "Delete me" }], truncated: false },
+      createdAt: 1_754_136_001_000,
+    });
+    const deletion = operation({
+      id: "acpo-delete-after-list",
+      kind: "delete_session",
+      request: { providerSessionId: SESSION_ONE },
+      result: { deleted: true, id: SESSION_ONE },
+      createdAt: 1_754_136_002_000,
+    });
+
+    expect(restoreAcpSessionListing([deletion, listing], PROFILE_ID)).toMatchObject({
+      sessions: [],
+      restored: true,
+    });
   });
 
   it("rejects raw session ids and recovers active and restart history without exposing internals", () => {
