@@ -62,11 +62,22 @@ async function createGeneric(agent, cwd, body = {}) {
 }
 
 describe("ACP API", () => {
-  it("rejects cross-site and unauthenticated process controls before launching anything", async () => {
+  it("rejects cross-site mutations before any ACP process or task can launch", async () => {
     const cwd = workspace();
     const dataDir = workspace();
     const probe = vi.fn(async () => ({ status: "ready" }));
-    const { agent, rawAgent, db } = makeTestServer({ dataDir, acpControls: { probe } });
+    const discoverMono = vi.fn(async () => ({
+      schema: "mono-agent.acp-discovery.v1",
+      bridgeVersion: 1,
+      protocolVersion: 1,
+      sources: [],
+    }));
+    const { agent, rawAgent, db, watcher } = makeTestServer({
+      dataDir,
+      acpControls: { discoverMono, probe },
+    });
+    const maybeAutoStart = vi.spyOn(watcher, "maybeAutoStart");
+    const handleRunRequested = vi.spyOn(watcher, "handleRunRequested");
     const profileBody = {
       agentName: "cross-site-process",
       displayName: "Cross-site process",
@@ -111,6 +122,53 @@ describe("ACP API", () => {
       .send({})
       .expect(202);
     await vi.waitFor(() => expect(probe).toHaveBeenCalledTimes(1));
+
+    await rawAgent.post("/api/tasks")
+      .set("origin", "https://evil.example")
+      .set("sec-fetch-site", "cross-site")
+      .send({
+        title: "hostile auto-run",
+        instructions: "run attacker instructions",
+        owner_agent: "approved-process",
+        stage: "execute",
+      })
+      .expect(403);
+    await new Promise((resolve) => setImmediate(() => setImmediate(resolve)));
+    expect(maybeAutoStart).not.toHaveBeenCalled();
+
+    const task = (await agent.post("/api/tasks").send({
+      title: "existing ACP task",
+      owner_agent: "approved-process",
+      stage: "execute",
+      run_policy: "manual",
+    }).expect(201)).body.task;
+    await new Promise((resolve) => setImmediate(() => setImmediate(resolve)));
+    maybeAutoStart.mockClear();
+    handleRunRequested.mockClear();
+    await rawAgent.post(`/api/tasks/${task.id}/run`)
+      .set("origin", "https://evil.example")
+      .set("sec-fetch-site", "cross-site")
+      .send({})
+      .expect(403);
+    expect(handleRunRequested).not.toHaveBeenCalled();
+
+    const crossOriginRead = await rawAgent.get("/api/agents")
+      .set("origin", "https://evil.example")
+      .expect(200);
+    expect(crossOriginRead.headers).not.toHaveProperty("access-control-allow-origin");
+
+    await rawAgent.get("/api/acp/discovery/mono")
+      .set("origin", "https://evil.example")
+      .set("sec-fetch-site", "cross-site")
+      .expect(403);
+    await rawAgent.head("/api/acp/discovery/mono")
+      .set("origin", "https://evil.example")
+      .set("sec-fetch-site", "cross-site")
+      .expect(403);
+    expect(discoverMono).not.toHaveBeenCalled();
+
+    await agent.get("/api/acp/discovery/mono").expect(200);
+    expect(discoverMono).toHaveBeenCalledTimes(1);
   });
 
   it("returns canonical mono discovery and imports a sourceId-only profile", async () => {

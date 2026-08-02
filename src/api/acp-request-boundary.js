@@ -3,6 +3,7 @@ import { isIP } from "node:net";
 import { ensureMcpToken, tokenMatches } from "../core/index.js";
 
 const WILDCARD_HOSTS = new Set(["0.0.0.0", "::", "[::]"]);
+const ACTIVE_READ_PATHS = new Set(["/acp/discovery/mono"]);
 
 function bearerToken(req) {
   const value = req.get("authorization") || "";
@@ -78,16 +79,20 @@ function sameUiBoundary(req, { origins, hosts }) {
   const source = browserSourceUrl(req);
   if (!source) return false;
   if (origins.has(source.origin)) return true;
+  if (source.protocol === target.protocol
+    && loopbackHostname(source.hostname)
+    && loopbackHostname(target.hostname)) return true;
   return source.origin === target.origin;
 }
 
 /**
- * ACP profiles can launch a configured executable. Keep that process boundary
- * unavailable to arbitrary websites even though Worklab's legacy API CORS
- * policy is permissive. Browser UI calls must prove a trusted same-origin host;
- * non-browser clients use the existing local service token.
+ * Worklab mutations can schedule tool-capable local agents and ACP processes.
+ * Keep those actions unavailable to arbitrary websites: browser UI calls must
+ * carry an exact trusted Origin/Referer, while automation clients can use the
+ * existing local service token. This is a CSRF/browser-origin boundary, not a
+ * replacement for network access control on the bound Worklab host.
  */
-export function createAcpRequestBoundary({
+export function createApiMutationBoundary({
   dataDir,
   config,
   env = process.env,
@@ -97,6 +102,12 @@ export function createAcpRequestBoundary({
   const expectedToken = dataDir ? ensureMcpToken(dataDir) : "";
 
   return (req, res, next) => {
+    const activeRead = new Set(["GET", "HEAD"]).has(req.method)
+      && ACTIVE_READ_PATHS.has(req.path);
+    if (req.method === "OPTIONS" || (!activeRead && new Set(["GET", "HEAD"]).has(req.method))) {
+      next();
+      return;
+    }
     if (expectedToken && tokenMatches(bearerToken(req), expectedToken)) {
       next();
       return;
@@ -110,7 +121,7 @@ export function createAcpRequestBoundary({
     res.status(browserContext ? 403 : 401).json({
       error: {
         code: browserContext ? "forbidden_origin" : "unauthorized",
-        message: "ACP API requests must come from the Worklab UI or use the local service token",
+        message: "Process-starting and state-changing API requests must come from the Worklab UI or use the local service token",
       },
     });
   };

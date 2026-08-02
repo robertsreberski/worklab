@@ -1,5 +1,4 @@
 import express from "express";
-import cors from "cors";
 import { SCHEMA_VERSION } from "../core/db/index.js";
 import { readPackageMetadata } from "../core/platform/index.js";
 import { getSchemaVersion, tableExists } from "../core/db/queries/schema.js";
@@ -27,7 +26,7 @@ import { registerAssistantRoutes } from "./routes/assistant.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
 import { registerUpdateRoutes } from "./routes/update.js";
 import { registerAcpRoutes } from "./routes/acp.js";
-import { createAcpRequestBoundary } from "./acp-request-boundary.js";
+import { createApiMutationBoundary } from "./acp-request-boundary.js";
 import { registerAdminMcpRoutes } from "../mcp/admin/server.js";
 import { createAcpOperationManager } from "../coordinator/acp-operation-manager.js";
 
@@ -115,14 +114,14 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
     logger,
   });
 
-  // Register this before permissive legacy CORS so hostile preflights are
-  // rejected before they receive cross-origin authorization.
-  app.use("/api/acp", createAcpRequestBoundary({
+  // Inbound webhook ids are capability URLs and intentionally accept
+  // server-to-server POSTs. Every other state-changing API call is UI-origin
+  // or service-token scoped; browser cross-origin reads receive no CORS grant.
+  registerAutomationWebhookRoutes(app, { db, broker, automationManager });
+  app.use("/api", createApiMutationBoundary({
     dataDir: dataDir || config?.dataDir,
     config,
   }));
-  app.use(cors());
-  registerAutomationWebhookRoutes(app, { db, broker, automationManager });
   app.use(express.json({ limit: "10mb" }));
   // SSE drives all freshness for client state. Caching /api responses (browser,
   // service worker, or shared proxy) would risk stale views without buying any
