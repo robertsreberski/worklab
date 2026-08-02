@@ -111,6 +111,11 @@ describe("backup command", () => {
     const legacyRawCursor = "backup-legacy-raw-cursor-secret";
     const malformedRawCursor = "backup-malformed-raw-cursor-secret";
     const malformedCursor = `acp-cursor:v1:another-profile:${Buffer.from(malformedRawCursor).toString("base64url")}`;
+    const aliasRawPageCursor = "backup-page-cursor-alias-secret";
+    const aliasCanonicalRawCursor = "backup-next-page-cursor-alias-secret";
+    const aliasCanonicalCursor = `acp-cursor:v1:${profile.id}:${Buffer.from(aliasCanonicalRawCursor).toString("base64url")}`;
+    const aliasRawPageToken = "backup-page-token-alias-secret";
+    const oversizedPageToken = `backup-oversized-page-token-${"x".repeat(4_096)}`;
     const now = Date.now();
     const insertOperation = sourceDb.prepare(`
       INSERT INTO acp_operations
@@ -148,6 +153,35 @@ describe("backup command", () => {
       now,
       now,
     );
+    insertOperation.run(
+      "acpop-backup-cursor-aliases",
+      profile.id,
+      JSON.stringify({
+        pageCursor: aliasRawPageCursor,
+        copied: aliasRawPageCursor,
+      }),
+      JSON.stringify({
+        sessions: [],
+        "next-page-cursor": aliasCanonicalCursor,
+        pageToken: aliasRawPageToken,
+        copied: `${aliasCanonicalRawCursor} ${aliasRawPageToken}`,
+        [`key-${aliasRawPageToken}`]: "value",
+      }),
+      now,
+      now,
+      now,
+      now,
+    );
+    insertOperation.run(
+      "acpop-backup-oversized-cursor-alias",
+      profile.id,
+      "{}",
+      JSON.stringify({ sessions: [], pageToken: oversizedPageToken }),
+      now,
+      now,
+      now,
+      now,
+    );
     sourceDb.prepare(`
       INSERT INTO tasks (id, task_key, title, instructions, created_at, updated_at)
       VALUES ('task-backup-cursors', 'T-CURSORS', 'Cursor backup', '', ?, ?)
@@ -155,7 +189,10 @@ describe("backup command", () => {
     sourceDb.prepare(`
       INSERT INTO task_comments (id, task_id, author_type, body, created_at)
       VALUES ('comment-backup-cursors', 'task-backup-cursors', 'system', ?, ?)
-    `).run(`Copied ${canonicalRawCursor} and ${legacyRawCursor}`, now);
+    `).run(
+      `Copied ${canonicalRawCursor}, ${legacyRawCursor}, ${aliasRawPageCursor}, ${aliasCanonicalRawCursor}, and ${aliasRawPageToken}`,
+      now,
+    );
     sourceDb.close();
 
     const lines = [];
@@ -198,9 +235,28 @@ describe("backup command", () => {
         redacted: true,
         reason: "ACP pagination cursor data was invalid",
       });
+
+      const aliases = restoredDb.prepare(`
+        SELECT request_json, result_json FROM acp_operations WHERE id = 'acpop-backup-cursor-aliases'
+      `).get();
+      expect(JSON.parse(aliases.request_json)).toEqual({ copied: "[redacted]" });
+      expect(JSON.parse(aliases.result_json)).toEqual({
+        sessions: [],
+        copied: "[redacted] [redacted]",
+        "key-[redacted]": "value",
+        nextCursor: aliasCanonicalCursor,
+      });
+
+      const oversized = restoredDb.prepare(`
+        SELECT result_json FROM acp_operations WHERE id = 'acpop-backup-oversized-cursor-alias'
+      `).get();
+      expect(JSON.parse(oversized.result_json)).toEqual({
+        redacted: true,
+        reason: "ACP pagination cursor data was invalid",
+      });
       expect(restoredDb.prepare(`
         SELECT body FROM task_comments WHERE id = 'comment-backup-cursors'
-      `).get().body).toBe("Copied [redacted] and [redacted]");
+      `).get().body).toBe("Copied [redacted], [redacted], [redacted], [redacted], and [redacted]");
     } finally {
       restoredDb.close();
     }
@@ -212,6 +268,10 @@ describe("backup command", () => {
       legacyRawCursor,
       malformedRawCursor,
       malformedCursor,
+      aliasRawPageCursor,
+      aliasCanonicalRawCursor,
+      aliasRawPageToken,
+      oversizedPageToken,
     ]) {
       expect(restoredBytes.includes(Buffer.from(privateValue))).toBe(false);
     }

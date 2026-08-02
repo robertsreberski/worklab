@@ -163,6 +163,13 @@ export {
   sanitizeAcpOperationResult,
 } from "./acp-operations.js";
 
+export {
+  MAX_ACP_CURSOR_TOKEN_BYTES,
+  normalizeAcpPaginationCursorKey,
+  parseAcpSessionCursor,
+  selectAcpPaginationCursorEntry,
+} from "./acp-session-cursors.js";
+
 export { createWorklabAcpControls } from "./acp-controls.js";
 
 export { createWorklabAcpProfileResolver } from "./acp-runtime-profile.js";

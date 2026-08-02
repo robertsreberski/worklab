@@ -13,7 +13,15 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { loadConfig, normalizeAcpProviderSessionId, openDb } from "../core/index.js";
+import {
+  loadConfig,
+  MAX_ACP_CURSOR_TOKEN_BYTES,
+  normalizeAcpProviderSessionId,
+  normalizeAcpPaginationCursorKey,
+  openDb,
+  parseAcpSessionCursor,
+  selectAcpPaginationCursorEntry,
+} from "../core/index.js";
 import { applyConfigArgs } from "./args.js";
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
@@ -42,12 +50,6 @@ const OMITTED_ROOT_ENTRIES = new Set([
 const WEBHOOK_RECONFIGURATION_MESSAGE = "Webhook credential omitted from backup; edit the automation to generate a new webhook ID.";
 const RAW_ACP_SESSION_KEYS = new Set(["sessionId", "session_id", "remoteSessionId", "remote_session_id"]);
 const PROVIDER_ACP_SESSION_KEYS = new Set(["providerSessionId", "provider_session_id"]);
-const ACP_OPERATION_CURSOR_KEYS = Object.freeze({
-  request_json: ["cursor"],
-  result_json: ["nextCursor", "next_cursor"],
-});
-const ACP_SESSION_CURSOR_RE = /^acp-cursor:v1:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([A-Za-z0-9_-]+)$/u;
-const MAX_ACP_SESSION_CURSOR_CHARS = 5600;
 const MAX_ACP_SCRUB_DEPTH = 32;
 const MAX_ACP_SCRUB_NODES = 10_000;
 const MAX_ACP_JSON_CHARS = 16 * 1024 * 1024;
@@ -93,37 +95,14 @@ function addPrivateAcpIdentifier(values, value) {
 }
 
 function canonicalAcpSessionCursor(value, profileId) {
-  return decodedAcpSessionCursor(value, profileId)?.canonical ?? null;
-}
-
-function decodedAcpSessionCursor(value, profileId) {
-  if (typeof value !== "string"
-    || typeof profileId !== "string"
-    || !profileId
-    || value.length > MAX_ACP_SESSION_CURSOR_CHARS) return null;
-  const match = ACP_SESSION_CURSOR_RE.exec(value);
-  if (!match || match[1] !== profileId) return null;
-  try {
-    const bytes = Buffer.from(match[2], "base64url");
-    const decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    return bytes.length > 0
-      && bytes.length <= 4096
-      && bytes.toString("base64url") === match[2]
-      && decoded
-      && decoded.trim() === decoded
-      && !decoded.includes("\0")
-      ? { canonical: value, decoded }
-      : null;
-  } catch {
-    return null;
-  }
+  return parseAcpSessionCursor(value, profileId)?.value ?? null;
 }
 
 function legacyAcpSessionCursor(value) {
   return typeof value === "string"
     && !value.startsWith("acp-cursor:")
     && value.length > 0
-    && value.length <= MAX_ACP_SESSION_CURSOR_CHARS
+    && Buffer.byteLength(value, "utf8") <= MAX_ACP_CURSOR_TOKEN_BYTES
     && value.trim() === value
     && !/[\u0000-\u001f\u007f]/u.test(value)
     ? value
@@ -155,6 +134,7 @@ function enterScrubNode(value, state, depth) {
 }
 
 function collectAcpIdentifiers(value, values, {
+  includeCursors = false,
   sessionRecord = false,
   parentKey = "",
   depth = 0,
@@ -164,6 +144,7 @@ function collectAcpIdentifiers(value, values, {
   if (Array.isArray(value)) {
     for (const entry of value) {
       collectAcpIdentifiers(entry, values, {
+        includeCursors,
         sessionRecord: parentKey === "sessions",
         depth: depth + 1,
         state,
@@ -177,26 +158,48 @@ function collectAcpIdentifiers(value, values, {
     if (RAW_ACP_SESSION_KEYS.has(key) || PROVIDER_ACP_SESSION_KEYS.has(key) || (sessionRecord && key === "id")) {
       addPrivateAcpIdentifier(values, entry);
     }
-    collectAcpIdentifiers(entry, values, { parentKey: key, depth: depth + 1, state });
+    if (includeCursors && normalizeAcpPaginationCursorKey(key)) {
+      const decoded = parseAcpSessionCursor(entry)?.rawValue;
+      if (entry != null) {
+        if (decoded) values.add(decoded);
+        else if (typeof entry === "string" && entry) values.add(entry);
+        else state.failed = true;
+      }
+    }
+    collectAcpIdentifiers(entry, values, {
+      includeCursors,
+      parentKey: key,
+      depth: depth + 1,
+      state,
+    });
     if (state.failed) break;
   }
   return state;
 }
 
-function collectJsonAcpIdentifiers(text, values) {
+function collectJsonAcpIdentifiers(text, values, options = {}) {
   if (text == null) return true;
   const serialized = String(text || "");
-  const pattern = /"(?:sessionId|session_id|remoteSessionId|remote_session_id|providerSessionId|provider_session_id)"\s*:\s*"((?:\\.|[^"\\])*)"/gu;
+  if (serialized.length > MAX_ACP_JSON_CHARS) return false;
+  const pattern = /"((?:\\.|[^"\\])*)"\s*:\s*"((?:\\.|[^"\\])*)"/gu;
   let matches = 0;
   for (const match of serialized.matchAll(pattern)) {
-    try { addPrivateAcpIdentifier(values, JSON.parse(`"${match[1]}"`)); } catch { /* ignore malformed strings */ }
+    try {
+      const key = JSON.parse(`"${match[1]}"`);
+      const value = JSON.parse(`"${match[2]}"`);
+      if (RAW_ACP_SESSION_KEYS.has(key) || PROVIDER_ACP_SESSION_KEYS.has(key)) {
+        addPrivateAcpIdentifier(values, value);
+      }
+      if (options.includeCursors && normalizeAcpPaginationCursorKey(key)) {
+        values.add(parseAcpSessionCursor(value)?.rawValue ?? value);
+      }
+    } catch { /* ignore malformed strings; the containing value is replaced fail-closed */ }
     matches += 1;
     if (matches >= MAX_ACP_SCRUB_NODES) break;
   }
-  if (serialized.length > MAX_ACP_JSON_CHARS) return false;
   const parsed = parseJson(text);
   if (parsed.ok) {
-    return !collectAcpIdentifiers(parsed.value, values).failed;
+    return !collectAcpIdentifiers(parsed.value, values, options).failed;
   }
   return false;
 }
@@ -211,6 +214,7 @@ function redactPrivateAcpText(value, privateValues) {
 }
 
 function scrubAcpValue(value, privateValues, {
+  includeCursors = false,
   sessionRecord = false,
   parentKey = "",
   depth = 0,
@@ -222,6 +226,7 @@ function scrubAcpValue(value, privateValues, {
     const output = [];
     for (const entry of value) {
       output.push(scrubAcpValue(entry, privateValues, {
+        includeCursors,
         sessionRecord: parentKey === "sessions",
         depth: depth + 1,
         state,
@@ -231,12 +236,15 @@ function scrubAcpValue(value, privateValues, {
     return output;
   }
   if (!value || typeof value !== "object") return value;
-  const output = {};
+  const output = Object.create(null);
   for (const [key, entry] of Object.entries(value)) {
     if (RAW_ACP_SESSION_KEYS.has(key)) continue;
     if (PROVIDER_ACP_SESSION_KEYS.has(key) && !isEncodedAcpSessionId(entry)) continue;
     if (sessionRecord && key === "id" && !isEncodedAcpSessionId(entry)) continue;
-    output[key] = scrubAcpValue(entry, privateValues, {
+    if (includeCursors && normalizeAcpPaginationCursorKey(key)) continue;
+    const outputKey = redactPrivateAcpText(key, privateValues);
+    output[outputKey] = scrubAcpValue(entry, privateValues, {
+      includeCursors,
       parentKey: key,
       depth: depth + 1,
       state,
@@ -256,27 +264,30 @@ function scrubAcpJson(text, privateValues) {
   return JSON.stringify(state.failed ? ACP_SCRUB_FALLBACK : scrubbed);
 }
 
-function operationCursorFields(row, column) {
-  return row.kind === "list_sessions" ? ACP_OPERATION_CURSOR_KEYS[column] || [] : [];
-}
-
-function collectOperationCursorIdentifiers(row, column, privateValues) {
-  const fields = operationCursorFields(row, column);
-  if (!fields.length || row[column] == null || String(row[column]).length > MAX_ACP_JSON_CHARS) return;
-  const parsed = parseJson(row[column]);
-  if (!parsed.ok || !parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) return;
-  for (const field of fields) {
-    if (!Object.hasOwn(parsed.value, field)) continue;
-    const candidate = parsed.value[field];
-    const decoded = decodedAcpSessionCursor(candidate, row.profile_id)?.decoded;
-    if (decoded) privateValues.add(decoded);
-    else if (typeof candidate === "string" && candidate) privateValues.add(candidate);
+function validAcpCursorAliases(value, profileId, {
+  depth = 0,
+  state = scrubTraversalState(),
+} = {}) {
+  if (!enterScrubNode(value, state, depth)) return false;
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      if (!validAcpCursorAliases(entry, profileId, { depth: depth + 1, state })) return false;
+    }
+    return true;
   }
+  if (!value || typeof value !== "object") return true;
+  for (const [key, entry] of Object.entries(value)) {
+    if (normalizeAcpPaginationCursorKey(key)
+      && entry != null
+      && !canonicalAcpSessionCursor(entry, profileId)
+      && !legacyAcpSessionCursor(entry)) return false;
+    if (!validAcpCursorAliases(entry, profileId, { depth: depth + 1, state })) return false;
+  }
+  return true;
 }
 
 function scrubAcpOperationJson(row, column, privateValues) {
-  const fields = operationCursorFields(row, column);
-  if (!fields.length) return scrubAcpJson(row[column], privateValues);
+  if (row.kind !== "list_sessions") return scrubAcpJson(row[column], privateValues);
   if (row[column] == null) return row[column];
   if (String(row[column]).length > MAX_ACP_JSON_CHARS) return JSON.stringify(ACP_SCRUB_FALLBACK);
   const parsed = parseJson(row[column]);
@@ -284,34 +295,24 @@ function scrubAcpOperationJson(row, column, privateValues) {
     return JSON.stringify(ACP_CURSOR_SCRUB_FALLBACK);
   }
 
-  const cursors = new Map();
-  for (const field of fields) {
-    if (!Object.hasOwn(parsed.value, field)) continue;
-    const candidate = parsed.value[field];
-    if (candidate == null) {
-      cursors.set(field, null);
-      continue;
-    }
-    const canonical = canonicalAcpSessionCursor(candidate, row.profile_id);
-    if (canonical) {
-      cursors.set(field, canonical);
-      continue;
-    }
-    const legacy = legacyAcpSessionCursor(candidate);
-    if (legacy) {
-      cursors.set(field, null);
-      continue;
-    }
+  if (!validAcpCursorAliases(parsed.value, row.profile_id)) {
     return JSON.stringify(ACP_CURSOR_SCRUB_FALLBACK);
   }
+  const selectedCursor = selectAcpPaginationCursorEntry(parsed.value);
+  const canonicalCursor = canonicalAcpSessionCursor(selectedCursor?.value, row.profile_id);
+  const outputKey = column === "request_json"
+    ? "cursor"
+    : column === "result_json"
+      ? "nextCursor"
+      : null;
 
   const state = scrubTraversalState();
-  const scrubbed = scrubAcpValue(parsed.value, privateValues, { state });
+  const scrubbed = scrubAcpValue(parsed.value, privateValues, {
+    includeCursors: true,
+    state,
+  });
   if (state.failed) return JSON.stringify(ACP_SCRUB_FALLBACK);
-  for (const [field, cursor] of cursors) {
-    if (cursor) scrubbed[field] = cursor;
-    else delete scrubbed[field];
-  }
+  if (outputKey && canonicalCursor) scrubbed[outputKey] = canonicalCursor;
   return JSON.stringify(scrubbed);
 }
 
@@ -358,8 +359,9 @@ function scrubLegacyAcpSessionData(db) {
   for (const row of operations) {
     addPrivateAcpIdentifier(privateValues, row.remote_session_id);
     for (const column of operationJsonColumns) {
-      collectJsonAcpIdentifiers(row[column], privateValues);
-      collectOperationCursorIdentifiers(row, column, privateValues);
+      collectJsonAcpIdentifiers(row[column], privateValues, {
+        includeCursors: row.kind === "list_sessions",
+      });
     }
   }
 

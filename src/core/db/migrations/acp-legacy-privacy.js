@@ -14,6 +14,7 @@ import {
   createAcpEventPrivacyBoundary,
   validateAcpProviderSessionId,
 } from "../../acp-privacy.js";
+import { normalizeAcpPaginationCursorKey } from "../../acp-session-cursors.js";
 import { runLogPathInsideDataDir } from "../../run-event-store.js";
 
 const ACP_PRIVACY_COMPACTION_KEY = "acp_legacy_session_privacy_compacted_v1";
@@ -38,7 +39,13 @@ const RUN_JSON_DEFAULTS = new Map([
   ["tool_usage_summary_json", null],
 ]);
 const RUN_TEXT_COLUMNS = ["error_text", "summary", "details"];
-const EXPLICIT_SESSION_VALUE_RE = /"(sessionId|session_id|providerSessionId|provider_session_id|cursor|nextCursor|next_cursor)"\s*:\s*"((?:\\.|[^"\\])*)"/gu;
+const EXPLICIT_PRIVATE_VALUE_RE = /"((?:\\.|[^"\\])*)"\s*:\s*"((?:\\.|[^"\\])*)"/gu;
+const EXPLICIT_SESSION_KEYS = new Set([
+  "sessionId",
+  "session_id",
+  "providerSessionId",
+  "provider_session_id",
+]);
 const TASK_EMBEDDING_KINDS = new Set([
   "task",
   "tasks",
@@ -95,9 +102,11 @@ function parseJson(value, fallback) {
 
 function explicitSessionSeeds(text) {
   const seeds = [];
-  for (const match of String(text || "").matchAll(EXPLICIT_SESSION_VALUE_RE)) {
+  for (const match of String(text || "").matchAll(EXPLICIT_PRIVATE_VALUE_RE)) {
     try {
-      seeds.push({ [match[1]]: JSON.parse(`"${match[2]}"`) });
+      const key = JSON.parse(`"${match[1]}"`);
+      if (!EXPLICIT_SESSION_KEYS.has(key) && !normalizeAcpPaginationCursorKey(key)) continue;
+      seeds.push({ [key]: JSON.parse(`"${match[2]}"`) });
     } catch {
       // The containing JSON is already replaced fail-closed; an invalid JSON
       // string cannot be decoded into a reliable identifier for redaction.

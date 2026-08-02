@@ -107,6 +107,8 @@ describe("legacy ACP session privacy migration", () => {
     const probeSession = "RAW_PROFILE_PROBE_SESSION";
     const rawCursor = "RAW_CURSOR_SECRET";
     const rawNextCursor = "RAW_NEXT_CURSOR_SECRET";
+    const rawPageCursor = "RAW_PAGE_CURSOR_ALIAS_SECRET";
+    const rawPageToken = "RAW_PAGE_TOKEN_ALIAS_SECRET";
     const opaqueCursorRaw = "RAW_OPAQUE_CURSOR_COPY";
     const nonAcpSession = "NON_ACP_SESSION_MUST_SURVIVE";
     const providerSessionId = opaqueSessionId(handleOnlySession);
@@ -292,6 +294,21 @@ describe("legacy ACP session privacy migration", () => {
       JSON.stringify({ cursor: opaqueCursor, copied: opaqueCursorRaw }),
       JSON.stringify({ nextCursor: opaqueCursor, copied: opaqueCursorRaw }),
     );
+    db.prepare(`
+      INSERT INTO acp_operations (
+        id, profile_id, kind, state, request_json, result_json,
+        error_json, created_at, updated_at, completed_at
+      ) VALUES ('operation-cursor-aliases', ?, 'list_sessions', 'succeeded', ?, ?, '{}', 5, 5, 5)
+    `).run(
+      PROFILE_ID,
+      JSON.stringify({ pageCursor: rawPageCursor, copied: rawPageCursor }),
+      JSON.stringify({
+        "next-page-cursor": opaqueCursor,
+        pageToken: rawPageToken,
+        copied: `${opaqueCursorRaw} ${rawPageToken}`,
+        [`key-${rawPageToken}`]: "value",
+      }),
+    );
 
     runMigrations(db);
 
@@ -362,6 +379,11 @@ describe("legacy ACP session privacy migration", () => {
         request_json: `{"cursor":"${opaqueCursor}","copied":"[redacted]"}`,
         result_json: `{"nextCursor":"${opaqueCursor}","copied":"[redacted]"}`,
       });
+    expect(db.prepare("SELECT request_json, result_json FROM acp_operations WHERE id = 'operation-cursor-aliases'").get())
+      .toEqual({
+        request_json: '{"copied":"[redacted]"}',
+        result_json: `{"next-page-cursor":"${opaqueCursor}","copied":"[redacted] [redacted]","key-[redacted]":"value"}`,
+      });
 
     const sanitizedRaw = readFileSync(rawPath, "utf8");
     expect(sanitizedRaw).toContain(providerSessionId);
@@ -379,6 +401,8 @@ describe("legacy ACP session privacy migration", () => {
       probeSession,
       rawCursor,
       rawNextCursor,
+      rawPageCursor,
+      rawPageToken,
       opaqueCursorRaw,
     ]) {
       expect(sanitizedRaw).not.toContain(sentinel);
