@@ -210,7 +210,7 @@ describe("generateCodexAppResponse", () => {
     }
   });
 
-  it("enables Codex collaboration mode for native teammate subagents", async () => {
+  it("translates Codex collaboration events without injecting teammate profiles", async () => {
     const dir = mkdtempSync(join(tmpdir(), "worklab-codex-app-"));
     const logPath = join(dir, "requests.jsonl");
     const script = writeFakeCodexAppServer(dir);
@@ -225,33 +225,14 @@ describe("generateCodexAppResponse", () => {
         codexAppServerCommand: script,
         codexAppServerArgs: [],
         codexAppServerEnv: { FAKE_CODEX_REQUEST_LOG: logPath, FAKE_CODEX_MODE: "collab_event" },
-        nativeSubagents: {
-          provider: "codex",
-          mode: "advisory",
-          teammates: [{
-            name: "helper",
-            displayName: "Helper",
-            description: "Reads focused code paths.",
-            helperSystemPrompt: "You are the helper.",
-            model: { model: "gpt-5.4-mini" },
-            effort: "low",
-          }],
-        },
         onEvent: (event) => events.push(event),
       });
       const requests = readRequests(logPath);
       const turnStart = requests.find((request) => request.method === "turn/start");
 
       expect(result.error).toBeNull();
-      expect(requests.some((request) => request.method === "collaborationMode/list")).toBe(true);
-      expect(turnStart.params.collaborationMode).toMatchObject({
-        mode: "default",
-        teammates: [{
-          name: "helper",
-          model: "gpt-5.4-mini",
-          reasoningEffort: "low",
-        }],
-      });
+      expect(requests.some((request) => request.method === "collaborationMode/list")).toBe(false);
+      expect(turnStart.params.collaborationMode).toBeUndefined();
       expect(events).toContainEqual({
         type: "assistant",
         message: {
