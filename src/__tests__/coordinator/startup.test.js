@@ -5,6 +5,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -377,5 +378,75 @@ describe("coordinator startup services", () => {
 
     expect(readFileSync(pidFile, "utf8")).toBe(replacement);
     expect(existsSync(join(config.dataDir, ".coordinator.lock"))).toBe(true);
+  });
+
+  it("reclaims the lifetime lock and stale PID after the owning process is killed", async () => {
+    const root = mkdtempSync(join(tmpdir(), "worklab-startup-ownership-crash-"));
+    roots.push(root);
+    const config = startupConfig(root);
+    const pidFile = join(config.dataDir, ".coordinator.pid");
+    const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn() };
+    const childScript = `
+      const Database = require("better-sqlite3");
+      const { mkdirSync, writeFileSync } = require("node:fs");
+      const { join } = require("node:path");
+      const dataDir = process.env.WORKLAB_LOCK_TEST_DATA_DIR;
+      mkdirSync(dataDir, { recursive: true });
+      const db = new Database(join(dataDir, ".coordinator.lock"), { timeout: 0 });
+      db.pragma("busy_timeout = 0");
+      db.exec("BEGIN EXCLUSIVE");
+      writeFileSync(join(dataDir, ".coordinator.pid"), String(process.pid), { mode: 0o600 });
+      process.stdout.write("ready\\n");
+      setInterval(() => {}, 1_000);
+    `;
+    const child = spawn(process.execPath, ["-e", childScript], {
+      cwd: config.repoRoot,
+      env: { ...process.env, WORKLAB_LOCK_TEST_DATA_DIR: config.dataDir },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let coordinator;
+    const childExited = new Promise((resolve) => child.once("exit", resolve));
+    try {
+      await new Promise((resolve, reject) => {
+        let stderr = "";
+        const timer = setTimeout(() => reject(new Error(`lock child did not become ready: ${stderr}`)), 5_000);
+        timer.unref?.();
+        child.stderr.setEncoding("utf8");
+        child.stderr.on("data", (chunk) => { stderr += chunk; });
+        child.once("error", reject);
+        child.once("exit", (code, signal) => {
+          reject(new Error(`lock child exited before ready (${code ?? signal}): ${stderr}`));
+        });
+        child.stdout.setEncoding("utf8");
+        child.stdout.once("data", (chunk) => {
+          clearTimeout(timer);
+          if (chunk.includes("ready")) resolve();
+          else reject(new Error(`unexpected lock child output: ${chunk}`));
+        });
+      });
+      expect(readFileSync(pidFile, "utf8")).toBe(String(child.pid));
+      await expect(startCoordinator({
+        config,
+        logger,
+        services: startupServices(),
+      })).rejects.toThrow(`Worklab is already running for ${config.dataDir} (pid ${child.pid})`);
+
+      child.kill("SIGKILL");
+      await childExited;
+      expect(readFileSync(pidFile, "utf8")).toBe(String(child.pid));
+
+      coordinator = await startCoordinator({
+        config,
+        logger,
+        services: startupServices(),
+      });
+      expect(readFileSync(pidFile, "utf8")).toBe(String(process.pid));
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGKILL");
+        await childExited;
+      }
+      await coordinator?.shutdown();
+    }
   });
 });
