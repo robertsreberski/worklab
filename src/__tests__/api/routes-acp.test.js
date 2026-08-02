@@ -64,6 +64,10 @@ async function createGeneric(agent, cwd, body = {}) {
   });
 }
 
+function makeAcpTestServer(options = {}) {
+  return makeTestServer({ ...options, sharedRequestHarness: false });
+}
+
 describe("ACP API", () => {
   it("rejects cross-site mutations before any ACP process or task can launch", async () => {
     vi.stubEnv("WORKLAB_ACP_ALLOWED_ORIGINS", "https://split-ui.example");
@@ -76,7 +80,7 @@ describe("ACP API", () => {
       protocolVersion: 1,
       sources: [],
     }));
-    const { agent, rawAgent, db, watcher } = makeTestServer({
+    const { agent, rawAgent, db, watcher } = makeAcpTestServer({
       dataDir,
       acpControls: { discoverMono, probe },
     });
@@ -227,6 +231,45 @@ describe("ACP API", () => {
     expect(discoverMono).toHaveBeenCalledTimes(1);
   });
 
+  it("isolates ACP request headers and app routing when the shared harness is disabled", async () => {
+    vi.stubEnv("WORKLAB_ACP_ALLOWED_ORIGINS", "");
+    const firstDataDir = workspace();
+    const secondDataDir = workspace();
+    const discovery = {
+      schema: "mono-agent.acp-discovery.v1",
+      bridgeVersion: 1,
+      protocolVersion: 1,
+      sources: [],
+    };
+    const firstDiscoverMono = vi.fn(async () => discovery);
+    const secondDiscoverMono = vi.fn(async () => discovery);
+    const first = makeAcpTestServer({
+      dataDir: firstDataDir,
+      acpControls: { discoverMono: firstDiscoverMono },
+    });
+    const second = makeAcpTestServer({
+      dataDir: secondDataDir,
+      acpControls: { discoverMono: secondDiscoverMono },
+    });
+    const firstToken = readMcpToken(firstDataDir);
+
+    await first.rawAgent.get("/api/acp/discovery/mono")
+      .set("origin", "https://evil.example")
+      .expect(403);
+    await first.rawAgent.get("/api/acp/discovery/mono").expect(401);
+    await first.rawAgent.get("/api/acp/discovery/mono")
+      .set("authorization", `Bearer ${firstToken}`)
+      .expect(200);
+    await first.rawAgent.get("/api/acp/discovery/mono").expect(401);
+
+    await second.rawAgent.get("/api/acp/discovery/mono")
+      .set("authorization", `Bearer ${firstToken}`)
+      .expect(401);
+    await second.agent.get("/api/acp/discovery/mono").expect(200);
+    expect(firstDiscoverMono).toHaveBeenCalledTimes(1);
+    expect(secondDiscoverMono).toHaveBeenCalledTimes(1);
+  });
+
   it("returns canonical mono discovery and imports a sourceId-only profile", async () => {
     const cwd = workspace();
     const descriptor = monoDescriptor(cwd, { ignoredToken: "do-not-expose" });
@@ -244,7 +287,7 @@ describe("ACP API", () => {
       envKeys: ["MONO_AGENT_TOKEN"],
       env: { MONO_AGENT_TOKEN: "resolved-secret" },
     }));
-    const { agent, db } = makeTestServer({ acpControls: { discoverMono, resolveMonoSource } });
+    const { agent, db } = makeAcpTestServer({ acpControls: { discoverMono, resolveMonoSource } });
 
     const discoveryResponse = await agent.get("/api/acp/discovery/mono").expect(200);
     expect(discoveryResponse.body.discovery).toMatchObject({
@@ -316,7 +359,7 @@ describe("ACP API", () => {
       args: [],
       envKeys: [],
     }));
-    const { agent } = makeTestServer({ acpControls: { resolveMonoSource } });
+    const { agent } = makeAcpTestServer({ acpControls: { resolveMonoSource } });
 
     const response = await agent.post("/api/acp/profiles").send({
       sourceId: "mono-primary",
@@ -344,7 +387,7 @@ describe("ACP API", () => {
       args: [],
       envKeys: [],
     }));
-    const { agent } = makeTestServer({ acpControls: { resolveMonoSource } });
+    const { agent } = makeAcpTestServer({ acpControls: { resolveMonoSource } });
     const profile = (await agent.post("/api/acp/profiles")
       .send({ sourceId: "mono-primary" })
       .expect(201)).body.profile;
@@ -373,7 +416,7 @@ describe("ACP API", () => {
 
   it("requires generic profiles to be recreated before launch identity changes", async () => {
     const cwd = workspace();
-    const { agent } = makeTestServer();
+    const { agent } = makeAcpTestServer();
     const profile = (await createGeneric(agent, cwd)).body.profile;
 
     const rejected = await agent.patch(`/api/acp/profiles/${profile.id}`)
@@ -397,7 +440,7 @@ describe("ACP API", () => {
   });
 
   it("does not expose errors returned by injected discovery controls", async () => {
-    const { agent } = makeTestServer({
+    const { agent } = makeAcpTestServer({
       acpControls: {
         discoverMono: async () => {
           throw Object.assign(new Error("failed with token discovery-control-secret"), {
@@ -416,7 +459,7 @@ describe("ACP API", () => {
 
   it("serves camelCase generic profiles and rejects secret-bearing profile input", async () => {
     const cwd = workspace();
-    const { agent } = makeTestServer();
+    const { agent } = makeAcpTestServer();
     const created = await createGeneric(agent, cwd);
     expect(created.status).toBe(201);
     expect(created.body.profile).toMatchObject({
@@ -441,7 +484,7 @@ describe("ACP API", () => {
 
   it("rejects unsupported ACP client capability policies on create and PATCH", async () => {
     const cwd = workspace();
-    const { agent } = makeTestServer();
+    const { agent } = makeAcpTestServer();
     const createResponse = await createGeneric(agent, cwd, {
       permissionsPolicy: { filesystem: true, terminal: false, network: false, mcp: false },
     });
@@ -503,7 +546,7 @@ describe("ACP API", () => {
         };
       },
     };
-    const { agent, db, acpOperationManager } = makeTestServer({ acpControls: controls });
+    const { agent, db, acpOperationManager } = makeAcpTestServer({ acpControls: controls });
     const profile = (await createGeneric(agent, cwd)).body.profile;
     pageCursor = `acp-cursor:v1:${profile.id}:${Buffer.from(rawPageCursor).toString("base64url")}`;
 
@@ -588,7 +631,7 @@ describe("ACP API", () => {
 
   it("sanitizes legacy ACP operation and interaction rows on every API read", async () => {
     const cwd = workspace();
-    const { agent, db } = makeTestServer();
+    const { agent, db } = makeAcpTestServer();
     const profile = (await createGeneric(agent, cwd)).body.profile;
     const rawSessionId = "RAW_LEGACY_API_SESSION";
     const providerSessionId = `acp:v1:${profile.id}:${Buffer.from(rawSessionId).toString("base64url")}`;
@@ -677,7 +720,7 @@ describe("ACP API", () => {
         return { authenticated: true };
       },
     };
-    const { agent, db, acpOperationManager } = makeTestServer({ acpControls: controls });
+    const { agent, db, acpOperationManager } = makeAcpTestServer({ acpControls: controls });
     const profile = (await createGeneric(agent, cwd)).body.profile;
     const operation = (await agent.post(`/api/acp/profiles/${profile.id}/authenticate`)
       .send({ authMethodId: "browser-login" })
@@ -723,7 +766,7 @@ describe("ACP API", () => {
   it("redirects URL handoffs once without exposing private URL state elsewhere", async () => {
     const cwd = workspace();
     const urlHandoffStore = createAcpUrlHandoffStore();
-    const server = makeTestServer({ acpUrlHandoffStore: urlHandoffStore });
+    const server = makeAcpTestServer({ acpUrlHandoffStore: urlHandoffStore });
     const profile = (await createGeneric(server.agent, cwd)).body.profile;
     const now = Date.now();
     const runId = "run-url-open";
@@ -833,7 +876,7 @@ describe("ACP API", () => {
     try {
       const address = target.address();
       const rawUrl = `http://127.0.0.1:${address.port}/private-target?state=PRIVATE_TARGET_STATE`;
-      const server = makeTestServer({ dataDir, acpUrlHandoffStore: urlHandoffStore });
+      const server = makeAcpTestServer({ dataDir, acpUrlHandoffStore: urlHandoffStore });
       const profile = (await createGeneric(server.agent, cwd)).body.profile;
       const now = Date.now();
       const runId = "run-url-browser-only";
@@ -915,7 +958,7 @@ describe("ACP API", () => {
         return { authenticated: true };
       },
     };
-    const { agent, db } = makeTestServer({ acpControls: controls });
+    const { agent, db } = makeAcpTestServer({ acpControls: controls });
     const profile = (await createGeneric(agent, cwd)).body.profile;
     const operation = (await agent.post(`/api/acp/profiles/${profile.id}/authenticate`)
       .send({ authMethodId: "permission-login" })
@@ -956,7 +999,7 @@ describe("ACP API", () => {
     const probe = vi.fn(({ signal }) => new Promise((resolve, reject) => {
       signal.addEventListener("abort", () => reject(signal.reason), { once: true });
     }));
-    const { agent, acpOperationManager } = makeTestServer({ acpControls: { probe } });
+    const { agent, acpOperationManager } = makeAcpTestServer({ acpControls: { probe } });
     const profile = (await createGeneric(agent, cwd)).body.profile;
     const operation = (await agent.post(`/api/acp/profiles/${profile.id}/probe`)
       .expect(202)).body.operation;
@@ -983,7 +1026,7 @@ describe("ACP API", () => {
   it("requires exactly one bounded authMethodId for authentication", async () => {
     const cwd = workspace();
     const authenticate = vi.fn(async () => ({ authenticated: true }));
-    const { agent } = makeTestServer({ acpControls: { authenticate } });
+    const { agent } = makeAcpTestServer({ acpControls: { authenticate } });
     const profile = (await createGeneric(agent, cwd)).body.profile;
 
     await agent.post(`/api/acp/profiles/${profile.id}/authenticate`)
@@ -1009,7 +1052,7 @@ describe("ACP API", () => {
       claimAcpInteractionResponse(server.db, interactionId, { disposition });
       finalizeAcpInteractionResponse(server.db, interactionId);
     });
-    server = makeTestServer({
+    server = makeAcpTestServer({
       watcher: {
         handleRunRequested: async () => ({ runId: "fake-run" }),
         sendRunAcpInteractionResponse,
@@ -1060,7 +1103,7 @@ describe("ACP API", () => {
         throw new Error("delivery failed for watcher-error-secret");
       },
     };
-    const server = makeTestServer({ watcher });
+    const server = makeAcpTestServer({ watcher });
     const profile = (await createGeneric(server.agent, cwd)).body.profile;
     server.db.prepare(`
       INSERT INTO task_runs (id, mode, stage, agent_name, status, process_status, started_at)
@@ -1096,7 +1139,7 @@ describe("ACP API", () => {
 
   it("honors a failed watcher delivery result and leaves the interaction retryable", async () => {
     const cwd = workspace();
-    const server = makeTestServer({
+    const server = makeAcpTestServer({
       watcher: {
         handleRunRequested: async () => ({ runId: "fake-run" }),
         sendRunAcpInteractionResponse: async () => ({
@@ -1167,7 +1210,7 @@ describe("ACP API", () => {
 
   it("does not expose errors returned by an injected operation manager", async () => {
     const cwd = workspace();
-    const { agent } = makeTestServer({
+    const { agent } = makeAcpTestServer({
       acpOperationManager: {
         start: () => {
           throw Object.assign(new Error("operation failed with manager-control-secret"), {

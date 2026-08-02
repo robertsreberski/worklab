@@ -4,6 +4,11 @@ import { makeTestDb } from "./test-db.js";
 import { createServer } from "../../api/server.js";
 
 const ROUTE_HEADER = "x-worklab-test-app";
+const SAME_ORIGIN_HEADERS = Object.freeze({
+  host: "worklab-test.ts.net",
+  origin: "http://worklab-test.ts.net",
+  "sec-fetch-site": "same-origin",
+});
 const routedApps = new Map();
 let nextRoutedAppId = 0;
 let sharedHarness = null;
@@ -43,12 +48,27 @@ function routedTestAgent(app, defaultHeaders = {}) {
   );
 }
 
+function isolatedTestAgent(server, defaultHeaders = {}) {
+  const client = supertest(server);
+  return Object.fromEntries(
+    ["get", "post", "put", "patch", "delete", "head", "options"]
+      .map((method) => [method, (...args) => client[method](...args).set({ ...defaultHeaders })]),
+  );
+}
+
+function isolatedTestAgents(app) {
+  const server = createHttpServer(app);
+  server.listen(0);
+  server.unref();
+  server.on("connection", (socket) => socket.unref());
+  return {
+    rawAgent: isolatedTestAgent(server),
+    agent: isolatedTestAgent(server, SAME_ORIGIN_HEADERS),
+  };
+}
+
 export function sameOriginTestAgent(app) {
-  return routedTestAgent(app, {
-    host: "worklab-test.ts.net",
-    origin: "http://worklab-test.ts.net",
-    "sec-fetch-site": "same-origin",
-  });
+  return routedTestAgent(app, SAME_ORIGIN_HEADERS);
 }
 
 export function sameOriginFetch(url, init = {}) {
@@ -59,7 +79,7 @@ export function sameOriginFetch(url, init = {}) {
   return fetch(url, { ...init, headers });
 }
 
-export function makeTestServer({ watcher, dataDir, consolidation, automationManager, config, runtimeControls, updateControls, assistant, notifications, serviceStatus, acpControls, acpOperationManager, acpUrlHandoffStore } = {}) {
+export function makeTestServer({ watcher, dataDir, consolidation, automationManager, config, runtimeControls, updateControls, assistant, notifications, serviceStatus, acpControls, acpOperationManager, acpUrlHandoffStore, sharedRequestHarness = true } = {}) {
   const db = makeTestDb();
   const stubWatcher = watcher || {
     handleRunRequested: async () => ({ runId: "fake-run" }),
@@ -90,8 +110,12 @@ export function makeTestServer({ watcher, dataDir, consolidation, automationMana
     acpOperationManager,
     acpUrlHandoffStore,
   });
-  const rawAgent = routedTestAgent(app);
-  const agent = sameOriginTestAgent(app);
+  const { rawAgent, agent } = sharedRequestHarness
+    ? {
+        rawAgent: routedTestAgent(app),
+        agent: routedTestAgent(app, SAME_ORIGIN_HEADERS),
+      }
+    : isolatedTestAgents(app);
   return {
     app,
     broker,
