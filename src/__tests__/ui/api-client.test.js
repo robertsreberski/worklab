@@ -280,6 +280,7 @@ describe("ui API client", () => {
     await api.createAcpProfile({ driver: "generic", command: "/usr/local/bin/agent" });
     await api.patchAcpProfile("profile/1", { cwd: "/workspace" });
     await api.probeAcpProfile("profile/1");
+    await api.authenticateAcpProfile("profile/1", "oauth-browser");
     await api.listAcpProfileSessions("profile/1");
     await api.getAcpOperation("operation/1");
     await api.listAcpOperationInteractions("operation/1");
@@ -293,6 +294,7 @@ describe("ui API client", () => {
       "/api/acp/profiles",
       "/api/acp/profiles/profile%2F1",
       "/api/acp/profiles/profile%2F1/probe",
+      "/api/acp/profiles/profile%2F1/authenticate",
       "/api/acp/profiles/profile%2F1/sessions:list",
       "/api/acp/operations/operation%2F1",
       "/api/acp/operations/operation%2F1/interactions",
@@ -301,10 +303,11 @@ describe("ui API client", () => {
       "/api/acp/discovery/mono",
     ]);
     expect(global.fetch.mock.calls.map(([, options]) => options.method)).toEqual([
-      "GET", "GET", "POST", "PATCH", "POST", "POST", "GET", "GET", "GET", "POST", "GET",
+      "GET", "GET", "POST", "PATCH", "POST", "POST", "POST", "GET", "GET", "GET", "POST", "GET",
     ]);
     expect(global.fetch.mock.calls[0][1].signal).toBe(controller.signal);
-    expect(global.fetch.mock.calls[10][1].signal).toBe(controller.signal);
+    expect(global.fetch.mock.calls[5][1].body).toBe(JSON.stringify({ authMethodId: "oauth-browser" }));
+    expect(global.fetch.mock.calls[11][1].signal).toBe(controller.signal);
   });
 
   it("imports mono-agent discovery by source id only", async () => {
@@ -322,6 +325,10 @@ describe("ui API client", () => {
       body: JSON.stringify({ sourceId: "mono-source-1" }),
       signal: undefined,
     });
+  });
+
+  it("refuses to start ACP authentication without an advertised method id", () => {
+    expect(() => api.authenticateAcpProfile("profile-1")).toThrow("authMethodId is required");
   });
 });
 

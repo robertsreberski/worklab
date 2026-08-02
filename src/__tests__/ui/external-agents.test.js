@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  acpAuthMethods,
   acpEndpointUnsupported,
   acpProfileForAgent,
   externalAgentDraft,
@@ -51,6 +52,25 @@ describe("external agent UI helpers", () => {
     expect(draft).not.toHaveProperty("lastProbe");
     expect(draft).not.toHaveProperty("capabilities");
     expect(externalAgentVolatileState(profile)).toMatchObject({ health: "healthy", capabilities: { sessions: true } });
+  });
+
+  it("projects only advertised authentication method ids from probe results", () => {
+    const methods = acpAuthMethods({
+      lastProbe: {
+        result: {
+          authMethods: [
+            { id: "oauth-browser", name: "Browser sign-in", type: "oauth" },
+            { id: "device-code", name: "Device code", type: "terminal" },
+            { name: "Missing id" },
+          ],
+        },
+      },
+    });
+
+    expect(methods).toEqual([
+      { id: "oauth-browser", label: "Browser sign-in", type: "oauth", description: "" },
+      { id: "device-code", label: "Device code", type: "terminal", description: "" },
+    ]);
   });
 
   it("builds a structured stdio payload without environment values", () => {

@@ -45,6 +45,12 @@ function pathSegment(value) {
   return encodeURIComponent(String(value ?? ""));
 }
 
+function requiredText(value, label) {
+  const result = typeof value === "string" ? value.trim() : "";
+  if (!result) throw new Error(`${label} is required`);
+  return result;
+}
+
 function withQuery(path, query) {
   return `${path}${query ? `?${new URLSearchParams(query)}` : ""}`;
 }
@@ -172,7 +178,9 @@ export const api = {
   patchAcpProfile: (id, patch) => request("PATCH", `/acp/profiles/${pathSegment(id)}`, patch),
   deleteAcpProfile: (id) => request("DELETE", `/acp/profiles/${pathSegment(id)}`),
   probeAcpProfile: (id) => request("POST", `/acp/profiles/${pathSegment(id)}/probe`),
-  authenticateAcpProfile: (id, data = {}) => request("POST", `/acp/profiles/${pathSegment(id)}/authenticate`, data),
+  authenticateAcpProfile: (id, authMethodId) => request("POST", `/acp/profiles/${pathSegment(id)}/authenticate`, {
+    authMethodId: requiredText(authMethodId, "authMethodId"),
+  }),
   logoutAcpProfile: (id) => request("POST", `/acp/profiles/${pathSegment(id)}/logout`),
   listAcpProfileSessions: (id, data = {}) => request("POST", `/acp/profiles/${pathSegment(id)}/sessions:list`, data),
   deleteAcpProfileSession: (id, sessionId) => request("DELETE", `/acp/profiles/${pathSegment(id)}/sessions/${pathSegment(sessionId)}`),

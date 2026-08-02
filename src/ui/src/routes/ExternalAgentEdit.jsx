@@ -90,6 +90,7 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [probeOperation, setProbeOperation] = useState(null);
   const [probing, setProbing] = useState(false);
+  const [authenticatingMethodId, setAuthenticatingMethodId] = useState(null);
   const pollTimerRef = useRef(null);
 
   const update = useCallback((patch) => setDraft((current) => ({ ...current, ...patch })), []);
@@ -181,22 +182,28 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
     }
   }
 
-  function pollOperation(id) {
+  function pollOperation(id, { kind = "probe", authMethodId = null } = {}) {
     if (!id) return;
     pollTimerRef.current = setTimeout(async () => {
       try {
         const result = await api.getAcpOperation(id);
         const operation = operationBody(result);
-        setProbeOperation(operation);
+        if (kind === "probe") setProbeOperation(operation);
         if (operationFinished(operation)) {
-          setProbing(false);
+          if (kind === "probe") setProbing(false);
+          else setAuthenticatingMethodId(null);
           await refreshVolatileProfile();
+          if (kind === "authenticate") {
+            const failed = ["failed", "error", "cancelled", "canceled"].includes(String(operation?.status || operation?.state || "").toLowerCase());
+            pushToast(failed ? "Authentication failed" : "Authentication completed", { variant: failed ? "error" : "success" });
+          }
         } else {
-          pollOperation(id);
+          pollOperation(id, { kind, authMethodId });
         }
       } catch (err) {
-        setProbing(false);
-        pushToast(`Probe status failed: ${err.message}`, { variant: "error" });
+        if (kind === "probe") setProbing(false);
+        else setAuthenticatingMethodId(null);
+        pushToast(`${kind === "probe" ? "Probe" : "Authentication"} status failed: ${err.message}`, { variant: "error" });
       }
     }, 800);
   }
@@ -210,7 +217,7 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
       const operation = operationBody(result);
       setProbeOperation(operation);
       const id = operationId(operation);
-      if (id && !operationFinished(operation)) pollOperation(id);
+      if (id && !operationFinished(operation)) pollOperation(id, { kind: "probe" });
       else {
         setProbing(false);
         await refreshVolatileProfile();
@@ -218,6 +225,28 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
     } catch (err) {
       setProbing(false);
       pushToast(`Connection test failed: ${err.message}`, { variant: "error" });
+    }
+  }
+
+  async function authenticate(authMethodId) {
+    if (!profile?.id || !authMethodId) return;
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    setAuthenticatingMethodId(authMethodId);
+    try {
+      const result = await api.authenticateAcpProfile(profile.id, authMethodId);
+      const operation = operationBody(result);
+      const id = operationId(operation);
+      if (id && !operationFinished(operation)) {
+        pollOperation(id, { kind: "authenticate", authMethodId });
+      } else {
+        setAuthenticatingMethodId(null);
+        await refreshVolatileProfile();
+        const failed = ["failed", "error", "cancelled", "canceled"].includes(String(operation?.status || operation?.state || "").toLowerCase());
+        pushToast(failed ? "Authentication failed" : "Authentication completed", { variant: failed ? "error" : "success" });
+      }
+    } catch (err) {
+      setAuthenticatingMethodId(null);
+      pushToast(`Authentication failed: ${err.message}`, { variant: "error" });
     }
   }
 
@@ -285,7 +314,15 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
             { label: "MCP", value: draft.mcpOwner === "agent" ? "External agent" : "Worklab", mono: false },
           ]} />
         </Card>
-        <AcpHealthCard profile={profile} operation={probeOperation} probing={probing} onProbe={probe} canProbe={!isNew && !!profile?.id} />
+        <AcpHealthCard
+          profile={profile}
+          operation={probeOperation}
+          probing={probing}
+          onProbe={probe}
+          canProbe={!isNew && !!profile?.id}
+          onAuthenticate={!isNew && profile?.id ? authenticate : undefined}
+          authenticatingMethodId={authenticatingMethodId}
+        />
         {!isNew && (
           <Card collapsible={{ summary: "More actions", count: 1 }} class="entity-rail-card">
             <Button variant="destructive" onClick={() => setDeleteOpen(true)}>Delete agent</Button>
