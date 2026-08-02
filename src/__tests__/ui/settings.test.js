@@ -2,6 +2,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  COMPACTION_OVERRIDE_KEYS,
+  COMPACTION_OVERRIDE_SEED,
+  compactionIsAdaptive,
   mcpAvailabilitySummary,
   mcpRowsFromServers,
   mcpServerFromRow,
@@ -28,6 +31,7 @@ import {
 const appShellSourcePath = resolve(import.meta.dirname, "../../ui/src/components/AppShell.jsx");
 const settingsSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/Settings.jsx");
 const settingsHelpersSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/settings/helpers.js");
+const compactionSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/settings/CompactionControl.jsx");
 const settingsShellSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/settings/SettingsShell.jsx");
 const settingsStylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
 const providersSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/settings/ProvidersTab.jsx");
@@ -92,6 +96,7 @@ describe("settings UI duration conversions", () => {
 
   it("keeps dense Settings layout surfaces grouped and width-safe", () => {
     const source = readFileSync(settingsSourcePath, "utf8");
+    const compactionSource = readFileSync(compactionSourcePath, "utf8");
     const styles = readFileSync(settingsStylesPath, "utf8");
 
     expect(source).toContain('class="settings-note-grid settings-note-grid-paths"');
@@ -105,7 +110,7 @@ describe("settings UI duration conversions", () => {
       "Tool output limits",
       "Recovery and verification",
     ]) {
-      expect(source).toContain(`ControlGroup title="${group}"`);
+      expect(`${source}\n${compactionSource}`).toContain(`ControlGroup title="${group}"`);
     }
     expect(styles).toContain(".settings-page .select");
     expect(styles).toContain(".ds-control-groups");
@@ -303,6 +308,13 @@ describe("settings UI duration conversions", () => {
     expect(payload).not.toHaveProperty(["agent_learning", "backend"].join("_"));
     expect(payload.agent_learning_injected_limit).toBe(12);
     expect(payload.agent_learning_auto_approve_threshold).toBe(0.7);
+  });
+
+  it("treats compaction as adaptive only when every override is unset", () => {
+    expect(COMPACTION_OVERRIDE_KEYS).toEqual(Object.keys(COMPACTION_OVERRIDE_SEED));
+    expect(compactionIsAdaptive({})).toBe(true);
+    expect(compactionIsAdaptive({ agent_compaction_trigger_ratio: null })).toBe(true);
+    expect(compactionIsAdaptive({ agent_compaction_trigger_ratio: 0.7 })).toBe(false);
   });
 
   it("defaults the Pi Codex transport payload to SSE", () => {
