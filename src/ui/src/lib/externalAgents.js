@@ -149,6 +149,30 @@ export function externalAgentPayload(draft = {}) {
   };
 }
 
+export function externalAgentMutationPayload(draft = {}, existingProfile = null) {
+  const payload = externalAgentPayload(draft);
+  const profile = normalizeAcpProfile(existingProfile || {});
+  if (profile.driver === "mono") {
+    return {
+      displayName: payload.displayName,
+      description: payload.description,
+      enabled: payload.enabled,
+    };
+  }
+  if (payload.configurationOwner === "agent") {
+    return {
+      displayName: payload.displayName,
+      description: payload.description,
+      enabled: payload.enabled,
+      configurationOwner: payload.configurationOwner,
+      workspaceOwner: payload.workspaceOwner,
+      mcpOwner: payload.mcpOwner,
+      canonicalWorkspace: payload.canonicalWorkspace,
+    };
+  }
+  return payload;
+}
+
 export function externalAgentVolatileState(profile = {}) {
   return {
     lastProbe: firstDefined(profile.lastProbe, profile.last_probe, null),
@@ -168,9 +192,18 @@ function discoveryItems(value) {
   return firstDefined(value.sources, value.agents, value.entries, value.discovery?.sources, []);
 }
 
-function safeCapability(value, key) {
-  const capability = value?.capabilities?.[key];
-  return typeof capability === "boolean" ? capability : undefined;
+function safeCapability(value, ...keys) {
+  for (const key of keys) {
+    const capability = value?.capabilities?.[key];
+    if (typeof capability === "boolean") return capability;
+  }
+  return undefined;
+}
+
+function promptContent(value) {
+  const content = firstDefined(value?.constraints?.promptContent, value?.constraints?.prompt_content, []);
+  if (!Array.isArray(content)) return [];
+  return content.filter((item) => item === "text" || item === "resource_link");
 }
 
 export function normalizeMonoDiscovery(response = {}) {
@@ -179,6 +212,8 @@ export function normalizeMonoDiscovery(response = {}) {
     const source = entry?.source && typeof entry.source === "object" ? entry.source : entry;
     const sourceId = text(firstDefined(source?.sourceId, source?.source_id, entry?.sourceId, entry?.source_id));
     if (!sourceId) return null;
+    const capabilities = source?.capabilities ? source : entry;
+    const constraints = source?.constraints ? source : entry;
     return {
       sourceId,
       label: text(firstDefined(source?.label, source?.displayName, source?.display_name, entry?.label)) || sourceId,
@@ -186,10 +221,14 @@ export function normalizeMonoDiscovery(response = {}) {
       ready: bool(firstDefined(source?.ready, entry?.ready), false),
       imported: bool(firstDefined(source?.imported, entry?.imported), false),
       capabilities: {
-        sessions: safeCapability(source, "sessions"),
-        clientMcp: safeCapability(source, "clientMcp"),
-        filesystem: safeCapability(source, "filesystem"),
-        terminal: safeCapability(source, "terminal"),
+        sessions: safeCapability(capabilities, "sessions"),
+        clientMcp: safeCapability(capabilities, "clientMcp", "client_mcp"),
+        filesystem: safeCapability(capabilities, "clientFilesystem", "client_filesystem", "filesystem"),
+        terminal: safeCapability(capabilities, "clientTerminal", "client_terminal", "terminal"),
+      },
+      constraints: {
+        promptContent: promptContent(constraints),
+        attachments: bool(firstDefined(constraints?.constraints?.attachments, capabilities?.capabilities?.attachments), false),
       },
     };
   }).filter(Boolean);
