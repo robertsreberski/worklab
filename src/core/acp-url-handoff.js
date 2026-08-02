@@ -43,15 +43,35 @@ function privateUrlValues(original, parsed) {
     if (typeof value !== "string" || value.length === 0) return;
     values.add(value);
   };
+  const addSerializedPairs = (serialized) => {
+    for (const pair of serialized.split("&")) {
+      if (!pair) continue;
+      const separator = pair.indexOf("=");
+      const serializedKey = separator < 0 ? pair : pair.slice(0, separator);
+      addComponent(serializedKey);
+      addComponent(safelyDecoded(serializedKey, { query: true }));
+      if (separator < 0) continue;
+      const serializedValue = pair.slice(separator + 1);
+      addComponent(serializedValue);
+      addComponent(safelyDecoded(serializedValue, { query: true }));
+    }
+  };
 
   addComponent(parsed.origin);
   addComponent(parsed.host);
   addComponent(parsed.hostname);
-  addComponent(domainToUnicode(parsed.hostname));
+  addComponent(parsed.port);
+  for (const label of parsed.hostname.split(".")) addComponent(label);
+  const unicodeHostname = domainToUnicode(parsed.hostname);
+  addComponent(unicodeHostname);
+  for (const label of unicodeHostname.split(".")) addComponent(label);
   const authority = original.match(/^[a-z][a-z0-9+.-]*:\/\/([^/?#]+)/iu)?.[1] || "";
   if (authority && !authority.includes("@")) {
     addComponent(authority);
-    addComponent(authority.replace(/:\d+$/u, ""));
+    addComponent(authority.match(/:(\d+)$/u)?.[1]);
+    const lexicalHostname = authority.replace(/:\d+$/u, "");
+    addComponent(lexicalHostname);
+    for (const label of lexicalHostname.split(".")) addComponent(label);
   }
 
   if (parsed.pathname !== "/") {
@@ -63,24 +83,14 @@ function privateUrlValues(original, parsed) {
       addComponent(safelyDecoded(segment));
     }
   }
-  for (const pair of parsed.search.slice(1).split("&")) {
-    if (!pair) continue;
-    const separator = pair.indexOf("=");
-    const serializedKey = separator < 0 ? pair : pair.slice(0, separator);
-    addComponent(serializedKey);
-    addComponent(safelyDecoded(serializedKey, { query: true }));
-    if (separator >= 0) {
-      const serializedValue = pair.slice(separator + 1);
-      addComponent(serializedValue);
-      addComponent(safelyDecoded(serializedValue, { query: true }));
-    }
-  }
+  addSerializedPairs(parsed.search.slice(1));
   for (const key of parsed.searchParams.keys()) addComponent(key);
   for (const value of parsed.searchParams.values()) addComponent(value);
   if (parsed.hash.length > 1) {
     const serialized = parsed.hash.slice(1);
     addComponent(serialized);
     addComponent(safelyDecoded(serialized));
+    addSerializedPairs(serialized);
   }
   return [...values].sort((left, right) => right.length - left.length);
 }

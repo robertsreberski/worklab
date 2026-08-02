@@ -111,8 +111,8 @@ describe("spawnWorker ACP interactions", () => {
     const urlHandoffStore = createAcpUrlHandoffStore();
     try {
       const { taskId, runId } = seed(db);
-      const rawUrl = "https://秘密.example/続行/PATH_PRIVATE?QUERY_KEY_PRIVATE=QUERY%20PRIVATE&KEY_ONLY_PRIVATE#FRAGMENT%20PRIVATE";
-      const privatePattern = /秘密|続行|PATH_PRIVATE|QUERY_KEY_PRIVATE|KEY_ONLY_PRIVATE|QUERY(?:%20| )PRIVATE|FRAGMENT(?:%20| )PRIVATE|USERINFO_PRIVATE|xn--/u;
+      const rawUrl = "https://HOST_LABEL_PRIVATE.秘密.example:8443/続行/PATH_PRIVATE?QUERY_KEY_PRIVATE=QUERY%20PRIVATE&KEY_ONLY_PRIVATE#FRAGMENT_KEY_PRIVATE=FRAGMENT%20PRIVATE&SECOND_FRAGMENT_PRIVATE=SECOND%20PRIVATE";
+      const privatePattern = /HOST_LABEL_PRIVATE|秘密|8443|続行|PATH_PRIVATE|QUERY_KEY_PRIVATE|KEY_ONLY_PRIVATE|QUERY(?:%20| )PRIVATE|FRAGMENT_KEY_PRIVATE|FRAGMENT(?:%20| )PRIVATE|SECOND_FRAGMENT_PRIVATE|SECOND(?:%20| )PRIVATE|USERINFO_PRIVATE|xn--/u;
       const broadcasts = [];
       const loggerEvents = [];
       const handle = spawnWorker({
@@ -144,21 +144,26 @@ describe("spawnWorker ACP interactions", () => {
               type: "sdk_event",
               event: {
                 type: "assistant",
-                message: { content: [{ type: "text", text: `later ${rawUrl} PATH_PRIVATE QUERY_KEY_PRIVATE KEY_ONLY_PRIVATE QUERY PRIVATE` }] },
+                message: { content: [{ type: "text", text: `later ${rawUrl} HOST_LABEL_PRIVATE 8443 PATH_PRIVATE QUERY_KEY_PRIVATE KEY_ONLY_PRIVATE QUERY PRIVATE FRAGMENT_KEY_PRIVATE FRAGMENT PRIVATE SECOND_FRAGMENT_PRIVATE SECOND PRIVATE` }] },
               },
             }, {
               type: "final",
               text: `finished ${rawUrl}`,
               diagnostics: {
                 path: "PATH_PRIVATE",
+                hostnameLabel: "HOST_LABEL_PRIVATE",
+                port: "8443",
                 queryKey: "QUERY_KEY_PRIVATE",
                 keyOnly: "KEY_ONLY_PRIVATE",
                 query: "QUERY PRIVATE",
                 fragment: "FRAGMENT PRIVATE",
+                fragmentKey: "FRAGMENT_KEY_PRIVATE",
+                secondFragmentKey: "SECOND_FRAGMENT_PRIVATE",
+                secondFragment: "SECOND PRIVATE",
               },
             }],
             eventsInOneChunk: true,
-            stderrAfterEvents: `stderr ${rawUrl} PATH_PRIVATE QUERY_KEY_PRIVATE KEY_ONLY_PRIVATE QUERY PRIVATE FRAGMENT PRIVATE\n`,
+            stderrAfterEvents: `stderr ${rawUrl} HOST_LABEL_PRIVATE 8443 PATH_PRIVATE QUERY_KEY_PRIVATE KEY_ONLY_PRIVATE QUERY PRIVATE FRAGMENT_KEY_PRIVATE FRAGMENT PRIVATE SECOND_FRAGMENT_PRIVATE SECOND PRIVATE\n`,
             exitAfterMs: 250,
           }),
           WORKLAB_RUN_ID: runId,

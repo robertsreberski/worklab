@@ -615,7 +615,7 @@ describe("AcpOperationManager", () => {
   });
 
   it("retains URL query state only in the one-use handoff store", async () => {
-    const rawUrl = "https://host-private.example/PATH_PRIVATE/login?QUERY_KEY_PRIVATE=QUERY_PRIVATE&KEY_ONLY_PRIVATE#FRAGMENT_PRIVATE";
+    const rawUrl = "https://HOST_LABEL_PRIVATE.example:8443/PATH_PRIVATE/login?QUERY_KEY_PRIVATE=QUERY_PRIVATE&KEY_ONLY_PRIVATE#FRAGMENT_KEY_PRIVATE=FRAGMENT_PRIVATE&SECOND_FRAGMENT_PRIVATE=SECOND_PRIVATE";
     const { db, profile, manager, urlHandoffStore, events } = setup({
       authenticate: async ({ onInteraction }) => {
         const request = {
@@ -637,11 +637,16 @@ describe("AcpOperationManager", () => {
           authenticated: true,
           status: `completed ${rawUrl}`,
           warnings: [
+            "HOST_LABEL_PRIVATE",
+            "8443",
             "PATH_PRIVATE",
             "QUERY_KEY_PRIVATE",
             "KEY_ONLY_PRIVATE",
             "QUERY_PRIVATE",
             "FRAGMENT_PRIVATE",
+            "FRAGMENT_KEY_PRIVATE",
+            "SECOND_FRAGMENT_PRIVATE",
+            "SECOND_PRIVATE",
           ],
         };
       },
@@ -673,7 +678,7 @@ describe("AcpOperationManager", () => {
       rows: db.prepare("SELECT * FROM acp_interactions").all(),
       events,
     })).not.toMatch(
-      /host-private|PATH_PRIVATE|QUERY_KEY_PRIVATE|KEY_ONLY_PRIVATE|QUERY_PRIVATE|FRAGMENT_PRIVATE|USERINFO_PRIVATE/u,
+      /HOST_LABEL_PRIVATE|8443|PATH_PRIVATE|QUERY_KEY_PRIVATE|KEY_ONLY_PRIVATE|QUERY_PRIVATE|FRAGMENT_KEY_PRIVATE|FRAGMENT_PRIVATE|SECOND_FRAGMENT_PRIVATE|SECOND_PRIVATE|USERINFO_PRIVATE/u,
     );
     expect(() => manager.respond({
       operationId: operation.id,
@@ -694,7 +699,7 @@ describe("AcpOperationManager", () => {
       rows: db.prepare("SELECT * FROM acp_operations").all(),
       events,
     })).not.toMatch(
-      /host-private|PATH_PRIVATE|QUERY_KEY_PRIVATE|KEY_ONLY_PRIVATE|QUERY_PRIVATE|FRAGMENT_PRIVATE|USERINFO_PRIVATE/u,
+      /HOST_LABEL_PRIVATE|8443|PATH_PRIVATE|QUERY_KEY_PRIVATE|KEY_ONLY_PRIVATE|QUERY_PRIVATE|FRAGMENT_KEY_PRIVATE|FRAGMENT_PRIVATE|SECOND_FRAGMENT_PRIVATE|SECOND_PRIVATE|USERINFO_PRIVATE/u,
     );
   });
 

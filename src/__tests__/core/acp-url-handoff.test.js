@@ -28,15 +28,20 @@ describe("ACP URL handoff store", () => {
   });
 
   it("canonicalizes redirects and exposes only a fixed host-owned public marker", () => {
-    const original = "https://例え.テスト/続行/PRIVATE_PATH?PRIVATE%20KEY=PRIVATE%20QUERY&KEY_ONLY_PRIVATE#PRIVATE%20FRAGMENT";
+    const original = "https://例え.テスト:443/続行/PRIVATE_PATH?PRIVATE%20KEY=PRIVATE%20QUERY&KEY_ONLY_PRIVATE#FRAGMENT_KEY_PRIVATE=PRIVATE%20FRAGMENT&FRAGMENT_ONLY_PRIVATE";
     const inspected = inspectAcpUrlHandoff(original);
 
     expect(inspected.url).toBe(
-      "https://xn--r8jz45g.xn--zckzah/%E7%B6%9A%E8%A1%8C/PRIVATE_PATH?PRIVATE%20KEY=PRIVATE%20QUERY&KEY_ONLY_PRIVATE#PRIVATE%20FRAGMENT",
+      "https://xn--r8jz45g.xn--zckzah/%E7%B6%9A%E8%A1%8C/PRIVATE_PATH?PRIVATE%20KEY=PRIVATE%20QUERY&KEY_ONLY_PRIVATE#FRAGMENT_KEY_PRIVATE=PRIVATE%20FRAGMENT&FRAGMENT_ONLY_PRIVATE",
     );
     expect(inspected.privateValues).toEqual(expect.arrayContaining([
       original,
       inspected.url,
+      "例え",
+      "テスト",
+      "xn--r8jz45g",
+      "xn--zckzah",
+      "443",
       "PRIVATE_PATH",
       "PRIVATE%20KEY",
       "PRIVATE KEY",
@@ -45,6 +50,8 @@ describe("ACP URL handoff store", () => {
       "PRIVATE QUERY",
       "PRIVATE%20FRAGMENT",
       "PRIVATE FRAGMENT",
+      "FRAGMENT_KEY_PRIVATE",
+      "FRAGMENT_ONLY_PRIVATE",
     ]));
     expect(createAcpUrlPublicRequest(original)).toEqual({
       mode: "url",
