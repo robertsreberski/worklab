@@ -6,7 +6,16 @@ const MAX_AUTH_METHOD_ID_CHARS = 500;
 const MAX_PROVIDER_SESSION_ID_CHARS = 5_600;
 const PROVIDER_SESSION_ID_RE = /^acp:v1:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([A-Za-z0-9_-]+)$/u;
 const SENSITIVE_KEY_RE = /(?:secret|password|passphrase|token|api[_-]?key|credential|authorization|cookie|answer|form[_-]?values?)/iu;
-const SCHEMA_VALUE_KEYS = new Set(["default", "const", "examples", "value", "values", "answer", "answers"]);
+const SCHEMA_VALUE_KEYS = new Set([
+  "default",
+  "const",
+  "examples",
+  "value",
+  "values",
+  "content",
+  "answer",
+  "answers",
+]);
 
 function isPlainObject(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -65,7 +74,7 @@ function sanitizedValue(value, {
   for (const [key, entry] of Object.entries(value).slice(0, MAX_ITEMS)) {
     const propertyIdentifier = parentKey === "properties";
     if (!propertyIdentifier && SENSITIVE_KEY_RE.test(key)) continue;
-    if (schema && SCHEMA_VALUE_KEYS.has(key)) continue;
+    if (schema && SCHEMA_VALUE_KEYS.has(key.toLowerCase())) continue;
     const sanitized = sanitizedValue(entry, { depth: depth + 1, schema, parentKey: key });
     if (sanitized !== undefined) output[key] = sanitized;
   }

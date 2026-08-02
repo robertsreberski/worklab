@@ -47,7 +47,7 @@ function createControlReaderState({ ac, emit, acpInteractionChannel }) {
         ...(deadlineAt ? { deadline_at: deadlineAt } : {}),
         ts: Date.now(),
       });
-      acpInteractionChannel.cancelAllPending();
+      acpInteractionChannel.cancelAllPending("coordinator_shutdown");
       try { ac.abort(); } catch { /* already aborted */ }
     },
   };
@@ -77,7 +77,10 @@ function startControlReader({ controlState }) {
       return;
     }
     if (message?.type === "acp_interaction_cancel") {
-      acpInteractionChannel.cancel(message.interaction_id || message.interactionId);
+      acpInteractionChannel.cancel(message.interaction_id || message.interactionId, {
+        deliveryId: message.delivery_id || message.deliveryId || null,
+        reason: "client_cancelled",
+      });
       return;
     }
     if (message?.type !== "live_user_message") return;
@@ -136,7 +139,7 @@ async function main() {
 
   const ac = new AbortController();
   const abortRun = () => {
-    acpInteractionChannel.cancelAllPending();
+    acpInteractionChannel.cancelAllPending("run_aborted");
     ac.abort();
   };
   process.on("SIGTERM", abortRun);
@@ -182,13 +185,13 @@ async function main() {
   if (controlState.isDraining()) {
     if (!result || result.cancelled || result.error) {
       approvalChannel.denyAllPending("coordinator_shutdown");
-      acpInteractionChannel.cancelAllPending();
+      acpInteractionChannel.cancelAllPending("coordinator_shutdown");
       emit({ type: "cancelled", initiator: "coordinator_shutdown", drained: true });
       process.exit(0);
     }
   }
   approvalChannel.denyAllPending("run_terminated");
-  acpInteractionChannel.cancelAllPending();
+  acpInteractionChannel.cancelAllPending("run_terminated");
 
   const exitCode = emitFinalResult(ctx, result);
   process.exit(exitCode);

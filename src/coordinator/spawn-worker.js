@@ -52,7 +52,12 @@ import {
   makeRawLogPath,
   truncateDisplayEvent,
 } from "./spawn-worker/log-events.js";
-import { createAcpInteractionControls, expireAcpInteractionsForRun, persistAcpInteractionRequest } from "./spawn-worker/acp-interactions.js";
+import {
+  createAcpInteractionControls,
+  expireAcpInteractionsForRun,
+  persistAcpInteractionRequest,
+  sanitizeTaskRunAcpInteractionEvent,
+} from "./spawn-worker/acp-interactions.js";
 
 const FINALISATION_COMPLETION_TOOL_NAMES = new Set(["journal_summary", "worktree_sync", "todo_write"]);
 
@@ -607,7 +612,10 @@ export function spawnWorker({
       logger?.warn?.({ line, err: err.message }, "worker emitted malformed stdout");
       return;
     }
-    const { rawEvent } = emitEvent(parsed);
+    const safeParsed = acpInteractionControls.redactWorkerEvent(
+      sanitizeTaskRunAcpInteractionEvent(parsed),
+    );
+    const { rawEvent } = emitEvent(safeParsed);
     mergeWorkerDiagnostics(rawEvent.diagnostics);
     const recoveredStructuredResult = worklabResultFromStructuredOutputEvent(rawEvent);
     if (recoveredStructuredResult) structuredOutputResult = recoveredStructuredResult;
@@ -662,13 +670,20 @@ export function spawnWorker({
         }).catch(() => {});
       }
     }
+    if (rawEvent.type === "acp_interaction_acknowledged" && rawEvent.interaction_id) {
+      try {
+        acpInteractionControls.handleWorkerEvent(rawEvent);
+      } catch (err) {
+        logger?.warn?.({ err: err.message, runId }, "failed to apply ACP interaction acknowledgement");
+      }
+    }
     if (rawEvent.type === "prompt_built" && rawEvent.diagnostics) {
       promptDiagnostics = { ...(promptDiagnostics || {}), ...rawEvent.diagnostics };
     }
   });
 
   child.stderr.on("data", (chunk) => {
-    const text = chunk.toString();
+    const text = acpInteractionControls.redactText(chunk.toString());
     stderrTail.push(text);
     logger?.info?.({ runId, stderr: text }, "worker stderr");
   });
@@ -1088,6 +1103,7 @@ export function spawnWorker({
       catch { /* best effort */ }
       try { expireAcpInteractionsForRun(db, runId); }
       catch { /* best effort */ }
+      acpInteractionControls.close();
 
       broker.broadcast(runId, { type: "done", exitCode: code });
 

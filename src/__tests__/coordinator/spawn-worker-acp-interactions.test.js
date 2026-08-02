@@ -1,8 +1,10 @@
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { spawnWorker } from "../../coordinator/spawn-worker.js";
+import { createAcpInteractionControls } from "../../coordinator/spawn-worker/acp-interactions.js";
+import { insertAcpInteractionRequest } from "../../core/db/queries/acp-interactions.js";
 import { makeTestDb } from "../helpers/test-db.js";
 import { newRunId, newTaskId } from "../../core/ids.js";
 
@@ -50,7 +52,11 @@ describe("spawnWorker ACP interactions", () => {
     const db = makeTestDb();
     try {
       const { taskId, runId } = seed(db);
+      const sentinel = "task-run-request-secret-sentinel";
       const script = {
+        ackAcpControls: true,
+        echoControls: true,
+        echoControlsToStderr: true,
         events: [{
           type: "acp_interaction_requested",
           interaction_id: "interaction-1",
@@ -60,18 +66,33 @@ describe("spawnWorker ACP interactions", () => {
           request: {
             mode: "form",
             message: "Choose",
-            requestedSchema: { type: "object", properties: { answer: { type: "string" } } },
+            requestedSchema: {
+              type: "object",
+              default: sentinel,
+              examples: [sentinel],
+              content: { value: sentinel },
+              properties: {
+                password: { type: "string", default: sentinel, apiKey: sentinel },
+              },
+            },
+            url: `https://example.test/form?token=${sentinel}#${sentinel}`,
           },
         }],
         exitAfterMs: 250,
       };
+      const broadcasts = [];
       const handle = spawnWorker({
         binary: fakeBinary,
         args: ["--task", taskId, "--mode", "execute", "--agent", "external"],
         env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
         runId,
         taskId,
-        broker: broker(),
+        broker: {
+          broadcast: (...args) => broadcasts.push(args),
+          subscribe: () => {},
+          unsubscribe: () => {},
+          size: () => 0,
+        },
         db,
         runIdleWarningMs: 0,
       });
@@ -83,6 +104,7 @@ describe("spawnWorker ACP interactions", () => {
         kind: "form",
         state: "pending",
       });
+      expect(pending.request_schema_json).not.toContain(sentinel);
 
       const delivered = await handle.sendAcpInteractionResponse({
         interactionId: "interaction-1",
@@ -97,7 +119,10 @@ describe("spawnWorker ACP interactions", () => {
 
       await handle.done;
       const log = db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runId);
-      expect(log.events).not.toContain("do-not-persist");
+      expect(log.events).not.toMatch(/do-not-persist|task-run-request-secret-sentinel/u);
+      const run = db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId);
+      expect(run.diagnostics_json).not.toMatch(/do-not-persist|task-run-request-secret-sentinel/u);
+      expect(JSON.stringify(broadcasts)).not.toMatch(/do-not-persist|task-run-request-secret-sentinel/u);
     } finally {
       db.close();
     }
@@ -129,6 +154,152 @@ describe("spawnWorker ACP interactions", () => {
       await handle.done;
       expect(db.prepare("SELECT state, disposition FROM acp_interactions WHERE id = ?").get("interaction-2"))
         .toEqual({ state: "expired", disposition: "run_ended" });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("applies a worker timeout acknowledgement before the run exits", async () => {
+    const db = makeTestDb();
+    try {
+      const { taskId, runId } = seed(db);
+      const handle = spawnWorker({
+        binary: fakeBinary,
+        args: ["--task", taskId, "--mode", "execute", "--agent", "external"],
+        env: {
+          FAKE_WORKER_SCRIPT: JSON.stringify({
+            events: [
+              {
+                type: "acp_interaction_requested",
+                interaction_id: "interaction-timeout",
+                profile_id: "profile-1",
+                interaction_kind: "permission",
+                request: { options: [{ optionId: "allow", name: "Allow" }] },
+              },
+              {
+                type: "acp_interaction_acknowledged",
+                interaction_id: "interaction-timeout",
+                outcome: "expired",
+                reason: "worker_timeout",
+              },
+            ],
+            exitAfterMs: 100,
+          }),
+          WORKLAB_RUN_ID: runId,
+        },
+        runId,
+        taskId,
+        broker: broker(),
+        db,
+        runIdleWarningMs: 0,
+      });
+      await vi.waitFor(() => {
+        expect(db.prepare("SELECT state, disposition FROM acp_interactions WHERE id = ?")
+          .get("interaction-timeout"))
+          .toEqual({ state: "expired", disposition: "worker_timeout" });
+      });
+      await handle.done;
+    } finally {
+      db.close();
+    }
+  });
+
+  it("leaves the row pending when stdin delivery fails", async () => {
+    const db = makeTestDb();
+    try {
+      const { runId } = seed(db);
+      insertAcpInteractionRequest(db, {
+        id: "interaction-retry",
+        profileId: "profile-1",
+        taskRunId: runId,
+        protocolRequestId: "rpc-retry",
+        kind: "form",
+        requestSchemaJson: "{}",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const controls = createAcpInteractionControls({
+        db,
+        runId,
+        writeControlMessage: async () => { throw new Error("stdin closed with delivery-secret"); },
+        emitEvent: () => {},
+        idFactory: () => "delivery-retry",
+      });
+
+      await expect(controls.respond({
+        interactionId: "interaction-retry",
+        disposition: "accept",
+        response: { action: "accept", content: { password: "private" } },
+      })).resolves.toMatchObject({ ok: false, code: "delivery_failed" });
+      expect(db.prepare("SELECT state, disposition FROM acp_interactions WHERE id = ?")
+        .get("interaction-retry"))
+        .toMatchObject({ state: "pending", disposition: null });
+      controls.close();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("waits for a matching worker ack and rejects unoffered permission ids", async () => {
+    const db = makeTestDb();
+    try {
+      const { runId } = seed(db);
+      insertAcpInteractionRequest(db, {
+        id: "interaction-permission",
+        profileId: "profile-1",
+        taskRunId: runId,
+        protocolRequestId: "rpc-permission",
+        kind: "permission",
+        requestSchemaJson: JSON.stringify({
+          options: [{ optionId: "allow-exact", name: "Allow" }],
+        }),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      let controlMessage;
+      const emitted = [];
+      const controls = createAcpInteractionControls({
+        db,
+        runId,
+        writeControlMessage: async (message) => { controlMessage = message; },
+        emitEvent: (event) => emitted.push(event),
+        idFactory: () => "delivery-permission",
+      });
+
+      await expect(controls.respond({
+        interactionId: "interaction-permission",
+        disposition: "selected",
+        response: { outcome: { outcome: "selected", optionId: "invented" } },
+      })).resolves.toMatchObject({ ok: false, code: "invalid_response" });
+      expect(controlMessage).toBeUndefined();
+
+      const delivered = controls.respond({
+        interactionId: "interaction-permission",
+        disposition: "selected",
+        response: {
+          outcome: { outcome: "selected", optionId: "allow-exact" },
+          content: { password: "ack-only-secret" },
+        },
+      });
+      await vi.waitFor(() => expect(controlMessage?.delivery_id).toBe("delivery-permission"));
+      expect(db.prepare("SELECT state FROM acp_interactions WHERE id = ?")
+        .get("interaction-permission").state).toBe("pending");
+      controls.handleWorkerEvent({
+        type: "acp_interaction_acknowledged",
+        interaction_id: "interaction-permission",
+        delivery_id: controlMessage.delivery_id,
+        outcome: "submitted",
+      });
+
+      await expect(delivered).resolves.toMatchObject({ ok: true });
+      expect(db.prepare("SELECT state, disposition FROM acp_interactions WHERE id = ?")
+        .get("interaction-permission"))
+        .toEqual({ state: "submitted", disposition: "selected" });
+      expect(JSON.stringify({
+        rows: db.prepare("SELECT * FROM acp_interactions").all(),
+        emitted,
+      })).not.toContain("ack-only-secret");
+      controls.close();
     } finally {
       db.close();
     }

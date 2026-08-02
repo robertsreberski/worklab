@@ -8,6 +8,8 @@ import { writeFileSync } from "node:fs";
 //   "exitCode": 0,
 //   "exitAfterMs": 100,
 //   "echoControls": false,
+//   "echoControlsToStderr": false,
+//   "ackAcpControls": false,
 //   "drain": {
 //     "emitDrained": true,         // emit a `drained` event on receipt
 //     "emitCancelled": true,       // emit `{type:"cancelled", drained:true}` after `drained`
@@ -58,7 +60,7 @@ function handleDrainMessage(message) {
   }, Math.max(0, Number(cfg.exitAfterMs) || 0));
 }
 
-if (script.echoControls || drainConfig || script.ignoreDrain) {
+if (script.echoControls || script.echoControlsToStderr || script.ackAcpControls || drainConfig || script.ignoreDrain) {
   let buffer = "";
   process.stdin.on("data", (chunk) => {
     buffer += chunk.toString();
@@ -75,6 +77,23 @@ if (script.echoControls || drainConfig || script.ignoreDrain) {
         continue;
       }
       if (script.echoControls) emit({ type: "control_seen", message: parsed });
+      if (script.echoControlsToStderr) process.stderr.write(`${JSON.stringify(parsed)}\n`);
+      if (script.ackAcpControls && parsed?.type === "acp_interaction_response") {
+        emit({
+          type: "acp_interaction_acknowledged",
+          interaction_id: parsed.interaction_id,
+          delivery_id: parsed.delivery_id,
+          outcome: "submitted",
+        });
+      }
+      if (script.ackAcpControls && parsed?.type === "acp_interaction_cancel") {
+        emit({
+          type: "acp_interaction_acknowledged",
+          interaction_id: parsed.interaction_id,
+          delivery_id: parsed.delivery_id,
+          outcome: "cancelled",
+        });
+      }
       if (parsed?.type === "worklab_drain") handleDrainMessage(parsed);
     }
   });

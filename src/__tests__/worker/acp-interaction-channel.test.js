@@ -53,9 +53,45 @@ describe("createAcpInteractionChannel", () => {
         requestedSchema: { type: "object", properties: { answer: { type: "string" } } },
       },
     });
-    channel.acceptResponse({ interaction_id: "int-3", response: { action: "accept", content: { answer: "private" } } });
+    channel.acceptResponse({
+      interaction_id: "int-3",
+      response: { disposition: "accept", values: { answer: "private" } },
+    });
     await expect(result).resolves.toEqual({ action: "accept", content: { answer: "private" } });
     expect(JSON.stringify(emit.mock.calls)).not.toContain("private");
+  });
+
+  it("applies the durable interaction sanitizer before emitting schemas", () => {
+    const emit = vi.fn();
+    const sentinel = "task-run-schema-secret-sentinel";
+    const channel = createAcpInteractionChannel({ emit, idFactory: () => "int-safe" });
+    channel._disableTimeouts();
+    channel.request({
+      kind: "elicitation",
+      profileId: "profile-1",
+      payload: {
+        mode: "url",
+        url: `https://user:${sentinel}@example.test/login?token=${sentinel}#${sentinel}`,
+        requestedSchema: {
+          type: "object",
+          default: sentinel,
+          examples: [sentinel],
+          content: { private: sentinel },
+          properties: {
+            password: {
+              type: "string",
+              default: sentinel,
+              authorization: sentinel,
+            },
+          },
+        },
+      },
+    });
+
+    const emitted = emit.mock.calls[0][0];
+    expect(JSON.stringify(emitted)).not.toContain(sentinel);
+    expect(emitted.request.url).toBe("https://example.test/login?token=%5Bredacted%5D");
+    expect(emitted.request.requestedSchema.properties.password).toEqual({ type: "string" });
   });
 
   it("cancels URL elicitations and all pending requests", async () => {
@@ -71,14 +107,32 @@ describe("createAcpInteractionChannel", () => {
   });
 
   it("times out fail-closed", async () => {
-    const channel = createAcpInteractionChannel({ emit: () => {}, timeoutMs: 5, idFactory: () => "int-timeout" });
+    const emit = vi.fn();
+    const channel = createAcpInteractionChannel({ emit, timeoutMs: 5, idFactory: () => "int-timeout" });
     await expect(channel.request({ kind: "permission", profileId: "p", payload: { options: [] } }))
       .resolves.toEqual({ outcome: { outcome: "cancelled" } });
+    expect(emit).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: "acp_interaction_acknowledged",
+      interaction_id: "int-timeout",
+      outcome: "expired",
+      reason: "worker_timeout",
+    }));
+    expect(channel.acceptResponse({
+      interaction_id: "int-timeout",
+      delivery_id: "late-delivery",
+      response: { action: "accept" },
+    })).toBe(false);
+    expect(emit).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: "acp_interaction_acknowledged",
+      delivery_id: "late-delivery",
+      outcome: "stale",
+    }));
   });
 
   it("cancels a pending interaction when its ACP request is aborted", async () => {
     const controller = new AbortController();
-    const channel = createAcpInteractionChannel({ emit: () => {}, idFactory: () => "int-abort" });
+    const emit = vi.fn();
+    const channel = createAcpInteractionChannel({ emit, idFactory: () => "int-abort" });
     channel._disableTimeouts();
     const pending = channel.request(
       { kind: "elicitation", profileId: "p", payload: { mode: "form" } },
@@ -87,5 +141,10 @@ describe("createAcpInteractionChannel", () => {
     controller.abort();
     await expect(pending).resolves.toEqual({ action: "cancel" });
     expect(channel.pendingCount()).toBe(0);
+    expect(emit).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: "acp_interaction_acknowledged",
+      outcome: "cancelled",
+      reason: "request_aborted",
+    }));
   });
 });

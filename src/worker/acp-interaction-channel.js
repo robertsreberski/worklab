@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { sanitizeAcpInteractionSchema } from "../core/acp-operations.js";
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 const MAX_TEXT_CHARS = 16_384;
@@ -37,21 +38,10 @@ function sanitizePermission(payload = {}) {
   };
 }
 
-function sanitizeRequestedSchema(schema) {
-  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return null;
-  // The schema describes requested fields but carries no submitted values.
-  // JSON round-tripping also prevents prototypes/functions crossing stdout.
-  try {
-    const text = JSON.stringify(schema);
-    if (text.length > 128 * 1024) return null;
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
-
 function sanitizeElicitation(payload = {}) {
-  const requestedSchema = sanitizeRequestedSchema(payload.requestedSchema);
+  const requestedSchema = payload.requestedSchema && typeof payload.requestedSchema === "object"
+    ? payload.requestedSchema
+    : null;
   return {
     sessionId: boundedText(payload.sessionId, 1024),
     toolCallId: boundedText(payload.toolCallId, 1024),
@@ -67,9 +57,20 @@ function sanitizeElicitation(payload = {}) {
 function normalizeResponse(entry, message) {
   if (entry.kind === "permission") {
     const outcome = message?.response?.outcome || message?.outcome;
-    const outcomeKind = outcome?.outcome || message?.action;
-    if (outcomeKind !== "selected") return cancelledResponse(entry.kind);
-    const optionId = outcome?.optionId || message?.optionId || message?.option_id;
+    const outcomeKind = outcome?.outcome
+      || message?.response?.action
+      || message?.response?.disposition
+      || message?.action
+      || message?.disposition;
+    const optionId = outcome?.optionId
+      || outcome?.option_id
+      || message?.response?.optionId
+      || message?.response?.option_id
+      || message?.optionId
+      || message?.option_id;
+    if (!["selected", "allow_once", "allow_always", "reject_once", "reject_always"].includes(outcomeKind)) {
+      return cancelledResponse(entry.kind);
+    }
     if (!entry.offeredOptionIds.has(optionId)) return cancelledResponse(entry.kind);
     return { outcome: { outcome: "selected", optionId } };
   }
@@ -77,11 +78,14 @@ function normalizeResponse(entry, message) {
   const response = message?.response && typeof message.response === "object"
     ? message.response
     : message;
-  const action = response?.action;
+  const action = response?.action || response?.disposition;
   if (action === "decline" || action === "cancel") return { action };
   if (action !== "accept") return cancelledResponse(entry.kind);
-  return Object.prototype.hasOwnProperty.call(response, "content")
-    ? { action: "accept", content: response.content }
+  if (Object.prototype.hasOwnProperty.call(response, "content")) {
+    return { action: "accept", content: response.content };
+  }
+  return Object.prototype.hasOwnProperty.call(response, "values")
+    ? { action: "accept", content: response.values }
     : { action: "accept" };
 }
 
@@ -98,13 +102,35 @@ export function createAcpInteractionChannel({
   const pending = new Map();
   let timeoutsEnabled = true;
 
-  function settle(interactionId, message) {
+  function acknowledge(interactionId, outcome, {
+    deliveryId = null,
+    reason = null,
+  } = {}) {
+    try {
+      emit({
+        type: "acp_interaction_acknowledged",
+        interaction_id: boundedText(String(interactionId), 1024),
+        outcome,
+        ...(deliveryId ? { delivery_id: boundedText(String(deliveryId), 1024) } : {}),
+        ...(reason ? { reason: boundedText(String(reason), 128) } : {}),
+        ts: Date.now(),
+      });
+    } catch {
+      // The ACP callback still needs to fail closed if stdout has gone away.
+    }
+  }
+
+  function settle(interactionId, message, { deliveryId = null } = {}) {
     const entry = pending.get(interactionId);
-    if (!entry) return false;
+    if (!entry) {
+      acknowledge(interactionId, "stale", { deliveryId, reason: "not_pending" });
+      return false;
+    }
     pending.delete(interactionId);
     if (entry.timer) clearTimeout(entry.timer);
     entry.signal?.removeEventListener("abort", entry.onAbort);
     entry.resolve(normalizeResponse(entry, message));
+    acknowledge(interactionId, "submitted", { deliveryId });
     return true;
   }
 
@@ -117,9 +143,10 @@ export function createAcpInteractionChannel({
       : boundedText(String(context.requestId), 1024);
     if (!profileId || !interactionId) return Promise.resolve(cancelledResponse(kind));
 
-    const sanitized = kind === "permission"
+    const shaped = kind === "permission"
       ? sanitizePermission(request?.payload)
       : sanitizeElicitation(request?.payload);
+    const sanitized = sanitizeAcpInteractionSchema(shaped);
     const offeredOptionIds = new Set(
       kind === "permission" ? sanitized.options.map((option) => option.optionId) : [],
     );
@@ -128,12 +155,17 @@ export function createAcpInteractionChannel({
       let timer = null;
       if (timeoutsEnabled && Number.isFinite(timeoutMs) && timeoutMs > 0) {
         timer = setTimeout(() => {
-          if (pending.delete(interactionId)) resolve(cancelledResponse(kind));
+          const entry = pending.get(interactionId);
+          if (!entry) return;
+          pending.delete(interactionId);
+          entry.signal?.removeEventListener("abort", entry.onAbort);
+          resolve(cancelledResponse(kind));
+          acknowledge(interactionId, "expired", { reason: "worker_timeout" });
         }, timeoutMs);
         timer.unref?.();
       }
       const signal = context?.signal;
-      const onAbort = () => cancel(interactionId);
+      const onAbort = () => cancel(interactionId, { reason: "request_aborted" });
       pending.set(interactionId, { kind, resolve, timer, offeredOptionIds, signal, onAbort });
       signal?.addEventListener("abort", onAbort, { once: true });
       if (signal?.aborted) {
@@ -160,21 +192,30 @@ export function createAcpInteractionChannel({
   function acceptResponse(message) {
     if (!message || typeof message !== "object") return false;
     const interactionId = message.interaction_id || message.interactionId;
-    return interactionId ? settle(interactionId, message) : false;
+    const deliveryId = message.delivery_id || message.deliveryId || null;
+    return interactionId ? settle(interactionId, message, { deliveryId }) : false;
   }
 
-  function cancel(interactionId) {
+  function cancel(interactionId, {
+    deliveryId = null,
+    reason = "cancelled",
+    outcome = "cancelled",
+  } = {}) {
     const entry = pending.get(interactionId);
-    if (!entry) return false;
+    if (!entry) {
+      acknowledge(interactionId, "stale", { deliveryId, reason: "not_pending" });
+      return false;
+    }
     pending.delete(interactionId);
     if (entry.timer) clearTimeout(entry.timer);
     entry.signal?.removeEventListener("abort", entry.onAbort);
     entry.resolve(cancelledResponse(entry.kind));
+    acknowledge(interactionId, outcome, { deliveryId, reason });
     return true;
   }
 
-  function cancelAllPending() {
-    for (const interactionId of [...pending.keys()]) cancel(interactionId);
+  function cancelAllPending(reason = "worker_terminated") {
+    for (const interactionId of [...pending.keys()]) cancel(interactionId, { reason });
   }
 
   return {
