@@ -102,8 +102,10 @@ export function createApiMutationBoundary({
   const expectedToken = dataDir ? ensureMcpToken(dataDir) : "";
 
   return (req, res, next) => {
+    const requestPath = (req.path.length > 1 ? req.path.replace(/\/+$/u, "") : req.path)
+      .toLowerCase();
     const activeRead = new Set(["GET", "HEAD"]).has(req.method)
-      && ACTIVE_READ_PATHS.has(req.path);
+      && ACTIVE_READ_PATHS.has(requestPath);
     if (req.method === "OPTIONS" || (!activeRead && new Set(["GET", "HEAD"]).has(req.method))) {
       next();
       return;

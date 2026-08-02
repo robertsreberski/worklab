@@ -157,14 +157,21 @@ describe("ACP API", () => {
       .expect(200);
     expect(crossOriginRead.headers).not.toHaveProperty("access-control-allow-origin");
 
-    await rawAgent.get("/api/acp/discovery/mono")
-      .set("origin", "https://evil.example")
-      .set("sec-fetch-site", "cross-site")
-      .expect(403);
-    await rawAgent.head("/api/acp/discovery/mono")
-      .set("origin", "https://evil.example")
-      .set("sec-fetch-site", "cross-site")
-      .expect(403);
+    for (const path of [
+      "/api/acp/discovery/mono",
+      "/api/acp/discovery/mono/",
+      "/api/acp/discovery/MONO",
+      "/api/acp/discovery/MONO/",
+    ]) {
+      await rawAgent.get(path)
+        .set("origin", "https://evil.example")
+        .set("sec-fetch-site", "cross-site")
+        .expect(403);
+      await rawAgent.head(path)
+        .set("origin", "https://evil.example")
+        .set("sec-fetch-site", "cross-site")
+        .expect(403);
+    }
     expect(discoverMono).not.toHaveBeenCalled();
 
     await agent.get("/api/acp/discovery/mono").expect(200);
