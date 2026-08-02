@@ -24,12 +24,12 @@
 // hand Claude agents tools Worklab never granted.
 //
 // One exact planning restriction is translatable. Worklab's full "read-only
-// shell" shape asks for every read/search/web tool, the native Agent/Task/Skill
-// entry points, and Bash while denying only Write/Edit. These runtimes express
-// that as `permissionMode: "plan"` rather than as a tool list. Narrower shapes
-// are not equivalent: notably, native plan mode would re-enable Bash for
-// `read_only_no_shell` and would widen a custom subset. Those shapes must stay
-// intact so the runtime fails closed.
+// shell" shape asks for every read/search/web tool, the native helper entry
+// points and controls, Skill, and Bash while denying only Write/Edit. These
+// runtimes express that as `permissionMode: "plan"` rather than as a tool list.
+// Narrower shapes are not equivalent: notably, native plan mode would re-enable
+// Bash for `read_only_no_shell` and would widen a custom subset. Those shapes
+// must stay intact so the runtime fails closed.
 //
 // This requires agent-runtime >= 0.15.3 and will break if that floor is lowered.
 // Under Codex's read-only sandbox every MCP tool call is gated behind
@@ -73,6 +73,8 @@ const NATIVE_PLAN_ALLOWED_TOOLS = [
   ...NETWORK_TOOLS,
   "Agent",
   "Task",
+  "TaskOutput",
+  "TaskStop",
   "Skill",
   "Bash",
 ];

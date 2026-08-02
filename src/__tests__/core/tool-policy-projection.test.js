@@ -76,7 +76,19 @@ describe("projectToolPolicy", () => {
   // stricter on the filesystem than the allowlist Worklab asked for.
   it.each(ALLOW_ALL_ONLY)("routes planning through native plan mode for %s", (sdk) => {
     const projected = projectToolPolicy({ sdk }, {
-      allowedTools: ["Read", "Glob", "Grep", "WebFetch", "WebSearch", "Agent", "Task", "Skill", "Bash"],
+      allowedTools: [
+        "Read",
+        "Glob",
+        "Grep",
+        "WebFetch",
+        "WebSearch",
+        "Agent",
+        "Task",
+        "TaskOutput",
+        "TaskStop",
+        "Skill",
+        "Bash",
+      ],
       disallowedTools: ["Write", "Edit"],
       planning: true,
       permissionMode: "bypassPermissions",

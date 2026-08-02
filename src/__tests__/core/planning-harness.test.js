@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { WORKLAB_BUILTIN_TOOLS } from "../../core/builtin-tools.js";
 import { applyPlanningToolPolicy } from "../../core/planning-harness.js";
 
-const PLANNING_ENTRY_TOOLS = ["Agent", "Task", "Skill"];
+const PLANNING_HELPER_TOOLS = ["Agent", "Task", "TaskOutput", "TaskStop", "Skill"];
 const READ_ONLY_CHILD_TOOLS = ["Read", "Glob", "Grep", "WebFetch", "WebSearch"];
 
 describe("applyPlanningToolPolicy", () => {
@@ -14,7 +14,7 @@ describe("applyPlanningToolPolicy", () => {
       disallowedTools: [],
     });
 
-    expect(result.allowedTools).toEqual([...READ_ONLY_CHILD_TOOLS, ...PLANNING_ENTRY_TOOLS]);
+    expect(result.allowedTools).toEqual([...READ_ONLY_CHILD_TOOLS, ...PLANNING_HELPER_TOOLS]);
     expect(result.allowedTools).not.toContain("Bash");
     expect(result.allowedTools).not.toContain("Write");
     expect(result.allowedTools).not.toContain("Edit");
@@ -36,7 +36,7 @@ describe("applyPlanningToolPolicy", () => {
       "Bash",
       "WebFetch",
       "WebSearch",
-      ...PLANNING_ENTRY_TOOLS,
+      ...PLANNING_HELPER_TOOLS,
     ]);
     expect(result.disallowedTools).toEqual(["Write", "Edit"]);
     expect(result.toolPolicy).toMatchObject({ planning: true, bashReadOnly: true });
@@ -46,12 +46,13 @@ describe("applyPlanningToolPolicy", () => {
     const result = applyPlanningToolPolicy({
       mode: "plan",
       settings: { planning_tool_policy: "read_only_no_shell" },
-      allowedTools: ["Read", "Agent", "Write"],
+      allowedTools: ["Read", "Agent", "TaskOutput", "Write"],
       disallowedTools: [],
     });
 
-    expect(result.allowedTools).toEqual(["Read", "Agent"]);
+    expect(result.allowedTools).toEqual(["Read", "Agent", "TaskOutput"]);
     expect(result.allowedTools).not.toContain("Task");
+    expect(result.allowedTools).not.toContain("TaskStop");
     expect(result.allowedTools).not.toContain("Skill");
   });
 });

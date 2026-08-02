@@ -144,6 +144,8 @@ describe("codex tool policy projection", () => {
           "WebSearch",
           "Agent",
           "Task",
+          "TaskOutput",
+          "TaskStop",
           "Skill",
           "Bash",
         ],
