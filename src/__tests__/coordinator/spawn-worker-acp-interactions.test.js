@@ -7,7 +7,10 @@ import { describe, expect, it, vi } from "vitest";
 import { spawnWorker } from "../../coordinator/spawn-worker.js";
 import { createAcpInteractionControls } from "../../coordinator/spawn-worker/acp-interactions.js";
 import { insertAcpInteractionRequest } from "../../core/db/queries/acp-interactions.js";
+import { createServer } from "../../api/server.js";
+import { createAdminToolHandlers } from "../../mcp/admin/tools/index.js";
 import { makeTestDb } from "../helpers/test-db.js";
+import { sameOriginTestAgent } from "../helpers/test-server.js";
 import { newRunId, newTaskId } from "../../core/ids.js";
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
@@ -151,6 +154,200 @@ describe("spawnWorker ACP interactions", () => {
       expect(readFileSync(run.raw_output_path, "utf8")).not.toContain(rawSessionId);
       expect(JSON.stringify(broadcasts)).not.toMatch(/do-not-persist|task-run-request-secret-sentinel|RAW_REMOTE_SESSION/u);
       expect(JSON.stringify(db.prepare("SELECT * FROM acp_interactions").all())).not.toContain(rawSessionId);
+    } finally {
+      db.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("redacts raw ACP session ids before every task-run, API, MCP, log, and broadcast sink", async () => {
+    const db = makeTestDb();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-acp-event-boundary-"));
+    try {
+      const { taskId, runId } = seed(db);
+      const rawSessionId = "RAW_REMOTE_SESSION_ALPHA";
+      const malformedProviderId = "RAW_PROVIDER_SESSION_BETA";
+      const providerSessionId = `acp:v1:profile-1:${Buffer.from(rawSessionId).toString("base64url")}`;
+      const script = {
+        events: [
+          {
+            type: "sdk_event",
+            message: `same-event ${rawSessionId}`,
+            event: {
+              type: "assistant",
+              message: { content: [{ type: "text", text: `first ${rawSessionId}` }] },
+              metadata: {
+                [`key-${rawSessionId}`]: `value ${rawSessionId}`,
+                sessionId: rawSessionId,
+              },
+            },
+          },
+          {
+            type: "runtime_warning",
+            warning_kind: "provider_note",
+            message: `warning ${rawSessionId} ${malformedProviderId}`,
+            diagnostics: {
+              note: `diagnostic ${rawSessionId} ${malformedProviderId}`,
+              provider_session_id: malformedProviderId,
+            },
+          },
+          {
+            type: "sdk_event",
+            event: {
+              type: "assistant",
+              message: { content: [{ type: "text", text: `later ${malformedProviderId}` }] },
+            },
+          },
+          {
+            type: "error",
+            message: `terminal ${rawSessionId} ${malformedProviderId}`,
+            failureKind: "provider_unavailable",
+            provider_session_id: providerSessionId,
+            diagnostics: {
+              provider_session_id: providerSessionId,
+              note: `terminal diagnostic ${rawSessionId}`,
+              nested: { session_id: malformedProviderId },
+            },
+            details: {
+              provider_session_id: malformedProviderId,
+              sessionId: rawSessionId,
+              note: `terminal details ${malformedProviderId}`,
+            },
+          },
+        ],
+        exitCode: 1,
+      };
+      const broadcasts = [];
+      const loggerEvents = [];
+      const logger = Object.fromEntries(["info", "warn", "error"].map((level) => [
+        level,
+        (...args) => loggerEvents.push({ level, args }),
+      ]));
+      const handle = spawnWorker({
+        binary: fakeBinary,
+        args: ["--task", taskId, "--mode", "execute", "--agent", "external"],
+        env: {
+          FAKE_WORKER_SCRIPT: JSON.stringify(script),
+          WORKLAB_RUN_ID: runId,
+          WORKLAB_DATA_DIR: dataDir,
+          WORKLAB_ACP_PROFILE_ID: "profile-1",
+        },
+        runId,
+        taskId,
+        broker: {
+          broadcast: (channel, event) => broadcasts.push({ channel, event }),
+          subscribe: () => {},
+          unsubscribe: () => {},
+          size: () => 0,
+        },
+        db,
+        logger,
+        runIdleWarningMs: 0,
+      });
+
+      const result = await handle.done;
+      const run = db.prepare(`
+        SELECT error_text, warnings_json, diagnostics_json, provider_session_id,
+               result_json, transcript_tail_json, raw_output_path
+        FROM task_runs WHERE id = ?
+      `).get(runId);
+      const log = db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runId);
+      const rawLog = readFileSync(run.raw_output_path, "utf8");
+      const sinkMatrix = JSON.stringify({ result, run, log, rawLog, broadcasts, loggerEvents });
+
+      expect(sinkMatrix).not.toMatch(/RAW_REMOTE_SESSION_ALPHA|RAW_PROVIDER_SESSION_BETA/u);
+      expect(sinkMatrix).not.toMatch(/"sessionId"|"session_id"/u);
+      expect(result.providerSessionId).toBe(providerSessionId);
+      expect(run.provider_session_id).toBe(providerSessionId);
+      expect(JSON.parse(run.diagnostics_json).provider_session_id).toBe(providerSessionId);
+      expect(JSON.parse(run.warnings_json)).toContainEqual(expect.objectContaining({
+        kind: "provider_note",
+        message: "warning [redacted] [redacted]",
+      }));
+      expect(rawLog).toContain(providerSessionId);
+
+      const watcher = {
+        getRunLiveInputState: () => ({ supported: true, active: false }),
+      };
+      const { app } = createServer({
+        db,
+        dataDir,
+        watcher,
+        acpOperationManager: {},
+      });
+      const api = sameOriginTestAgent(app);
+      const apiRun = await api.get(`/api/runs/${runId}`).expect(200);
+      const apiRawLog = await api.get(`/api/runs/${runId}/raw-log`).expect(200);
+      expect(JSON.stringify(apiRun.body)).not.toMatch(/RAW_REMOTE_SESSION_ALPHA|RAW_PROVIDER_SESSION_BETA/u);
+      expect(apiRawLog.text).not.toMatch(/RAW_REMOTE_SESSION_ALPHA|RAW_PROVIDER_SESSION_BETA/u);
+      expect(apiRun.body.run.provider_session_id).toBe(providerSessionId);
+
+      const adminHandlers = createAdminToolHandlers({
+        baseUrl: "http://worklab.test",
+        fetchImpl: async (url) => {
+          const target = new URL(url);
+          const response = await api.get(`${target.pathname}${target.search}`);
+          return new Response(response.text, {
+            status: response.status,
+            headers: { "content-type": response.headers["content-type"] || "application/json" },
+          });
+        },
+      });
+      const mcpRun = await adminHandlers.worklab_run_get({ id: runId });
+      expect(JSON.stringify(mcpRun)).not.toMatch(/RAW_REMOTE_SESSION_ALPHA|RAW_PROVIDER_SESSION_BETA/u);
+      expect(mcpRun.run.provider_session_id).toBe(providerSessionId);
+    } finally {
+      db.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails the ACP run closed after an event exceeds the privacy traversal budget", async () => {
+    const db = makeTestDb();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-acp-event-budget-"));
+    try {
+      const { taskId, runId } = seed(db);
+      const rawSessionId = "RAW_TOO_DEEP_SESSION";
+      const providerSessionId = `acp:v1:profile-1:${Buffer.from(rawSessionId).toString("base64url")}`;
+      let nested = { sessionId: rawSessionId };
+      for (let depth = 0; depth < 25; depth += 1) nested = { nested };
+      const handle = spawnWorker({
+        binary: fakeBinary,
+        args: ["--task", taskId, "--mode", "execute", "--agent", "external"],
+        env: {
+          FAKE_WORKER_SCRIPT: JSON.stringify({
+            events: [
+              { type: "sdk_event", text: rawSessionId, nested },
+              { type: "final", text: rawSessionId, provider_session_id: providerSessionId },
+            ],
+          }),
+          WORKLAB_RUN_ID: runId,
+          WORKLAB_DATA_DIR: dataDir,
+          WORKLAB_ACP_PROFILE_ID: "profile-1",
+        },
+        runId,
+        taskId,
+        broker: broker(),
+        db,
+        runIdleWarningMs: 0,
+      });
+
+      const result = await handle.done;
+      const run = db.prepare(`
+        SELECT process_status, failure_kind, error_text, diagnostics_json,
+               provider_session_id, raw_output_path
+        FROM task_runs WHERE id = ?
+      `).get(runId);
+      const log = db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runId);
+      const persisted = JSON.stringify({ run, log, rawLog: readFileSync(run.raw_output_path, "utf8") });
+
+      expect(result.processStatus).toBe("failed");
+      expect(result.failureKind).toBe("invalid_result");
+      expect(result.providerSessionId).toBeNull();
+      expect(run.provider_session_id).toBeNull();
+      expect(JSON.parse(run.diagnostics_json)).toMatchObject({ acp_event_redaction_failed: true });
+      expect(persisted).not.toContain(rawSessionId);
+      expect(persisted).not.toContain(providerSessionId);
     } finally {
       db.close();
       rmSync(dataDir, { recursive: true, force: true });

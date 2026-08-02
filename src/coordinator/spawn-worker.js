@@ -54,6 +54,7 @@ import {
 } from "./spawn-worker/log-events.js";
 import {
   createAcpInteractionControls,
+  createTaskRunAcpEventBoundary,
   expireAcpInteractionsForRun,
   persistAcpInteractionRequest,
   sanitizeTaskRunAcpInteractionEvent,
@@ -183,6 +184,9 @@ export function spawnWorker({
     softWarningEmitted: false,
     hardCancelTriggered: false,
   };
+  const acpEventBoundary = createTaskRunAcpEventBoundary({
+    profileId: env.WORKLAB_ACP_PROFILE_ID || null,
+  });
   // Trailing-edge debounce window for the in-flight events JSON. Long-running
   // agents emit hundreds of events; rewriting the whole JSON each line is
   // O(N²) bytes written, which can stall WAL on a small disk. The final UPDATE
@@ -620,17 +624,22 @@ export function spawnWorker({
     try {
       parsed = JSON.parse(line);
     } catch (err) {
-      logger?.warn?.({ line, err: err.message }, "worker emitted malformed stdout");
+      logger?.warn?.({
+        ...(env.WORKLAB_ACP_PROFILE_ID ? { line_length: line.length } : { line }),
+        err: err.message,
+      }, "worker emitted malformed stdout");
       return;
     }
     const safeParsed = acpInteractionControls.redactWorkerEvent(
-      sanitizeTaskRunAcpInteractionEvent(parsed),
+      sanitizeTaskRunAcpInteractionEvent(acpEventBoundary.sanitizeWorkerEvent(parsed)),
     );
     const { rawEvent } = emitEvent(safeParsed);
     mergeWorkerDiagnostics(rawEvent.diagnostics);
     if (["final", "error", "cancelled", "worklab_result_error"].includes(rawEvent.type)) {
-      const providerSessionId = rawEvent.provider_session_id || rawEvent.providerSessionId;
-      if (typeof providerSessionId === "string" && providerSessionId.length > 0) {
+      const providerSessionId = acpEventBoundary.validateProviderSessionId(
+        rawEvent.provider_session_id || rawEvent.providerSessionId,
+      );
+      if (providerSessionId) {
         terminalProviderSessionId = providerSessionId;
       }
     }
@@ -700,7 +709,9 @@ export function spawnWorker({
   });
 
   child.stderr.on("data", (chunk) => {
-    const text = acpInteractionControls.redactText(chunk.toString());
+    const text = acpInteractionControls.redactText(
+      acpEventBoundary.redactText(chunk.toString()),
+    );
     stderrTail.push(text);
     logger?.info?.({ runId, stderr: text }, "worker stderr");
   });
@@ -897,12 +908,15 @@ export function spawnWorker({
             resultParseError: !!resultError,
             hint: explicitFailureKind,
           }) || "spawn");
-      const providerSessionId = finalPayload?.provider_session_id
-        || finalPayload?.providerSessionId
-        || terminalProviderSessionId
-        || workerDiagnostics?.provider_session_id
-        || errorDetails?.provider_session_id
-        || null;
+      const providerSessionId = [
+        finalPayload?.provider_session_id,
+        finalPayload?.providerSessionId,
+        terminalProviderSessionId,
+        workerDiagnostics?.provider_session_id,
+        workerDiagnostics?.providerSessionId,
+        errorDetails?.provider_session_id,
+        errorDetails?.providerSessionId,
+      ].map((value) => acpEventBoundary.validateProviderSessionId(value)).find(Boolean) || null;
       const fileEditArtifacts = extractRunArtifacts(rawEvents, {
         includePending: false,
         includeFailed: false,

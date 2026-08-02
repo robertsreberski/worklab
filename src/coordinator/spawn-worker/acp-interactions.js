@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 
 import { sanitizeAcpInteractionSchema } from "../../core/acp-operations.js";
 import {
+  createAcpEventPrivacyBoundary,
+  validateAcpProviderSessionId,
+} from "../../core/acp-privacy.js";
+import {
   cancelAcpInteraction,
   claimAcpInteractionResponse,
   expirePendingAcpInteractionsForRun,
@@ -27,6 +31,33 @@ const MAX_PRIVATE_VALUES = 10_000;
 function boundedIdentifier(value, max = 1024) {
   if (value == null) return "";
   return String(value).replace(/[\u0000-\u001f\u007f]/gu, "").slice(0, max);
+}
+
+function acpPrivacyBoundaryFailure(event) {
+  return {
+    type: "worklab_result_error",
+    message: "ACP worker event rejected by the task-run privacy boundary",
+    diagnostics: { acp_event_redaction_failed: true },
+    ts: Date.now(),
+    ...(Number.isFinite(Number(event?._event_seq)) ? { _event_seq: Number(event._event_seq) } : {}),
+  };
+}
+
+export function createTaskRunAcpEventBoundary({ profileId } = {}) {
+  const boundary = createAcpEventPrivacyBoundary({
+    profileId,
+    failureValue: acpPrivacyBoundaryFailure,
+  });
+  return {
+    sanitizeWorkerEvent: boundary.sanitizeEvent,
+    redactText: boundary.redactText,
+    validateProviderSessionId: (value) => (
+      profileId
+        ? validateAcpProviderSessionId(value, profileId)
+        : typeof value === "string" && value.length > 0 ? value : null
+    ),
+    get failedClosed() { return boundary.failedClosed; },
+  };
 }
 
 function stripAcpSessionIdentifiers(value, depth = 0) {
