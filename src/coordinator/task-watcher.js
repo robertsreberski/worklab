@@ -1030,6 +1030,24 @@ export function createTaskWatcher({
     return entry.handle.sendApprovalDecision(payload);
   }
 
+  async function sendRunAcpInteractionResponse({ runId, ...payload } = {}) {
+    const entry = activeByRunId.get(runId);
+    if (!entry) return { ok: false, code: "run_not_active", message: "run is not active" };
+    if (typeof entry.handle?.sendAcpInteractionResponse !== "function") {
+      return { ok: false, code: "acp_interaction_unsupported", message: "worker does not accept ACP interactions" };
+    }
+    return entry.handle.sendAcpInteractionResponse(payload);
+  }
+
+  async function sendRunAcpInteractionCancel({ runId, ...payload } = {}) {
+    const entry = activeByRunId.get(runId);
+    if (!entry) return { ok: false, code: "run_not_active", message: "run is not active" };
+    if (typeof entry.handle?.sendAcpInteractionCancel !== "function") {
+      return { ok: false, code: "acp_interaction_unsupported", message: "worker does not accept ACP interactions" };
+    }
+    return entry.handle.sendAcpInteractionCancel(payload);
+  }
+
   async function shutdown({ drainTimeoutMs: overrideDrainMs } = {}) {
     leadCycle.shutdown();
     for (const timer of recoveryTimers) clearTimeout(timer);
@@ -1188,6 +1206,8 @@ export function createTaskWatcher({
     isActive: (taskId) => active.has(taskId),
     isRunActive: (runId) => activeByRunId.has(runId),
     sendRunApprovalDecision,
+    sendRunAcpInteractionResponse,
+    sendRunAcpInteractionCancel,
     getRunLiveInputState,
     sendRunMessage,
     maybeAutoStart: maybeAutoStartTask,

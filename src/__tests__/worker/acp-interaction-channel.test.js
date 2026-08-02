@@ -14,11 +14,12 @@ describe("createAcpInteractionChannel", () => {
         toolCall: { toolCallId: "tool-1", title: "Run command", rawInput: { secret: "no" } },
         options: [{ optionId: "allow-once", name: "Allow once", kind: "allow_once" }],
       },
-    });
+    }, { requestId: 42 });
 
     expect(emit).toHaveBeenCalledWith(expect.objectContaining({
       type: "acp_interaction_requested",
       interaction_id: "int-1",
+      protocol_request_id: "42",
       profile_id: "profile-1",
       interaction_kind: "permission",
     }));

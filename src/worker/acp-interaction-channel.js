@@ -111,7 +111,10 @@ export function createAcpInteractionChannel({
   function request(request, context = {}) {
     const kind = request?.kind === "permission" ? "permission" : "elicitation";
     const profileId = request?.profileId || context?.profileId;
-    const interactionId = context?.requestId || idFactory();
+    const interactionId = idFactory();
+    const protocolRequestId = context?.requestId == null
+      ? interactionId
+      : boundedText(String(context.requestId), 1024);
     if (!profileId || !interactionId) return Promise.resolve(cancelledResponse(kind));
 
     const sanitized = kind === "permission"
@@ -141,6 +144,7 @@ export function createAcpInteractionChannel({
         emit({
           type: "acp_interaction_requested",
           interaction_id: interactionId,
+          protocol_request_id: protocolRequestId,
           profile_id: profileId,
           interaction_kind: kind,
           request: sanitized,
