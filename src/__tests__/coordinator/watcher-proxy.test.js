@@ -27,4 +27,27 @@ describe("createWatcherProxy", () => {
     expect(spawnLeadCycle).toHaveBeenCalledWith({ teamId: "team-1", projectId: "project-1", reason: "manual" });
     expect(maybeScheduleUnassignedTeamTask).toHaveBeenCalledWith("task-1", "task_created_unassigned");
   });
+
+  it("forwards ACP interaction controls to the live watcher", async () => {
+    const sendRunAcpInteractionResponse = vi.fn(async () => ({ ok: true }));
+    const sendRunAcpInteractionCancel = vi.fn(async () => ({ ok: true }));
+    const proxy = createWatcherProxy({
+      current: {
+        sendRunAcpInteractionResponse,
+        sendRunAcpInteractionCancel,
+      },
+    });
+
+    await expect(proxy.sendRunAcpInteractionResponse({
+      runId: "run-1",
+      interactionId: "interaction-1",
+      response: { action: "accept" },
+    })).resolves.toEqual({ ok: true });
+    await expect(proxy.sendRunAcpInteractionCancel({
+      runId: "run-1",
+      interactionId: "interaction-1",
+    })).resolves.toEqual({ ok: true });
+    expect(sendRunAcpInteractionResponse).toHaveBeenCalledOnce();
+    expect(sendRunAcpInteractionCancel).toHaveBeenCalledOnce();
+  });
 });
