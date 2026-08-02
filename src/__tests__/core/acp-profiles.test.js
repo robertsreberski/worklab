@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertAcpProfileBinding,
   createAcpProfile,
@@ -10,6 +10,8 @@ import {
   normalizeMonoDiscovery,
   updateAcpProfileRecord,
 } from "../../core/acp-profiles.js";
+import { runMigrations } from "../../core/db/migrations/runner.js";
+import { openDb } from "../../core/db/open.js";
 import { makeTestDb } from "../helpers/test-db.js";
 
 const cleanup = [];
@@ -22,6 +24,51 @@ function tempDir(name = "acp-profile") {
   const dir = mkdtempSync(join(tmpdir(), `worklab-${name}-`));
   cleanup.push(dir);
   return dir;
+}
+
+function makeTwoConnectionTestDb() {
+  const path = join(tempDir("acp-profile-db"), "worklab.db");
+  const primary = openDb(path);
+  runMigrations(primary);
+  const concurrent = openDb(path);
+  concurrent.pragma("busy_timeout = 0");
+  return { primary, concurrent };
+}
+
+function observeTransactionMode(transaction, mode) {
+  const observed = (...args) => {
+    mode.value = "default";
+    return transaction(...args);
+  };
+  observed.immediate = (...args) => {
+    mode.value = "immediate";
+    return transaction.immediate(...args);
+  };
+  return observed;
+}
+
+function beforeNextTransaction(db, callback) {
+  const transaction = db.transaction.bind(db);
+  const mode = { value: null };
+  db.transaction = (handler) => {
+    delete db.transaction;
+    callback();
+    return observeTransactionMode(transaction(handler), mode);
+  };
+  return mode;
+}
+
+function insideNextTransaction(db, callback) {
+  const transaction = db.transaction.bind(db);
+  const mode = { value: null };
+  db.transaction = (handler) => {
+    delete db.transaction;
+    return observeTransactionMode(transaction(() => {
+      callback();
+      return handler();
+    }), mode);
+  };
+  return mode;
 }
 
 function monoDescriptor(workspace, overrides = {}) {
@@ -442,6 +489,91 @@ describe("ACP profile persistence", () => {
     expect(getAcpProfile({ db, id: profile.id }).configPolicy).toEqual({});
   });
 
+  it("serializes partial profile patches so a concurrent update is not lost", () => {
+    const { primary, concurrent } = makeTwoConnectionTestDb();
+    try {
+      const cwd = tempDir();
+      const profile = createAcpProfile({
+        db: primary,
+        input: {
+          agentName: "external",
+          displayName: "Original Name",
+          description: "Original description",
+          command: process.execPath,
+          cwd,
+        },
+      });
+
+      let concurrentError;
+      const transactionMode = insideNextTransaction(primary, () => {
+        try {
+          updateAcpProfileRecord({
+            db: concurrent,
+            id: profile.id,
+            input: { enabled: false },
+            now: 200,
+          });
+        } catch (error) {
+          concurrentError = error;
+        }
+      });
+
+      updateAcpProfileRecord({
+        db: primary,
+        id: profile.id,
+        input: { displayName: "Primary Name" },
+        now: 300,
+      });
+      expect(transactionMode.value).toBe("immediate");
+      expect(concurrentError).toMatchObject({ code: "SQLITE_BUSY" });
+
+      // A real concurrent writer waits for the immediate transaction. Retrying
+      // after that lock is released must normalize against A's committed row.
+      updateAcpProfileRecord({
+        db: concurrent,
+        id: profile.id,
+        input: { enabled: false },
+        now: 400,
+      });
+
+      expect(getAcpProfile({ db: concurrent, id: profile.id })?.agent).toMatchObject({
+        displayName: "Primary Name",
+        enabled: false,
+      });
+    } finally {
+      primary.close();
+      concurrent.close();
+    }
+  });
+
+  it("samples the default patch timestamp after acquiring the immediate lock", () => {
+    const db = makeTestDb();
+    const cwd = tempDir();
+    const profile = createAcpProfile({
+      db,
+      input: { agentName: "external", displayName: "External", command: process.execPath, cwd },
+      now: 100,
+    });
+    let clock = 200;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    try {
+      const transactionMode = insideNextTransaction(db, () => {
+        clock = 300;
+      });
+      const updated = updateAcpProfileRecord({
+        db,
+        id: profile.id,
+        input: { displayName: "Updated" },
+      });
+
+      expect(transactionMode.value).toBe("immediate");
+      expect(updated.updatedAt).toBe(300);
+    } finally {
+      now.mockRestore();
+      db.close();
+    }
+  });
+
   it("keeps generic launch and session identity immutable after creation", () => {
     const db = makeTestDb();
     const cwd = tempDir();
@@ -544,6 +676,83 @@ describe("ACP profile persistence", () => {
     });
     expect(getAcpProfile({ db, id: profile.id })).toBeNull();
     expect(db.prepare("SELECT name FROM agents WHERE name = 'external'").get()).toBeUndefined();
+  });
+
+  it("does not cascade a concurrent active operation inserted before profile deletion", () => {
+    const { primary, concurrent } = makeTwoConnectionTestDb();
+    try {
+      const cwd = tempDir();
+      const profile = createAcpProfile({
+        db: primary,
+        input: { agentName: "external", displayName: "External", command: process.execPath, cwd },
+      });
+
+      const insertOperation = () => concurrent.prepare(`
+        INSERT INTO acp_operations (
+          id, profile_id, kind, state, request_json, result_json, error_json,
+          created_at, updated_at
+        ) VALUES ('acpo_concurrent', ?, 'probe', 'queued', '{}', '{}', '{}', 100, 100)
+      `).run(profile.id);
+      let concurrentError;
+      const transactionMode = insideNextTransaction(primary, () => {
+        try {
+          insertOperation();
+        } catch (error) {
+          concurrentError = error;
+        }
+      });
+
+      expect(deleteAcpProfileRecord({ db: primary, id: profile.id })).toEqual({
+        id: profile.id,
+        agentName: "external",
+      });
+      expect(transactionMode.value).toBe("immediate");
+      expect(concurrentError).toMatchObject({ code: "SQLITE_BUSY" });
+      expect(() => insertOperation()).toThrow(expect.objectContaining({
+        code: "SQLITE_CONSTRAINT_FOREIGNKEY",
+      }));
+      expect(getAcpProfile({ db: concurrent, id: profile.id })).toBeNull();
+      expect(concurrent.prepare("SELECT id FROM acp_operations WHERE id = ?")
+        .get("acpo_concurrent")).toBeUndefined();
+    } finally {
+      primary.close();
+      concurrent.close();
+    }
+  });
+
+  it("does not null a concurrent agent reference inserted before profile deletion", () => {
+    const { primary, concurrent } = makeTwoConnectionTestDb();
+    try {
+      const cwd = tempDir();
+      const profile = createAcpProfile({
+        db: primary,
+        input: { agentName: "external", displayName: "External", command: process.execPath, cwd },
+      });
+
+      const transactionMode = beforeNextTransaction(primary, () => {
+        concurrent.prepare(`
+          INSERT INTO tasks (id, title, owner_agent, created_at, updated_at)
+          VALUES ('task-concurrent', 'Concurrent reference', 'external', 100, 100)
+        `).run();
+      });
+
+      let error;
+      try {
+        deleteAcpProfileRecord({ db: primary, id: profile.id });
+      } catch (caught) {
+        error = caught;
+      }
+
+      expect(error).toMatchObject({ code: "profile_in_use", status: 409 });
+      expect(transactionMode.value).toBe("immediate");
+      expect(error.details.references).toMatchObject({ task_count: 1, total: 1 });
+      expect(getAcpProfile({ db: concurrent, id: profile.id })).not.toBeNull();
+      expect(concurrent.prepare("SELECT owner_agent FROM tasks WHERE id = ?").get("task-concurrent"))
+        .toEqual({ owner_agent: "external" });
+    } finally {
+      primary.close();
+      concurrent.close();
+    }
   });
 
   it("requires mono workspace paths to exist before import", () => {

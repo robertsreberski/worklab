@@ -724,30 +724,33 @@ export function createAcpProfile({ db, input = {}, mono = null, id = newAcpProfi
   return rowToAcpProfile(getAcpProfileById(db, id));
 }
 
-export function updateAcpProfileRecord({ db, id, input = {}, now = Date.now() }) {
-  const row = getAcpProfileById(db, id);
-  if (!row) throw acpError("ACP profile not found", { code: "not_found", status: 404 });
-  const current = rowToAcpProfile(row);
-  for (const [camel, snake] of [["agentName", "agent_name"], ["driver", "driver"], ["sourceId", "source_id"]]) {
-    const value = inputValue(input, camel, snake);
-    const expected = camel === "agentName" ? current.agentName
-      : camel === "driver" ? current.driver
-        : current.monoSourceId;
-    if (value !== undefined && value !== expected) throw acpError(`${camel} is immutable`);
-  }
-  const profile = current.driver === "mono"
-    ? normalizeMonoProfile(input, null, current)
-    : normalizeGenericProfile(input, current);
-  if (current.driver === "generic") assertGenericIdentityUnchanged(current, profile);
+export function updateAcpProfileRecord({ db, id, input = {}, now }) {
+  let result;
   const transaction = db.transaction(() => {
-    bindAgent(db, profile, id, now);
-    const fields = persistenceFields(profile, { id, createdAt: current.createdAt, updatedAt: now });
+    const row = getAcpProfileById(db, id);
+    if (!row) throw acpError("ACP profile not found", { code: "not_found", status: 404 });
+    const current = rowToAcpProfile(row);
+    for (const [camel, snake] of [["agentName", "agent_name"], ["driver", "driver"], ["sourceId", "source_id"]]) {
+      const value = inputValue(input, camel, snake);
+      const expected = camel === "agentName" ? current.agentName
+        : camel === "driver" ? current.driver
+          : current.monoSourceId;
+      if (value !== undefined && value !== expected) throw acpError(`${camel} is immutable`);
+    }
+    const profile = current.driver === "mono"
+      ? normalizeMonoProfile(input, null, current)
+      : normalizeGenericProfile(input, current);
+    if (current.driver === "generic") assertGenericIdentityUnchanged(current, profile);
+    const updatedAt = Math.max(current.updatedAt, now ?? Date.now());
+    bindAgent(db, profile, id, updatedAt);
+    const fields = persistenceFields(profile, { id, createdAt: current.createdAt, updatedAt });
     if (updateAcpProfile(db, fields).changes !== 1) {
       throw acpError("ACP profile not found", { code: "not_found", status: 404 });
     }
+    result = rowToAcpProfile(getAcpProfileById(db, id));
   });
-  transaction();
-  return rowToAcpProfile(getAcpProfileById(db, id));
+  transaction.immediate();
+  return result;
 }
 
 export function getAcpProfile({ db, id }) {
@@ -763,33 +766,33 @@ export function getAcpProfiles({ db }) {
 }
 
 export function deleteAcpProfileRecord({ db, id }) {
-  const row = getAcpProfileById(db, id);
-  if (!row) throw acpError("ACP profile not found", { code: "not_found", status: 404 });
-  const activeOperations = countActiveAcpOperationsForProfile(db, id);
-  if (activeOperations > 0) {
-    throw acpError("ACP profile has an active operation", {
-      code: "profile_in_use",
-      status: 409,
-      details: { activeOperations },
-    });
-  }
-  const references = countAcpAgentReferences(db, row.agent_name);
-  if (references.total > 0) {
-    throw acpError("ACP agent is referenced and cannot be deleted", {
-      code: "profile_in_use",
-      status: 409,
-      details: { references },
-    });
-  }
+  let result;
   const transaction = db.transaction(() => {
-    const latest = getAcpProfileById(db, id);
-    if (!latest) throw acpError("ACP profile not found", { code: "not_found", status: 404 });
-    if (deleteAgentByName(db, latest.agent_name).changes !== 1) {
+    const row = getAcpProfileById(db, id);
+    if (!row) throw acpError("ACP profile not found", { code: "not_found", status: 404 });
+    const activeOperations = countActiveAcpOperationsForProfile(db, id);
+    if (activeOperations > 0) {
+      throw acpError("ACP profile has an active operation", {
+        code: "profile_in_use",
+        status: 409,
+        details: { activeOperations },
+      });
+    }
+    const references = countAcpAgentReferences(db, row.agent_name);
+    if (references.total > 0) {
+      throw acpError("ACP agent is referenced and cannot be deleted", {
+        code: "profile_in_use",
+        status: 409,
+        details: { references },
+      });
+    }
+    if (deleteAgentByName(db, row.agent_name).changes !== 1) {
       throw acpError("bound ACP agent not found", { code: "binding_invalid", status: 409 });
     }
+    result = { id, agentName: row.agent_name };
   });
-  transaction();
-  return { id, agentName: row.agent_name };
+  transaction.immediate();
+  return result;
 }
 
 export function assertAcpProfileBinding({ db, id }) {
