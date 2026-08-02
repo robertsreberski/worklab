@@ -852,6 +852,11 @@ export function runMigrations(db) {
   // binary can partially rewrite a newer database and then relabel its
   // schema_meta row with the older SCHEMA_VERSION at the end of this function.
   assertSupportedSchemaVersion(db);
+  // Capture this before SCHEMA_SQL creates the ACP tables. An existing ACP
+  // schema is durable evidence that deleted raw sessions may remain in SQLite
+  // free pages even when every live ACP row has since been removed.
+  const legacyAcpSchemaPresent = ["acp_profiles", "acp_operations", "acp_interactions"]
+    .some((table) => tableExists(db, table));
 
   // Existing pre-v8 databases may have `tasks` but not `stage`; SCHEMA_SQL
   // creates an index on stage, so add the column before executing the full
@@ -1168,7 +1173,10 @@ export function runMigrations(db) {
   // SCHEMA_SQL. The tables depend only on current agents/task_runs tables.
   db.exec(ACP_SCHEMA_SQL);
   const acpPrivacy = scrubLegacyAcpSessionData(db);
-  compactLegacyAcpTaskRunData(db, acpPrivacy);
+  compactLegacyAcpTaskRunData(db, {
+    ...acpPrivacy,
+    legacyFootprint: legacyAcpSchemaPresent || acpPrivacy.legacyFootprint,
+  });
   db.prepare(
     "INSERT INTO schema_meta (key, value) VALUES ('version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
   ).run(String(SCHEMA_VERSION));

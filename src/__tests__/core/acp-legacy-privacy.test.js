@@ -59,6 +59,38 @@ describe("legacy ACP session privacy migration", () => {
     db.close();
   });
 
+  it("vacuum-compacts a preexisting ACP schema after its last live row was deleted", () => {
+    const root = mkdtempSync(join(tmpdir(), "worklab-acp-deleted-privacy-"));
+    roots.push(root);
+    const dbPath = join(root, "worklab.db");
+    const sentinel = "RAW_DELETED_ACP_SECRET_493827_";
+    const rawSession = sentinel.repeat(512);
+    const db = openDb(dbPath);
+    runMigrations(db);
+    db.pragma("secure_delete = OFF");
+    insertAcpFixture(db);
+    db.prepare(`
+      UPDATE acp_profiles
+      SET last_probe_result_json = ?
+      WHERE id = ?
+    `).run(JSON.stringify({ sessionId: rawSession, copied: rawSession }), PROFILE_ID);
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    db.prepare("DELETE FROM acp_profiles WHERE id = ?").run(PROFILE_ID);
+    db.prepare("DELETE FROM agents WHERE name = 'external'").run();
+    db.prepare("DELETE FROM schema_meta WHERE key = 'acp_legacy_session_privacy_compacted_v1'").run();
+    db.prepare("UPDATE schema_meta SET value = '48' WHERE key = 'version'").run();
+    db.pragma("wal_checkpoint(TRUNCATE)");
+
+    expect(databaseContains(dbPath, sentinel)).toBe(true);
+    runMigrations(db);
+
+    expect(databaseContains(dbPath, sentinel)).toBe(false);
+    expect(databaseContains(`${dbPath}-wal`, sentinel)).toBe(false);
+    expect(db.prepare("SELECT value FROM schema_meta WHERE key = 'acp_legacy_session_privacy_compacted_v1'").get())
+      .toEqual({ value: "1" });
+    db.close();
+  });
+
   it("scrubs historical ACP rows, copied values, and raw JSONL while preserving opaque and non-ACP sessions", () => {
     const root = mkdtempSync(join(tmpdir(), "worklab-acp-privacy-"));
     roots.push(root);
