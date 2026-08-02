@@ -163,22 +163,70 @@ describe("generateResponse Codex runtime options", () => {
     expect(runOptions).not.toHaveProperty("nativeSubagents");
   });
 
-  // Native subagents come from the runtime's own on-disk profiles, so each
-  // backend gets whatever lets it find them — and only that.
-  it("opts pi into the in-process Agent built-in, which has no on-disk profiles", async () => {
+  // The router keeps one provider-option bag across attempts. Adapters ignore
+  // irrelevant fields, so every run gets all three discovery knobs rather than
+  // selecting them from only the primary SDK.
+  it("opts pi into inline Agent helpers bounded by the parent's read-only tools", async () => {
     mockRun.mockResolvedValue({ text: "ok" });
     await generateResponse("sys", {
       model: resolveModel("pi:openai:gpt-5.5"),
       messages: [{ role: "user", content: "hi" }],
+      allowedTools: ["Read", "Grep", "Bash", "Agent", "Skill"],
+      disallowedTools: ["Grep"],
     });
 
     const runOptions = mockRun.mock.calls[0][1];
-    expect(runOptions.subagents).toEqual({ inline: { enabled: true }, maxConcurrent: 3, maxPerTurn: 10 });
-    // Pi has no filesystem profile concept, so setting sources would be noise.
-    expect(runOptions).not.toHaveProperty("settingSources");
+    expect(runOptions.subagents).toEqual({
+      inline: { enabled: true, allowedTools: ["Read"] },
+      maxConcurrent: 3,
+      maxPerTurn: 10,
+    });
+    expect(runOptions.settingSources).toEqual(["user", "project", "local"]);
+    expect(runOptions.codexLoadProjectDocs).toBe(true);
   });
 
-  it("lets the Claude SDK read the same on-disk settings the Claude CLI already reads", async () => {
+  it("treats a wildcard parent policy as the full read-only Pi child ceiling", async () => {
+    mockRun.mockResolvedValue({ text: "ok" });
+    await generateResponse("sys", {
+      model: resolveModel("pi:openai:gpt-5.5"),
+      messages: [{ role: "user", content: "hi" }],
+      allowedTools: ["*"],
+      disallowedTools: ["WebSearch"],
+    });
+
+    expect(mockRun.mock.calls[0][1].subagents.inline.allowedTools).toEqual([
+      "Read",
+      "Glob",
+      "Grep",
+      "WebFetch",
+    ]);
+  });
+
+  it("suppresses Pi inline helpers when the parent grants no read-only child tools", async () => {
+    mockRun.mockResolvedValue({ text: "ok" });
+    await generateResponse("sys", {
+      model: resolveModel("pi:openai:gpt-5.5"),
+      messages: [{ role: "user", content: "hi" }],
+      allowedTools: ["Agent", "Bash"],
+      disallowedTools: [],
+    });
+
+    expect(mockRun.mock.calls[0][1]).not.toHaveProperty("subagents");
+  });
+
+  it("treats a wildcard deny as withholding every Pi child tool", async () => {
+    mockRun.mockResolvedValue({ text: "ok" });
+    await generateResponse("sys", {
+      model: resolveModel("pi:openai:gpt-5.5"),
+      messages: [{ role: "user", content: "hi" }],
+      allowedTools: ["*"],
+      disallowedTools: ["*"],
+    });
+
+    expect(mockRun.mock.calls[0][1]).not.toHaveProperty("subagents");
+  });
+
+  it("lets every route read the provider-native discovery options it owns", async () => {
     mockRun.mockResolvedValue({ text: "ok" });
     await generateResponse("sys", {
       model: resolveModel("claude:claude-sonnet-4-6"),
@@ -187,20 +235,50 @@ describe("generateResponse Codex runtime options", () => {
 
     const runOptions = mockRun.mock.calls[0][1];
     expect(runOptions.settingSources).toEqual(["user", "project", "local"]);
-    // Claude's subagents are native; the in-process built-in would duplicate them.
-    expect(runOptions).not.toHaveProperty("subagents");
+    expect(runOptions.codexLoadProjectDocs).toBe(true);
+    expect(runOptions.subagents.inline.allowedTools).toEqual([
+      "Read",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch",
+    ]);
   });
 
-  it("leaves codex on its own native surface", async () => {
-    mockRun.mockResolvedValue({ text: "ok" });
-    await generateResponse("sys", {
-      model: resolveModel("codex:gpt-5.5"),
+  it("keeps native options on the run bag when a forced fallback changes SDK", async () => {
+    const attempts = [];
+    mockCreateRouterRuntime.mockImplementationOnce(({ chain }) => ({
+      run: async (systemPrompt, runOptions) => {
+        for (const [index, entry] of chain.entries()) {
+          const attemptOptions = { ...runOptions, model: entry };
+          attempts.push({ systemPrompt, options: attemptOptions });
+          if (index < chain.length - 1) continue; // force each route to fall through
+          return { text: "fallback ok" };
+        }
+        return { text: null, failureKind: "provider_unavailable_exhausted" };
+      },
+    }));
+
+    const result = await generateResponse("sys", {
+      model: resolveModel("claude:claude-sonnet-4-6"),
+      fallbackChain: [
+        { sdk: "pi", provider: "openai", model: "gpt-5.5" },
+        { sdk: "codex", model: "gpt-5.5" },
+      ],
       messages: [{ role: "user", content: "hi" }],
-      executionMode: "cli",
+      allowedTools: ["Read", "Grep", "Agent", "Task", "Skill"],
+      disallowedTools: [],
     });
 
-    const runOptions = mockRun.mock.calls[0][1];
-    expect(runOptions).not.toHaveProperty("subagents");
-    expect(runOptions).not.toHaveProperty("settingSources");
+    expect(result.text).toBe("fallback ok");
+    expect(attempts).toHaveLength(3);
+    expect(attempts[0].options.model.sdk).toBe("claude");
+    expect(attempts[1].options.model.sdk).toBe("pi");
+    expect(attempts[2].options.model.sdk).toBe("codex");
+    for (const attempt of attempts) {
+      expect(attempt.options.settingSources).toEqual(["user", "project", "local"]);
+      expect(attempt.options.codexLoadProjectDocs).toBe(true);
+      expect(attempt.options.subagents.inline.allowedTools).toEqual(["Read", "Grep"]);
+    }
   });
 });

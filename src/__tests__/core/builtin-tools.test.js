@@ -8,7 +8,8 @@ describe("WORKLAB_BUILTIN_TOOLS", () => {
   // Claude Code hard-limits itself to that list. Dropping the subagent tool
   // therefore disabled every on-disk `.claude/agents` profile with no error and
   // no warning — the tool simply did not exist for the model.
-  it("grants the subagent tool so on-disk agent profiles are reachable", () => {
+  it("grants both exact subagent tool names used by the supported runtimes", () => {
+    expect(WORKLAB_BUILTIN_TOOLS).toContain("Agent");
     expect(WORKLAB_BUILTIN_TOOLS).toContain("Task");
   });
 
@@ -24,6 +25,26 @@ describe("WORKLAB_BUILTIN_TOOLS", () => {
 
   it("has no duplicate entries", () => {
     expect(new Set(WORKLAB_BUILTIN_TOOLS).size).toBe(WORKLAB_BUILTIN_TOOLS.length);
+  });
+
+  it("keeps the allow-all ceiling curated", () => {
+    expect(WORKLAB_BUILTIN_TOOLS).toEqual([
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Bash",
+      "WebFetch",
+      "WebSearch",
+      "Agent",
+      "Task",
+      "Skill",
+      "SlashCommand",
+      "NotebookEdit",
+      "BashOutput",
+      "KillShell",
+    ]);
   });
 
   // `coversEveryBuiltin` compares against this exact list, so a widened list must

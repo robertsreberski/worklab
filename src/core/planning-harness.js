@@ -50,7 +50,19 @@ export const PLANNING_TOOL_POLICY_OPTIONS = [
 const HARNESS_VALUES = new Set(PLANNING_HARNESS_OPTIONS.map((option) => option.value));
 const TOOL_POLICY_VALUES = new Set(PLANNING_TOOL_POLICY_OPTIONS.map((option) => option.value));
 
-const READ_ONLY_TOOLS = ["Read", "Glob", "Grep", "WebFetch", "WebSearch"];
+// These are entry points, not permissions granted to delegated work. Keeping
+// them visible lets a planner consult a skill or delegate repository research;
+// the parent allowlist and the provider-specific child ceiling still decide
+// which read-only tools the delegated work receives.
+const PLANNING_CAPABILITY_TOOLS = ["Agent", "Task", "Skill"];
+const READ_ONLY_TOOLS = [
+  "Read",
+  "Glob",
+  "Grep",
+  "WebFetch",
+  "WebSearch",
+  ...PLANNING_CAPABILITY_TOOLS,
+];
 const READ_ONLY_SHELL_TOOLS = [...READ_ONLY_TOOLS, "Bash"];
 
 export function normalizePlanningHarness(value) {
@@ -87,7 +99,7 @@ function toolPolicyGuidance(policy) {
   if (policy === "read_only_no_shell") {
     return [
       "Forbidden during planning: Write, Edit, and Bash.",
-      "Use Read, Glob, Grep, WebFetch, and WebSearch for evidence gathering.",
+      "Use Read, Glob, Grep, WebFetch, WebSearch, Agent, Task, and Skill for evidence gathering.",
     ].join("\n");
   }
   if (policy === "prompt_only") {
@@ -99,6 +111,7 @@ function toolPolicyGuidance(policy) {
   return [
     "Forbidden during planning: Write and Edit.",
     "Bash is limited to read-only inspection commands such as pwd, ls, find, rg, grep, sed, awk, cat, head, tail, wc, git status, git diff, git log, git show, git branch, git rev-parse, and git ls-files.",
+    "Agent, Task, and Skill may be used for evidence gathering; delegated helpers remain bounded to read-only tools.",
   ].join("\n");
 }
 

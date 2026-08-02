@@ -555,6 +555,23 @@ function optionOrEnv(optionValue, envValue) {
   return explicit !== undefined ? explicit : optionalOption(envValue);
 }
 
+const PI_INLINE_READ_ONLY_TOOLS = Object.freeze([
+  "Read",
+  "Glob",
+  "Grep",
+  "WebFetch",
+  "WebSearch",
+]);
+
+function piInlineAllowedTools(allowedTools, disallowedTools) {
+  const allowed = Array.isArray(allowedTools) ? allowedTools : ["*"];
+  const denied = new Set(Array.isArray(disallowedTools) ? disallowedTools : []);
+  if (denied.has("*")) return [];
+  const allowAll = allowed.includes("*");
+  return PI_INLINE_READ_ONLY_TOOLS.filter((tool) =>
+    (allowAll || allowed.includes(tool)) && !denied.has(tool));
+}
+
 // Caller-side dependency injection: providers (src/ai/providers/*) must not
 // reach back into core/. generateResponse pre-computes everything those
 // adapters need — normalized effort, settings, skill access dirs, and (for
@@ -665,33 +682,44 @@ export async function generateResponse(systemPrompt, options) {
     });
   }
 
-  // Native subagents come from the runtime's own on-disk profiles, so each
-  // backend needs whatever lets it find them.
+  // Provider-native discovery options share one run-level bag. Router attempts
+  // replace only `model`, so selecting these from the primary SDK would make a
+  // fallback silently lose the option meant for its adapter. Each adapter
+  // ignores the options it does not own.
   //
-  // Claude Agent SDK: it loads no filesystem settings by default, so a run would
-  // never see `.claude/agents`. Opt in to the same sources the Claude Code CLI
-  // already reads on its own — Worklab passes no `--setting-sources` there, so
-  // this makes the two execution modes behave alike rather than diverging on
-  // which agent profiles exist. Requires agent-runtime > 0.17.1; older builds
-  // ignore the option and keep full isolation.
+  // Claude Agent SDK: agent-runtime defaults user/project/local sources to an
+  // explicit empty list (managed policy still applies), so a Worklab run would
+  // not see `.claude/agents`. Opt in to the same filesystem sources the Claude
+  // Code CLI already reads on its own. These sources may also contain hooks and
+  // plugins; this is an intentional native-CLI compatibility boundary.
   //
-  // Pi: it has no on-disk profile concept and reports
-  // `supports_native_subagents: false`, so its subagents are the runtime's
-  // in-process `Agent` built-in instead. Inline authoring means the model
-  // describes the helper it wants at call time; omitting `allowedTools` leaves
-  // the runtime's read-only default set, which is the right ceiling for a
-  // helper Worklab never reviewed.
-  const nativeSubagentOptions = resolved.sdk === "pi"
-    ? { subagents: { inline: { enabled: true }, maxConcurrent: 3, maxPerTurn: 10 } }
-    : resolved.sdk === "claude"
-      ? { settingSources: ["user", "project", "local"] }
-      : {};
+  // Pi: inline helpers may never receive more than both the parent's logical
+  // effective policy and Worklab's read-only helper ceiling. Use the logical
+  // pre-projection policy here: a direct-Codex primary can be projected to `*`,
+  // but a later Pi route must not mistake that provider representation for a
+  // wider parent grant. If the intersection is empty, omit subagents entirely;
+  // older runtimes interpret an explicit empty inline list as their default.
+  //
+  // Codex: Worklab already loads repository instructions into its own prompt,
+  // but native subagents need Codex to load project docs for their own turns.
+  const inlineAllowedTools = piInlineAllowedTools(options.allowedTools, options.disallowedTools);
+  const providerNativeOptions = {
+    settingSources: ["user", "project", "local"],
+    codexLoadProjectDocs: true,
+    ...(inlineAllowedTools.length > 0 ? {
+      subagents: {
+        inline: { enabled: true, allowedTools: inlineAllowedTools },
+        maxConcurrent: 3,
+        maxPerTurn: 10,
+      },
+    } : {}),
+  };
 
   const baseOptions = {
     ...options,
     model: resolved,
     skillDirs,
-    ...nativeSubagentOptions,
+    ...providerNativeOptions,
     ...(skillsRoot === undefined ? {} : { skillsRoot }),
     settings,
     toolLimits,

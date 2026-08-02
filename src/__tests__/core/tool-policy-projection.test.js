@@ -76,7 +76,7 @@ describe("projectToolPolicy", () => {
   // stricter on the filesystem than the allowlist Worklab asked for.
   it.each(ALLOW_ALL_ONLY)("routes planning through native plan mode for %s", (sdk) => {
     const projected = projectToolPolicy({ sdk }, {
-      allowedTools: ["Read", "Glob", "Grep", "WebFetch", "WebSearch", "Bash"],
+      allowedTools: ["Read", "Glob", "Grep", "WebFetch", "WebSearch", "Agent", "Task", "Skill", "Bash"],
       disallowedTools: ["Write", "Edit"],
       planning: true,
       permissionMode: "bypassPermissions",
@@ -92,7 +92,7 @@ describe("projectToolPolicy", () => {
 
   it.each(PROJECTING)("leaves planning on the tool allowlist for %s", (sdk) => {
     const projected = projectToolPolicy({ sdk }, {
-      allowedTools: ["Read", "Grep", "WebFetch"],
+      allowedTools: ["Read", "Grep", "WebFetch", "Agent", "Task", "Skill"],
       disallowedTools: ["Write", "Edit"],
       planning: true,
       permissionMode: "bypassPermissions",
@@ -102,7 +102,7 @@ describe("projectToolPolicy", () => {
     // changes agent behaviour in ways the worklab_result contract does not
     // expect — so nothing is translated and nothing is lost.
     expect(projected.permissionMode).toBe("bypassPermissions");
-    expect(projected.allowedTools).toEqual(["Read", "Grep", "WebFetch"]);
+    expect(projected.allowedTools).toEqual(["Read", "Grep", "WebFetch", "Agent", "Task", "Skill"]);
     expect(projected.disallowedTools).toEqual(["Write", "Edit"]);
     expect(projected.droppedNetworkTools).toEqual([]);
   });

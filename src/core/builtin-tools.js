@@ -11,12 +11,13 @@
 // returns `Agent, Read` and `is_error: false`), so an entry a given backend
 // lacks costs nothing on that backend.
 //
-// `Task` is the subagent tool. Claude Code accepts both `Task` and `Agent` in
-// `--tools` and resolves either to the same tool, but every *event* it emits
-// reports `name: "Agent"` — so match on `Agent` when rendering, and keep `Task`
-// here because that is the name agent-runtime's own `withTaskTool` appends.
-// Without it the CLI is invoked with a named `--tools` list that excludes the
-// subagent tool, which silently disables on-disk `.claude/agents` discovery.
+// `Agent` is the exact Pi built-in name and the event name emitted by current
+// Claude Code. Keep `Task` as well: Claude Code accepts both names for the same
+// native surface, and agent-runtime's native-profile compatibility path still
+// appends `Task`. Omitting either makes at least one supported route silently
+// lose delegation when Worklab sends its explicit named allowlist.
+// The remaining native CLI names are the existing curated Worklab policy; keep
+// them explicit rather than replacing the list with a wildcard.
 //
 // `TodoWrite` is deliberately absent: Worklab owns run todos through
 // `core/run-todos.js` and the agent MCP surface, and enabling the native tool
@@ -30,6 +31,7 @@ export const WORKLAB_BUILTIN_TOOLS = [
   "Bash",
   "WebFetch",
   "WebSearch",
+  "Agent",
   "Task",
   "Skill",
   "SlashCommand",
