@@ -88,6 +88,135 @@ describe("backup command", () => {
       .toBe("must remain eligible for backup");
   });
 
+  it("scrubs legacy list-session cursors while preserving canonical profile-bound envelopes", async () => {
+    const dataDir = tmp("backup-acp-cursor-data");
+    const outDir = tmp("backup-acp-cursor-out");
+    const restoredDir = tmp("backup-acp-cursor-restored");
+    const workspace = tmp("backup-acp-cursor-workspace");
+    process.env.WORKLAB_DATA_DIR = dataDir;
+
+    const sourceDb = openDb(join(dataDir, "worklab.db"));
+    runMigrations(sourceDb);
+    const profile = createAcpProfile({
+      db: sourceDb,
+      input: {
+        agentName: "backup-acp-cursor",
+        displayName: "Backup ACP cursor",
+        command: process.execPath,
+        cwd: workspace,
+      },
+    });
+    const canonicalRawCursor = "backup-canonical-raw-cursor-secret";
+    const canonicalCursor = `acp-cursor:v1:${profile.id}:${Buffer.from(canonicalRawCursor).toString("base64url")}`;
+    const legacyRawCursor = "backup-legacy-raw-cursor-secret";
+    const malformedRawCursor = "backup-malformed-raw-cursor-secret";
+    const malformedCursor = `acp-cursor:v1:another-profile:${Buffer.from(malformedRawCursor).toString("base64url")}`;
+    const now = Date.now();
+    const insertOperation = sourceDb.prepare(`
+      INSERT INTO acp_operations
+        (id, profile_id, kind, state, request_json, result_json, error_json,
+         created_at, updated_at, started_at, completed_at)
+      VALUES (?, ?, 'list_sessions', 'succeeded', ?, ?, '{}', ?, ?, ?, ?)
+    `);
+    insertOperation.run(
+      "acpop-backup-canonical-cursor",
+      profile.id,
+      JSON.stringify({ cursor: canonicalCursor, copied: canonicalRawCursor, keep: "canonical-request" }),
+      JSON.stringify({ sessions: [], nextCursor: canonicalCursor, copied: canonicalRawCursor }),
+      now,
+      now,
+      now,
+      now,
+    );
+    insertOperation.run(
+      "acpop-backup-legacy-cursor",
+      profile.id,
+      JSON.stringify({ cursor: legacyRawCursor, keep: "legacy-request" }),
+      JSON.stringify({ sessions: [], next_cursor: legacyRawCursor, copied: legacyRawCursor }),
+      now,
+      now,
+      now,
+      now,
+    );
+    insertOperation.run(
+      "acpop-backup-malformed-cursor",
+      profile.id,
+      JSON.stringify({ cursor: malformedCursor, copied: malformedRawCursor }),
+      JSON.stringify({ sessions: [], nextCursor: { opaque: malformedRawCursor } }),
+      now,
+      now,
+      now,
+      now,
+    );
+    sourceDb.prepare(`
+      INSERT INTO tasks (id, task_key, title, instructions, created_at, updated_at)
+      VALUES ('task-backup-cursors', 'T-CURSORS', 'Cursor backup', '', ?, ?)
+    `).run(now, now);
+    sourceDb.prepare(`
+      INSERT INTO task_comments (id, task_id, author_type, body, created_at)
+      VALUES ('comment-backup-cursors', 'task-backup-cursors', 'system', ?, ?)
+    `).run(`Copied ${canonicalRawCursor} and ${legacyRawCursor}`, now);
+    sourceDb.close();
+
+    const lines = [];
+    vi.spyOn(console, "log").mockImplementation((line) => lines.push(String(line)));
+    await backup(["--out", outDir]);
+    const archive = lines.find((line) => line.startsWith("backup: ")).replace("backup: ", "");
+    execFileSync("tar", ["-xzf", archive, "-C", restoredDir]);
+
+    const restoredDbPath = join(restoredDir, "worklab.db");
+    const restoredDb = openDb(restoredDbPath);
+    try {
+      const canonical = restoredDb.prepare(`
+        SELECT request_json, result_json FROM acp_operations WHERE id = 'acpop-backup-canonical-cursor'
+      `).get();
+      expect(JSON.parse(canonical.request_json)).toEqual({
+        cursor: canonicalCursor,
+        copied: "[redacted]",
+        keep: "canonical-request",
+      });
+      expect(JSON.parse(canonical.result_json)).toEqual({
+        sessions: [],
+        nextCursor: canonicalCursor,
+        copied: "[redacted]",
+      });
+
+      const legacy = restoredDb.prepare(`
+        SELECT request_json, result_json FROM acp_operations WHERE id = 'acpop-backup-legacy-cursor'
+      `).get();
+      expect(JSON.parse(legacy.request_json)).toEqual({ keep: "legacy-request" });
+      expect(JSON.parse(legacy.result_json)).toEqual({ sessions: [], copied: "[redacted]" });
+
+      const malformed = restoredDb.prepare(`
+        SELECT request_json, result_json FROM acp_operations WHERE id = 'acpop-backup-malformed-cursor'
+      `).get();
+      expect(JSON.parse(malformed.request_json)).toEqual({
+        redacted: true,
+        reason: "ACP pagination cursor data was invalid",
+      });
+      expect(JSON.parse(malformed.result_json)).toEqual({
+        redacted: true,
+        reason: "ACP pagination cursor data was invalid",
+      });
+      expect(restoredDb.prepare(`
+        SELECT body FROM task_comments WHERE id = 'comment-backup-cursors'
+      `).get().body).toBe("Copied [redacted] and [redacted]");
+    } finally {
+      restoredDb.close();
+    }
+
+    const restoredBytes = readFileSync(restoredDbPath);
+    expect(restoredBytes.includes(Buffer.from(canonicalCursor))).toBe(true);
+    for (const privateValue of [
+      canonicalRawCursor,
+      legacyRawCursor,
+      malformedRawCursor,
+      malformedCursor,
+    ]) {
+      expect(restoredBytes.includes(Buffer.from(privateValue))).toBe(false);
+    }
+  });
+
   it("restores ACP profiles, operations, and sanitized interactions without secret values", async () => {
     const dataDir = tmp("backup-acp-data");
     const outDir = tmp("backup-acp-out");
