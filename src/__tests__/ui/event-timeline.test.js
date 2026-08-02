@@ -1,9 +1,267 @@
 import { describe, expect, it } from "vitest";
-import { normalizeWorklabEvents } from "../../ui/src/components/EventTimeline.jsx";
+import {
+  normalizeAcpTimelineEvent,
+  normalizeWorklabEvents,
+} from "../../ui/src/components/EventTimeline.jsx";
 import { normalizeToolTokenEvent } from "../../ui/src/components/primitives/ToolToken.jsx";
 import { mergeRunEvents } from "../../ui/src/lib/useRunStream.js";
 
 describe("worklab event timeline normalization", () => {
+  it("projects unknown ACP session updates to a label without raw protocol data", () => {
+    const event = normalizeAcpTimelineEvent({
+      type: "acp_session_update",
+      sessionId: "secret-session-id",
+      update: {
+        sessionUpdate: "future_update",
+        response: { content: "secret-response" },
+        values: { token: "secret-value" },
+        _meta: { authorization: "secret-auth" },
+      },
+    });
+
+    expect(event).toEqual({
+      type: "acp_session_update",
+      updateType: "future_update",
+      title: "ACP session update: Future Update",
+    });
+    expect(JSON.stringify(event)).not.toMatch(/secret|response|values|_meta|sessionId/);
+  });
+
+  it("keeps a safe ACP tool summary and drops its raw-input companion", () => {
+    const events = normalizeWorklabEvents([
+      {
+        type: "sdk_event",
+        event: {
+          type: "acp_session_update",
+          sessionId: "session-private",
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "tool-1",
+            title: "Run checks",
+            kind: "execute",
+            status: "pending",
+            rawInput: { apiKey: "private-input" },
+            rawOutput: "private-output",
+            locations: [{ path: "/private/workspace" }],
+          },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: {
+            content: [{
+              type: "tool_use",
+              id: "tool-1",
+              name: "Run checks",
+              input: { apiKey: "private-input" },
+            }],
+          },
+        },
+      },
+    ]);
+
+    expect(events).toEqual([{
+      type: "acp_session_update",
+      updateType: "tool_call",
+      title: "ACP tool call started",
+      items: [
+        { label: "Tool", detail: "Run checks" },
+        { label: "Kind", detail: "Execute" },
+        { label: "Status", detail: "Pending" },
+      ],
+    }]);
+    expect(JSON.stringify(events)).not.toMatch(/private|rawInput|rawOutput|locations|sessionId|apiKey/);
+  });
+
+  it("projects raw ACP plan and terminal tool updates without secret-bearing companions", () => {
+    const events = normalizeWorklabEvents([
+      {
+        type: "acp_session_update",
+        sessionId: "private-session",
+        update: {
+          sessionUpdate: "plan_update",
+          entries: [{
+            content: "Verify the build",
+            priority: "high",
+            status: "in_progress",
+            _meta: { token: "private-plan-meta" },
+          }],
+          response: "private-plan-response",
+        },
+      },
+      {
+        type: "plan",
+        source: "acp",
+        update: {
+          sessionUpdate: "plan_update",
+          entries: [{ content: "Verify the build", priority: "high", status: "in_progress" }],
+          raw: "private-plan-companion",
+        },
+      },
+      {
+        type: "acp_session_update",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "tool-2",
+          title: "Build",
+          status: "completed",
+          rawOutput: "private-result",
+        },
+      },
+      {
+        type: "user",
+        message: {
+          content: [{ type: "tool_result", tool_use_id: "tool-2", content: "private-result" }],
+        },
+      },
+    ]);
+
+    expect(events).toEqual([
+      {
+        type: "acp_plan",
+        action: "plan_update",
+        title: "ACP plan updated",
+        entries: [{ content: "Verify the build", priority: "high", status: "in_progress" }],
+      },
+      {
+        type: "acp_session_update",
+        updateType: "tool_call_update",
+        title: "ACP tool call updated",
+        items: [
+          { label: "Tool", detail: "Build" },
+          { label: "Status", detail: "Completed" },
+        ],
+      },
+    ]);
+    expect(JSON.stringify(events)).not.toMatch(/private|rawOutput|response|_meta|sessionId/);
+  });
+
+  it("strictly projects normalized ACP context and provider lifecycle events", () => {
+    const events = normalizeWorklabEvents([
+      {
+        type: "context_usage",
+        source: "acp",
+        model: "acp:profile-a",
+        context: { used: 42, window: 1_000, response: "private-context" },
+        cost: { amount: 0.25, currency: "USD", values: "private-cost" },
+        _meta: { secret: "private-meta" },
+      },
+      {
+        type: "provider_request_completed",
+        sdk: "acp",
+        model: "acp:profile-a",
+        runtime: "acp-stdio",
+        durationMs: 125.4,
+        cancelled: false,
+        response: { values: "private-provider" },
+      },
+      {
+        type: "provider_status",
+        source: "acp",
+        kind: "retry_started",
+        model: "acp:profile-a",
+        retryIndex: 1,
+        reason: "private-retry-reason",
+        metadata: { token: "private-retry-meta" },
+      },
+    ]);
+
+    expect(events).toEqual([
+      { type: "acp_context_usage", used: 42, window: 1_000, cost: { amount: 0.25, currency: "USD" } },
+      {
+        type: "provider_request_completed",
+        sdk: "acp",
+        model: "acp:profile-a",
+        durationMs: 125.4,
+        cancelled: false,
+      },
+      {
+        type: "acp_provider_status",
+        status: "retry_started",
+        title: "Retrying ACP provider",
+        retryIndex: 1,
+      },
+    ]);
+    expect(JSON.stringify(events)).not.toMatch(/private|response|values|_meta|metadata|reason/);
+  });
+
+  it("never retains ACP interaction response values in timeline rows", () => {
+    const event = normalizeAcpTimelineEvent({
+      type: "acp_interaction_resolved",
+      interaction_id: "private-interaction-id",
+      interaction_kind: "permission",
+      state: "resolved",
+      disposition: "selected",
+      response: { content: "private-answer", values: { token: "private-token" } },
+    });
+
+    expect(event).toEqual({
+      type: "acp_interaction",
+      action: "resolved",
+      title: "ACP interaction resolved",
+      detail: "Permission · Resolved · Selected",
+    });
+    expect(JSON.stringify(event)).not.toMatch(/private|response|values|interaction_id/);
+  });
+
+  it("allowlists labels from ACP command, mode, config, and session updates", () => {
+    const events = [
+      {
+        type: "acp_session_update",
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands: [{
+            name: "review",
+            description: "Review changes",
+            input: { hint: "Optional focus", response: "private-command" },
+            _meta: { token: "private-command-meta" },
+          }],
+        },
+      },
+      {
+        type: "acp_session_update",
+        update: { sessionUpdate: "current_mode_update", currentModeId: "review", values: "private-mode" },
+      },
+      {
+        type: "acp_session_update",
+        update: {
+          sessionUpdate: "config_option_update",
+          configOptions: [{ id: "tone", name: "Tone", type: "select", currentValue: "private-value" }],
+        },
+      },
+      {
+        type: "acp_session_update",
+        update: {
+          sessionUpdate: "session_info_update",
+          title: "Release review",
+          updatedAt: "2026-08-02T18:00:00Z",
+          response: "private-session-info",
+        },
+      },
+    ].map(normalizeAcpTimelineEvent);
+
+    expect(events[0]).toMatchObject({
+      type: "acp_session_update",
+      title: "ACP commands updated",
+      items: [{ label: "review", detail: "Review changes · Optional focus" }],
+    });
+    expect(events[1]).toMatchObject({ title: "ACP session mode updated", detail: "Mode: review" });
+    expect(events[2]).toMatchObject({
+      title: "ACP configuration options updated",
+      items: [{ label: "Tone", detail: "select" }],
+    });
+    expect(events[3]).toMatchObject({
+      title: "ACP session information updated",
+      items: [
+        { label: "Title", detail: "Release review" },
+        { label: "Updated", detail: "2026-08-02T18:00:00Z" },
+      ],
+    });
+    expect(JSON.stringify(events)).not.toMatch(/private|response|values|_meta|currentValue/);
+  });
+
   it("normalizes coordinator worktree reconciliation events", () => {
     expect(normalizeWorklabEvents([{
       type: "worktree_reconcile",

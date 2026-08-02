@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   groupAgentTimelineEvents,
+  acpContextUsageText,
   isActiveStreamingTimelineItem,
   normaliseAgentTimelineEvents,
   providerRequestTargetLabel,
@@ -11,6 +12,15 @@ import { normalizeWorklabEvents } from "../../ui/src/components/EventTimeline.js
 import { redactedThinkingLabel, thinkingProgressLabel } from "../../ui/src/lib/thinkingEvents.js";
 
 describe("agent event timeline normalization", () => {
+  it("formats safe ACP context usage without raw payloads", () => {
+    expect(acpContextUsageText({
+      used: 42,
+      window: 1_000,
+      cost: { amount: 0.25, currency: "USD" },
+    })).toBe("42 / 1,000 tokens · 0.25 USD");
+    expect(acpContextUsageText({})).toBe("Context usage updated");
+  });
+
   it("coalesces consecutive thinking fragments", () => {
     const events = normaliseAgentTimelineEvents([
       { type: "thinking", text: "Looking " },
