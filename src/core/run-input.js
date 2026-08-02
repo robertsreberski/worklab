@@ -34,7 +34,10 @@ import { buildNativeSubagentContext } from "./native-subagents.js";
 import { formatWorklabResultText } from "./worklab-result/contract.js";
 import { renderResumeSnapshot } from "@mono-agent/agent-runtime/agent/transcript.js";
 import { getAcpProfileForAgent } from "./acp-profiles.js";
-import { buildAgentOwnedAcpTaskInput } from "./acp-task-input.js";
+import {
+  buildAgentOwnedAcpTaskInput,
+  buildClientOwnedAcpTaskInput,
+} from "./acp-task-input.js";
 
 function runInputError(status, code, message) {
   return Object.assign(new Error(message), { status, code });
@@ -790,8 +793,11 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
 
   if (mode === "plan" || mode === "execute") {
     const priorRuns = loadPriorRunSummaries(db, taskId, runId);
-    if (agentOwnsAcpConfiguration) {
-      return buildAgentOwnedAcpTaskInput({
+    if (acpProfile) {
+      const buildAcpTaskInput = agentOwnsAcpConfiguration
+        ? buildAgentOwnedAcpTaskInput
+        : buildClientOwnedAcpTaskInput;
+      return buildAcpTaskInput({
         setup,
         acpProfile,
         mode,
@@ -849,8 +855,11 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const priorLog = getAgentLogByRunId(db, priorRun.id);
     const priorEvents = priorLog ? parseEvents(priorLog.events) : [];
     const execution = extractExecutionFromEvents(priorEvents, priorRun);
-    if (agentOwnsAcpConfiguration) {
-      return buildAgentOwnedAcpTaskInput({
+    if (acpProfile) {
+      const buildAcpTaskInput = agentOwnsAcpConfiguration
+        ? buildAgentOwnedAcpTaskInput
+        : buildClientOwnedAcpTaskInput;
+      return buildAcpTaskInput({
         setup,
         acpProfile,
         mode,

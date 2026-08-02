@@ -151,7 +151,7 @@ function promptText(input) {
   return input.messages[0].content.find((block) => block.type === "text")?.text || "";
 }
 
-describe("agent-owned ACP run input", () => {
+describe("ACP run input", () => {
   it("sends only task-owned context and local resource links to Mono", () => {
     withFixture(({ db, config, dataDir, workspace }) => {
       seedAgent(db, {
@@ -456,13 +456,14 @@ describe("agent-owned ACP run input", () => {
     });
   });
 
-  it("keeps normal Worklab configuration semantics for client-owned ACP profiles", () => {
-    withFixture(({ db, config, workspace }) => {
+  it("preserves client-owned persona and context without advertising unavailable Worklab capabilities", () => {
+    withFixture(({ db, config, dataDir, workspace }) => {
       seedAgent(db, {
         name: "client-owned",
         profileId: PROFILE_ID,
         instructions: "CLIENT_OWNED_PERSONA_VISIBLE",
       });
+      seedAgent(db, { name: "helper", description: "CLIENT_DELEGATION_SECRET" });
       seedAcpProfile(db, {
         id: PROFILE_ID,
         agentName: "client-owned",
@@ -477,6 +478,38 @@ describe("agent-owned ACP run input", () => {
         agentName: "client-owned",
         startedAt: 3_000,
       });
+      writeMemory({ dataDir, agent: "client-owned", content: "CLIENT_MEMORY_VISIBLE" });
+      appendJournalEntry({
+        dataDir,
+        agent: "client-owned",
+        runId: "run-client-prior",
+        taskId,
+        taskTitle: "Task",
+        bullet: "CLIENT_JOURNAL_VISIBLE",
+      });
+      kbCreate({
+        dataDir,
+        slug: "client-context",
+        title: "Client context",
+        body: "CLIENT_KNOWLEDGE_VISIBLE",
+        pinned: true,
+        author: "human",
+      });
+      mkdirSync(join(dataDir, "skills", "client-skill"), { recursive: true });
+      writeFileSync(join(dataDir, "skills", "client-skill", "SKILL.md"), [
+        "---",
+        "name: client-skill",
+        "trigger: client",
+        "---",
+        "CLIENT_SKILL_SECRET",
+      ].join("\n"));
+      mkdirSync(join(dataDir, "config"), { recursive: true });
+      writeFileSync(join(dataDir, "config", "mcp.json"), JSON.stringify({
+        mcpServers: {
+          private: { command: process.execPath, env: { PRIVATE_VALUE: "CLIENT_MCP_SECRET" } },
+        },
+      }));
+      writeFileSync(join(workspace, "AGENTS.md"), "CLIENT_REPOSITORY_GUIDANCE_VISIBLE");
 
       const input = buildTaskRunInput({
         db,
@@ -485,12 +518,131 @@ describe("agent-owned ACP run input", () => {
         agentName: "client-owned",
         runId: "run-client-owned",
         mode: "execute",
+        worklabToolSurfaceMarkdown: "CLIENT_WORKLAB_TOOL_SECRET",
       });
 
       expect(input.systemPrompt).toContain("CLIENT_OWNED_PERSONA_VISIBLE");
       expect(input.systemPrompt).toContain("PROJECT_CONTEXT_SECRET");
-      expect(typeof input.messages[0].content).toBe("string");
-      expect(input.promptDiagnostics.acp).toBeUndefined();
+      expect(input.systemPrompt).toContain("CLIENT_MEMORY_VISIBLE");
+      expect(input.systemPrompt).toContain("CLIENT_JOURNAL_VISIBLE");
+      expect(input.systemPrompt).toContain("CLIENT_KNOWLEDGE_VISIBLE");
+      expect(input.systemPrompt).toContain("CLIENT_REPOSITORY_GUIDANCE_VISIBLE");
+      expect(input.systemPrompt).toContain("does not supply tools");
+      expect(Array.isArray(input.messages[0].content)).toBe(true);
+      expect(promptText(input)).toContain("TASK_INSTRUCTIONS_ALLOWED");
+      expect(promptText(input)).toContain("Allowed decision values for this execute run: advance, pause, or block.");
+      expect(input.skills).toEqual([]);
+      expect(input.skillDirs).toEqual([]);
+      expect(input.mcpServers).toEqual({});
+      expect(input.allowedTools).toEqual([]);
+      expect(input.disallowedTools).toEqual([]);
+      expect(input.toolPolicy).toBeNull();
+      expect(input.capabilityRestrictions).toEqual(["acp_client_services_unavailable"]);
+      expect(input.delegation).toBeNull();
+      expect(input.nativeSubagents).toBeNull();
+      expect(input.promptDiagnostics).toMatchObject({
+        toolCount: { skills: 0, builtin: 0, mcp: 0 },
+        acp: { profileId: PROFILE_ID, configurationOwner: "client" },
+      });
+
+      const serialized = JSON.stringify(input);
+      for (const unavailable of [
+        "CLIENT_SKILL_SECRET",
+        "CLIENT_MCP_SECRET",
+        "CLIENT_DELEGATION_SECRET",
+        "CLIENT_WORKLAB_TOOL_SECRET",
+        "journal_append",
+        "todo_write",
+        "run_log_read",
+        "kb_create",
+        "worktree_sync",
+        'decision \\"delegate\\"',
+      ]) {
+        expect(serialized).not.toContain(unavailable);
+      }
+    });
+  });
+
+  it("uses the bounded client-owned projection for review turns", () => {
+    withFixture(({ db, config, workspace }) => {
+      seedAgent(db, { name: "owner" });
+      seedAgent(db, {
+        name: "client-reviewer",
+        profileId: REVIEW_PROFILE_ID,
+        instructions: "CLIENT_REVIEW_PERSONA_VISIBLE",
+      });
+      seedAcpProfile(db, {
+        id: REVIEW_PROFILE_ID,
+        agentName: "client-reviewer",
+        configurationOwner: "client",
+        workspace,
+      });
+      const taskId = seedProjectAndTask(db, workspace, {
+        taskId: "task-client-review",
+        agentName: "owner",
+        reviewerAgent: "client-reviewer",
+        stage: "review",
+      });
+      insertRun({
+        db,
+        id: "run-client-owner",
+        taskId,
+        agentName: "owner",
+        startedAt: 1_000,
+        endedAt: 2_000,
+        result: {
+          schema: "worklab.v2",
+          stage: "execute",
+          decision: "advance",
+          summary: "CLIENT_REVIEW_EVIDENCE_VISIBLE",
+          verification_evidence: [],
+        },
+      });
+      db.prepare(`
+        INSERT INTO agent_logs (id, task_run_id, events, status, created_at)
+        VALUES ('log-client-owner', 'run-client-owner', ?, 'complete', 2000)
+      `).run(JSON.stringify([{
+        type: "final",
+        text: "CLIENT_REVIEW_FINAL_VISIBLE",
+        numTurns: 1,
+        durationMs: 100,
+      }]));
+      insertRun({
+        db,
+        id: "run-client-review",
+        taskId,
+        agentName: "client-reviewer",
+        mode: "review",
+        stage: "review",
+        startedAt: 3_000,
+      });
+
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId,
+        agentName: "client-reviewer",
+        runId: "run-client-review",
+        mode: "review",
+        priorRunId: "run-client-owner",
+        worklabToolSurfaceMarkdown: "CLIENT_REVIEW_TOOL_SECRET",
+      });
+
+      expect(input.systemPrompt).toContain("CLIENT_REVIEW_PERSONA_VISIBLE");
+      expect(promptText(input)).toContain("CLIENT_REVIEW_EVIDENCE_VISIBLE");
+      expect(promptText(input)).toContain("CLIENT_REVIEW_FINAL_VISIBLE");
+      expect(promptText(input)).toContain("Allowed decision values for this review run: approve or reject.");
+      expect(input.skills).toEqual([]);
+      expect(input.mcpServers).toEqual({});
+      expect(input.allowedTools).toEqual([]);
+      expect(input.nativeSubagents).toBeNull();
+      expect(input.promptDiagnostics.acp).toEqual({
+        profileId: REVIEW_PROFILE_ID,
+        configurationOwner: "client",
+      });
+      expect(JSON.stringify(input)).not.toMatch(
+        /CLIENT_REVIEW_TOOL_SECRET|journal_append|todo_write|run_log_read|worktree_sync/u,
+      );
     });
   });
 });

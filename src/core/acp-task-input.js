@@ -158,7 +158,7 @@ function formatReviewEvidence(priorRun, execution) {
 function resultContract(mode) {
   const stage = ["plan", "execute", "review"].includes(mode) ? mode : "execute";
   const decision = stage === "review" ? "approve" : "advance";
-  const allowed = stage === "review" ? "approve or reject" : "advance, delegate, pause, or block";
+  const allowed = stage === "review" ? "approve or reject" : "advance, pause, or block";
   const shape = {
     schema: "worklab.v2",
     stage,
@@ -189,6 +189,59 @@ function resultContract(mode) {
     JSON.stringify(shape, null, 2),
     "```",
   ].join("\n");
+}
+
+function clientOwnedProjectContext(project, effectiveWorkdir) {
+  if (!project) return "";
+  return [
+    project.name ? `Name: ${project.name}` : "",
+    project.slug ? `Slug: ${project.slug}` : "",
+    project.description ? `Description:\n${project.description}` : "",
+    project.context ? `Context:\n${project.context}` : "",
+    effectiveWorkdir ? `Task workspace: \`${effectiveWorkdir}\`` : "",
+  ].filter(Boolean).join("\n\n");
+}
+
+function clientOwnedRepositoryContext(repositoryInstructions) {
+  if (!repositoryInstructions?.content) return "";
+  return [
+    repositoryInstructions.path ? `Source: \`${repositoryInstructions.path}\`` : "",
+    repositoryInstructions.truncated
+      ? "This repository guidance was clipped; rely only on the included content."
+      : "",
+    repositoryInstructions.content,
+  ].filter(Boolean).join("\n\n");
+}
+
+function clientOwnedPinnedKnowledge(entries = []) {
+  return entries.map((entry) => [
+    entry?.title ? `### ${entry.title}` : "### Knowledge",
+    entry?.body || "",
+  ].filter(Boolean).join("\n\n")).join("\n\n");
+}
+
+function clientOwnedAcpSystemPrompt(setup = {}, mode = "execute") {
+  const boundary = [
+    "Worklab owns this ACP profile's prompt configuration and supplies the persona and context below.",
+    "Worklab does not supply tools, MCP servers, skill packages, subagents, delegation facilities, filesystem access, or terminal access over this ACP connection. Use only capabilities independently owned and advertised by the external ACP agent.",
+  ].join("\n\n");
+  return [
+    "# Worklab ACP client context",
+    boundary,
+    section("Role", setup.agent?.instructions || ""),
+    section("Run", [
+      `Mode: ${mode}`,
+      setup.effectiveWorkdir ? `Task workspace: \`${setup.effectiveWorkdir}\`` : "",
+    ].filter(Boolean).join("\n")),
+    section("Project", clientOwnedProjectContext(setup.project, setup.effectiveWorkdir)),
+    section("Repository guidance", clientOwnedRepositoryContext(setup.repositoryInstructions)),
+    section("Pinned knowledge", clientOwnedPinnedKnowledge(setup.pinnedKb)),
+    section("Memory", setup.memory || ""),
+    section("Learned memory", setup.learningMemoryContext || ""),
+    section("Recent journal", setup.journalTail || ""),
+    section("Resume context", setup.resumeContext || ""),
+    section("Webhook trigger", setup.webhookTrigger ? JSON.stringify(setup.webhookTrigger, null, 2) : ""),
+  ].filter(Boolean).join("\n\n");
 }
 
 function localAttachmentPath(attachment, { dataDir, effectiveWorkdir } = {}) {
@@ -505,6 +558,72 @@ export function buildAgentOwnedAcpTaskInput({
       acp: {
         profileId: acpProfile?.id || null,
         configurationOwner: "agent",
+      },
+    },
+  };
+}
+
+/**
+ * Client-owned ACP profiles keep Worklab-authored persona and context, while
+ * projecting only the capabilities the ACP runtime actually supplies. This
+ * prevents the ordinary Worklab prompt and run payload from promising local
+ * tools, MCP servers, skills, or subagents that cannot cross this connection.
+ */
+export function buildClientOwnedAcpTaskInput(options = {}) {
+  const { setup = {}, acpProfile, mode = "execute" } = options;
+  const base = buildAgentOwnedAcpTaskInput(options);
+  const systemPrompt = clientOwnedAcpSystemPrompt(setup, mode);
+  const messageText = base.messages?.[0]?.content?.find?.((block) => block?.type === "text")?.text || "";
+  return {
+    ...base,
+    agent: {
+      ...base.agent,
+      description: setup.agent?.description || null,
+      instructions: setup.agent?.instructions || "",
+    },
+    project: setup.project || null,
+    sourceWorkdir: setup.sourceWorkdir || null,
+    worktree: setup.worktree || null,
+    repositoryInstructions: setup.repositoryInstructions || null,
+    repositoryGitRoot: setup.repositoryGitRoot || null,
+    resumeContext: setup.resumeContext || "",
+    memory: setup.memory || "",
+    learningMemories: Array.isArray(setup.learningMemories) ? setup.learningMemories : [],
+    learningMemoryContext: setup.learningMemoryContext || "",
+    journalTail: setup.journalTail || "",
+    pinnedKb: Array.isArray(setup.pinnedKb) ? setup.pinnedKb : [],
+    webhookTrigger: setup.webhookTrigger || null,
+    capabilityRestrictions: ["acp_client_services_unavailable"],
+    acpProfile: sanitizedAcpProfile(acpProfile),
+    systemPrompt,
+    promptDiagnostics: {
+      ...base.promptDiagnostics,
+      promptChars: systemPrompt.length + messageText.length,
+      project: setup.project ? {
+        id: setup.project.id,
+        slug: setup.project.slug,
+        contextHash: setup.projectContextHash || null,
+        workdir: setup.effectiveWorkdir || null,
+        workspaceMode: setup.workspaceMode || "direct",
+        sourceWorkdir: setup.sourceWorkdir || null,
+      } : null,
+      repositoryInstructions: setup.repositoryInstructions ? {
+        path: setup.repositoryInstructions.path,
+        hash: setup.repositoryInstructions.hash,
+        truncated: !!setup.repositoryInstructions.truncated,
+      } : null,
+      repositoryGitRoot: setup.repositoryGitRoot || null,
+      workspaceMode: setup.workspaceMode || "direct",
+      sourceWorkdir: setup.sourceWorkdir || null,
+      worktree: setup.worktree ? {
+        branch: setup.worktree.branch || null,
+        status: setup.worktree.status || null,
+        runtime_workdir: setup.worktree.runtime_workdir || null,
+      } : null,
+      resumeContext: !!setup.resumeContext,
+      acp: {
+        profileId: acpProfile?.id || null,
+        configurationOwner: "client",
       },
     },
   };
