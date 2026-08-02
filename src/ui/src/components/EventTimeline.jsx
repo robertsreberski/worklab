@@ -217,6 +217,13 @@ const HIDDEN_SYSTEM_SUBTYPES = new Set([
   "init",
   "status",
   "thinking_tokens",
+  // Native subagent lifecycle. agent-runtime correlates these into richer
+  // `subagent_activity` events (which also replay the child's transcript), so
+  // showing the raw ones as well would duplicate every delegation.
+  "background_tasks_changed",
+  "task_started",
+  "task_updated",
+  "task_notification",
 ]);
 
 function isHiddenSystemEvent(ev) {

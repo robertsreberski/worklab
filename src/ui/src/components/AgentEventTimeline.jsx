@@ -172,8 +172,43 @@ function flattenEvents(events) {
   return coalesced;
 }
 
+// A native subagent's work arrives as flat `subagent_activity` rows keyed by
+// `subagent.id`, with `subagent.toolUseId` naming the parent's own Agent tool
+// call. Fold each delegation into one group so the child's thinking and tool
+// calls render nested under that call instead of interleaved with the parent's
+// own output — the same shape as the file_edit collapse below, one level down.
+function collectSubagentGroups(flat) {
+  const byId = new Map();
+  for (const event of flat) {
+    if (event?.type !== "subagent_activity") continue;
+    const id = event.subagent?.id;
+    if (!id) continue;
+    let group = byId.get(id);
+    if (!group) {
+      group = { _subagentGroup: true, subagent: event.subagent, rows: [], done: false };
+      byId.set(id, group);
+    }
+    // The bookends carry the richest descriptor (label, cost, tool_use_id), and
+    // agent_started may be absent on a resumed session — so keep merging.
+    group.subagent = { ...group.subagent, ...event.subagent };
+    if (event.phase === "agent_started") group.opened = event;
+    else if (event.phase === "agent_completed") {
+      group.closed = event;
+      group.done = true;
+    } else group.rows.push(event);
+  }
+  const byToolUseId = new Map();
+  for (const group of byId.values()) {
+    const toolUseId = group.subagent?.toolUseId;
+    if (toolUseId) byToolUseId.set(toolUseId, group);
+  }
+  return { byId, byToolUseId };
+}
+
 function groupEvents(events) {
   const flat = flattenEvents(events);
+  const subagentGroups = collectSubagentGroups(flat);
+  const renderedSubagentIds = new Set();
   const toolUsesByToolUseId = new Map();
   const resultsByToolUseId = new Map();
   const structuredByToolUseId = new Map();
@@ -200,6 +235,13 @@ function groupEvents(events) {
       source_tool_use_id: sourceToolUseId,
       source_tool_input: sourceToolUse.input,
     });
+  }
+  // Decided up front: `task_started` always follows its Agent tool_use, but a
+  // truncated or resumed log can break that, and claiming mid-loop would then
+  // render the group twice.
+  const claimedSubagentIds = new Set();
+  for (const [toolUseId, group] of subagentGroups.byToolUseId) {
+    if (toolUsesByToolUseId.has(toolUseId)) claimedSubagentIds.add(group.subagent.id);
   }
   const consumedResultIds = new Set();
   const consumedStructuredIds = new Set();
@@ -228,7 +270,20 @@ function groupEvents(events) {
       if (structuredOutput) consumedStructuredIds.add(event.tool_use_id);
       const fileEditMetadata = fileEditMetadataByToolUseId.get(event.tool_use_id);
       const toolUse = fileEditMetadata ? { ...event, ...fileEditMetadata } : event;
-      items.push({ _toolCall: true, toolUse, toolResult: paired, structuredOutput });
+      const subagentGroup = subagentGroups.byToolUseId.get(event.tool_use_id) || null;
+      items.push({ _toolCall: true, toolUse, toolResult: paired, structuredOutput, subagentGroup });
+      continue;
+    }
+    if (event?.type === "subagent_activity") {
+      // Render a group standalone only when no Agent tool call will claim it —
+      // which happens when the parent's tool_use fell outside a truncated log,
+      // or on a run resumed after the delegation started. Emitted once, at its
+      // first row, so it keeps its place in the timeline.
+      const group = subagentGroups.byId.get(event.subagent?.id);
+      if (!group || claimedSubagentIds.has(group.subagent.id)) continue;
+      if (renderedSubagentIds.has(group.subagent.id)) continue;
+      renderedSubagentIds.add(group.subagent.id);
+      items.push(group);
       continue;
     }
     if (event?.type === "tool_result" && collapsedSourceToolUseIds.has(event.tool_use_id)) continue;
@@ -399,7 +454,107 @@ function PhaseClusterBlock({ cluster, isLast }) {
   );
 }
 
-function ToolCallTimelineItem({ toolUse, toolResult, structuredOutput, messageStatus, isLast }) {
+// Collapse a delegation's rows into one line each: a tool call pairs its
+// started/completed rows so the row can show a duration, and the child's
+// thinking/text stay in order between them.
+function subagentRows(group) {
+  const rows = [];
+  const openByRowId = new Map();
+  for (const row of group.rows || []) {
+    if (row.phase === "started") {
+      const entry = { kind: "tool", name: row.name, durationMs: null, isError: false, content: null };
+      openByRowId.set(row.id, entry);
+      rows.push(entry);
+      continue;
+    }
+    if (row.phase === "completed") {
+      const entry = openByRowId.get(row.id);
+      openByRowId.delete(row.id);
+      const target = entry || { kind: "tool", name: row.name, durationMs: null, isError: false, content: null };
+      if (!entry) rows.push(target);
+      target.durationMs = row.executionMs ?? null;
+      target.isError = Boolean(row.isError);
+      target.content = row.content ?? null;
+      continue;
+    }
+    if (row.phase === "message") {
+      rows.push({ kind: row.kind === "thinking" ? "thinking" : "text", name: null, content: row.content || "" });
+    }
+  }
+  return rows;
+}
+
+function SubagentGroupBlock({ group }) {
+  const [expanded, setExpanded] = useState(false);
+  const rows = subagentRows(group);
+  const closed = group.closed;
+  const name = group.subagent?.name || "subagent";
+  const label = group.subagent?.label;
+  const toolCount = rows.filter((row) => row.kind === "tool").length;
+  const parts = [
+    closed?.executionMs != null ? formatDuration(closed.executionMs) : null,
+    `${toolCount} tool${toolCount === 1 ? "" : "s"}`,
+    closed?.totalTokens != null ? `${Math.round(closed.totalTokens / 1000)}k tokens` : null,
+  ].filter(Boolean);
+  const running = !group.done;
+  return (
+    <div class="agentlog-phase-cluster">
+      <button type="button" class="agentlog-phase-header" onClick={() => setExpanded((current) => !current)}>
+        <span>
+          {`Agent → ${name}`}
+          {label ? ` · ${label}` : ""}
+          {running ? " · running" : ""}
+          {parts.length ? ` · ${parts.join(" · ")}` : ""}
+        </span>
+        <Icon name="chevron-down" size={14} class={`agentlog-coll-arrow ${expanded ? "open" : ""}`} />
+      </button>
+      {expanded && (
+        <div class="agentlog-phase-rows">
+          {rows.length === 0 && (
+            <div class="agentlog-phase-row">
+              <span class="agentlog-phase-name">
+                {running ? "Working…" : "No recorded activity for this delegation."}
+              </span>
+            </div>
+          )}
+          {rows.map((row, index) => (
+            <div class="agentlog-phase-row agentlog-phase-sub" key={`${row.kind}-${index}`}>
+              <span class="agentlog-phase-name">
+                {row.kind === "tool" ? row.name : row.kind === "thinking" ? "Thinking" : "Message"}
+                {row.kind !== "tool" && row.content ? `: ${row.content}` : ""}
+                {row.kind === "tool" && row.isError ? " — failed" : ""}
+              </span>
+              {row.kind === "tool" && row.durationMs != null && (
+                <span class="agentlog-phase-duration">{formatDuration(row.durationMs)}</span>
+              )}
+            </div>
+          ))}
+          {closed?.content && (
+            <div class="agentlog-phase-row">
+              <span class="agentlog-phase-name">{`Result: ${closed.content}`}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SubagentGroupTimelineItem({ group, isLast }) {
+  return (
+    <div class="agentlog-tl-item">
+      <div class="agentlog-tl-rail">
+        <RailIcon name="users" tone={group.closed?.isError ? "error" : group.done ? "ok" : "muted"} />
+        {!isLast && <div class="agentlog-tl-line" />}
+      </div>
+      <div class="agentlog-tl-content">
+        <SubagentGroupBlock group={group} />
+      </div>
+    </div>
+  );
+}
+
+function ToolCallTimelineItem({ toolUse, toolResult, structuredOutput, subagentGroup, messageStatus, isLast }) {
   const isError = Boolean(toolResult?.is_error || toolResult?.error);
   const isFileEdit = toolUse?.name === "file_edit";
   const isStructuredOutput = toolUse?.name === "StructuredOutput";
@@ -418,6 +573,7 @@ function ToolCallTimelineItem({ toolUse, toolResult, structuredOutput, messageSt
           structuredOutput={structuredOutput}
           messageStatus={messageStatus}
         />
+        {subagentGroup && <SubagentGroupBlock group={subagentGroup} />}
       </div>
     </div>
   );
@@ -675,6 +831,9 @@ export function AgentEventTimeline({ events = [], streaming = false, messageStat
         const isLast = !streaming && isTail;
         const itemStreaming = isActiveStreamingTimelineItem({ streaming, index, length: items.length });
         if (item?._cluster) return <PhaseClusterBlock key={`cluster-${index}`} cluster={item} isLast={isLast} />;
+        if (item?._subagentGroup) {
+          return <SubagentGroupTimelineItem key={`subagent-${item.subagent?.id || index}`} group={item} isLast={isLast} />;
+        }
         if (item?._toolCall) {
           return (
             <ToolCallTimelineItem
@@ -682,6 +841,7 @@ export function AgentEventTimeline({ events = [], streaming = false, messageStat
               toolUse={item.toolUse}
               toolResult={item.toolResult}
               structuredOutput={item.structuredOutput}
+              subagentGroup={item.subagentGroup}
               messageStatus={effectiveStatus}
               isLast={isLast}
             />

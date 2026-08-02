@@ -205,3 +205,62 @@ describe("redacted thinking folding", () => {
     }, 100)).toBeNull();
   });
 });
+
+describe("subagent activity", () => {
+  // A child agent's work must never be spliced into the parent's prose. The
+  // coalescer buffers adjacent assistant text, so an unrecognized event has to
+  // flush that buffer before it is forwarded — otherwise the parent's sentence
+  // would be split around the subagent's rows, or worse, merged with them.
+  it("flushes pending parent text before forwarding subagent activity", () => {
+    const events = [];
+    const coalescer = createSdkEventCoalescer((event) => events.push(event), { flushIntervalMs: 0 });
+
+    coalescer.emit({ type: "assistant", message: { content: [{ type: "text", text: "Dele" }] } });
+    coalescer.emit({ type: "assistant", message: { content: [{ type: "text", text: "gating" }] } });
+    coalescer.emit({
+      type: "subagent_activity",
+      subagent: { id: "a700", name: "reviewer", callIndex: 0 },
+      phase: "agent_started",
+      id: "agent:a700",
+      name: "Agent(reviewer)",
+    });
+    coalescer.emit({ type: "assistant", message: { content: [{ type: "text", text: "done" }] } });
+    coalescer.flush();
+
+    expect(events).toEqual([
+      { type: "assistant", message: { content: [{ type: "text", text: "Delegating" }] } },
+      {
+        type: "subagent_activity",
+        subagent: { id: "a700", name: "reviewer", callIndex: 0 },
+        phase: "agent_started",
+        id: "agent:a700",
+        name: "Agent(reviewer)",
+      },
+      { type: "assistant", message: { content: [{ type: "text", text: "done" }] } },
+    ]);
+  });
+
+  // The child's thinking arrives as its own subagent_activity payload, so it
+  // must not land in the parent's thinking buffer or its token estimate.
+  it("keeps subagent thinking out of the parent's coalesced thinking", () => {
+    const events = [];
+    const coalescer = createSdkEventCoalescer((event) => events.push(event), { flushIntervalMs: 0 });
+
+    coalescer.emit({ type: "assistant", message: { content: [{ type: "thinking", text: "parent " }] } });
+    coalescer.emit({
+      type: "subagent_activity",
+      subagent: { id: "a700", name: "reviewer", callIndex: 0 },
+      phase: "message",
+      kind: "thinking",
+      content: "child thought",
+    });
+    coalescer.emit({ type: "assistant", message: { content: [{ type: "thinking", text: "thought" }] } });
+    coalescer.flush();
+
+    const thinking = events
+      .filter((e) => e.type === "assistant")
+      .map((e) => e.message.content[0].text);
+    expect(thinking).toEqual(["parent ", "thought"]);
+    expect(events[1]).toMatchObject({ type: "subagent_activity", kind: "thinking", content: "child thought" });
+  });
+});

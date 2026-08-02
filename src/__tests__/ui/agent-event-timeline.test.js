@@ -346,3 +346,88 @@ describe("agent event timeline normalization", () => {
     })).toBe("update exact_slack_catchup.py (+4 -1)");
   });
 });
+
+describe("native subagent grouping", () => {
+  const parentToolUse = {
+    type: "assistant",
+    message: { content: [{ type: "tool_use", id: "toolu_parent", name: "Agent", input: { subagent_type: "reviewer" } }] },
+  };
+  const activity = (phase, extra = {}) => ({
+    type: "subagent_activity",
+    subagent: { id: "a700", name: "reviewer", callIndex: 0, toolUseId: "toolu_parent", label: "Review the diff" },
+    phase,
+    ...extra,
+  });
+
+  it("folds a delegation under the Agent tool call that started it", () => {
+    const items = groupAgentTimelineEvents([
+      parentToolUse,
+      activity("agent_started", { id: "agent:a700", name: "Agent(reviewer)" }),
+      activity("started", { id: "agent:a700:t1", name: "reviewer▸Read" }),
+      activity("completed", { id: "agent:a700:t1", name: "reviewer▸Read", executionMs: 39, isError: false, content: "ok" }),
+      activity("agent_completed", { id: "agent:a700", executionMs: 5692, totalTokens: 37035, content: "Found 3 issues", isError: false }),
+      { type: "assistant", message: { content: [{ type: "text", text: "Done." }] } },
+    ]);
+
+    // One tool call carrying the group, then the parent's own text — the
+    // child's rows must not appear as siblings in the parent's timeline.
+    expect(items).toHaveLength(2);
+    expect(items[0]._toolCall).toBe(true);
+    expect(items[0].toolUse.name).toBe("Agent");
+    expect(items[0].subagentGroup).toBeTruthy();
+    expect(items[0].subagentGroup.done).toBe(true);
+    expect(items[0].subagentGroup.rows).toHaveLength(2);
+    expect(items[0].subagentGroup.closed).toMatchObject({ executionMs: 5692, totalTokens: 37035 });
+    expect(items[1]).toMatchObject({ type: "text", text: "Done." });
+  });
+
+  it("renders an unclaimed delegation standalone rather than dropping it", () => {
+    // No parent tool_use: a truncated log, or a run resumed mid-delegation.
+    const items = groupAgentTimelineEvents([
+      activity("agent_started", { id: "agent:a700", name: "Agent(reviewer)" }),
+      activity("started", { id: "agent:a700:t1", name: "reviewer▸Read" }),
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]._subagentGroup).toBe(true);
+    expect(items[0].done).toBe(false);
+    expect(items[0].subagent.name).toBe("reviewer");
+  });
+
+  it("keeps concurrent delegations in separate groups", () => {
+    const second = (phase, extra = {}) => ({
+      type: "subagent_activity",
+      subagent: { id: "b800", name: "reviewer", callIndex: 1, toolUseId: "toolu_second" },
+      phase,
+      ...extra,
+    });
+    const items = groupAgentTimelineEvents([
+      parentToolUse,
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "toolu_second", name: "Agent", input: {} }] },
+      },
+      activity("agent_started", { id: "agent:a700" }),
+      second("agent_started", { id: "agent:b800" }),
+      activity("started", { id: "agent:a700:t1", name: "reviewer▸Read" }),
+      second("started", { id: "agent:b800:t9", name: "reviewer▸Grep" }),
+    ]);
+
+    const groups = items.filter((item) => item._toolCall).map((item) => item.subagentGroup);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].subagent.id).toBe("a700");
+    expect(groups[1].subagent.id).toBe("b800");
+    expect(groups[0].rows[0].name).toBe("reviewer▸Read");
+    expect(groups[1].rows[0].name).toBe("reviewer▸Grep");
+  });
+
+  it("hides the raw task lifecycle events that subagent_activity supersedes", () => {
+    const normalized = normalizeWorklabEvents([
+      { type: "cli_event", raw: { type: "system", subtype: "task_started", task_id: "a700" } },
+      { type: "cli_event", raw: { type: "system", subtype: "task_updated", task_id: "a700" } },
+      { type: "cli_event", raw: { type: "system", subtype: "task_notification", task_id: "a700" } },
+      { type: "cli_event", raw: { type: "system", subtype: "background_tasks_changed", tasks: [] } },
+    ]);
+    expect(normalized).toEqual([]);
+  });
+});

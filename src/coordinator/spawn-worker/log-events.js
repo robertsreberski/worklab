@@ -161,10 +161,33 @@ function truncateToolResultBlock(block, options) {
   };
 }
 
+// A subagent's tool call reaches us as a flat `subagent_activity` payload, not
+// as message content, so the block-based clippers above never see it. Its
+// `content` already arrives bounded from the runtime; `arguments` carries the
+// child's raw tool input and can be arbitrarily large (a Write of a whole file).
+function truncateSubagentActivity(target, options) {
+  if (target?.type !== "subagent_activity" || !("arguments" in target)) return target;
+  const clipped = truncateStructuredDisplayValue(target.arguments, options);
+  if (!clipped.truncated) return target;
+  return {
+    ...target,
+    arguments: clipped.value,
+    arguments_truncated: true,
+    arguments_original_length: clipped.originalLength,
+    raw_output_path: options.rawLogPath || null,
+  };
+}
+
 export function truncateDisplayEvent(event, options) {
   if (!event || !options.limit || options.limit < 1) return event;
   const next = JSON.parse(JSON.stringify(event));
   const target = next.type === "sdk_event" && next.event ? next.event : next;
+  if (target?.type === "subagent_activity") {
+    const clipped = truncateSubagentActivity(target, options);
+    if (next.type === "sdk_event" && next.event) next.event = clipped;
+    else return clipped;
+    return next;
+  }
   if (Array.isArray(target?.message?.content)) {
     target.message.content = target.message.content
       .map((block) => truncateToolUseBlock(block, options))
