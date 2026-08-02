@@ -166,6 +166,7 @@ export {
 export { createWorklabAcpControls } from "./acp-controls.js";
 
 export { createWorklabAcpProfileResolver } from "./acp-runtime-profile.js";
+export { WORKLAB_RUNTIME_BRAND } from "./runtime-brand.js";
 
 export {
   ACP_PRIVATE_URL_HANDOFF,

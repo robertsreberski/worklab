@@ -1,6 +1,6 @@
 // src/__tests__/helpers/fake-worker.js
 import { spawn } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { writeFileSync, writeSync } from "node:fs";
 
 // Run as a child process; emits events per FAKE_WORKER_SCRIPT env var
 // Script format: JSON {
@@ -25,6 +25,14 @@ const script = JSON.parse(process.env.FAKE_WORKER_SCRIPT || '{"events":[],"exitC
 
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
+}
+
+function emitPrivateUrlHandoff(frame) {
+  const payload = Buffer.from(`${JSON.stringify(frame)}\n`, "utf8");
+  let offset = 0;
+  while (offset < payload.length) {
+    offset += writeSync(3, payload, offset, payload.length - offset);
+  }
 }
 
 let aborted = false;
@@ -106,6 +114,7 @@ if (script.echoControls || script.echoControlsToStderr || script.ackAcpControls 
 }
 
 async function run() {
+  for (const frame of script.privateUrlHandoffs || []) emitPrivateUrlHandoff(frame);
   for (const e of script.events) {
     if (aborted) { emit({ type: "cancelled" }); process.exit(130); }
     const { delayMs = 0, ...payload } = e;

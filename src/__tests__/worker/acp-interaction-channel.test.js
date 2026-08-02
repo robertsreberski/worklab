@@ -65,8 +65,14 @@ describe("createAcpInteractionChannel", () => {
 
   it("applies the durable interaction sanitizer before emitting schemas", () => {
     const emit = vi.fn();
+    const emitPrivateUrlHandoff = vi.fn(() => true);
     const sentinel = "task-run-schema-secret-sentinel";
-    const channel = createAcpInteractionChannel({ emit, idFactory: () => "int-safe" });
+    const channel = createAcpInteractionChannel({
+      emit,
+      emitPrivateUrlHandoff,
+      runId: "run-safe",
+      idFactory: () => "int-safe",
+    });
     channel._disableTimeouts();
     channel.request({
       kind: "elicitation",
@@ -74,7 +80,7 @@ describe("createAcpInteractionChannel", () => {
       payload: {
         sessionId: "RAW_REMOTE_FORM_SESSION",
         mode: "url",
-        url: `https://user:${sentinel}@example.test/login?token=${sentinel}#${sentinel}`,
+        url: `https://example.test/login?token=${sentinel}#${sentinel}`,
         requestedSchema: {
           type: "object",
           default: sentinel,
@@ -100,11 +106,43 @@ describe("createAcpInteractionChannel", () => {
     expect(emitted.request.requestedSchema.properties.password).toEqual({ type: "string" });
     expect(emitted.request.requestedSchema.properties.answer).toEqual({ type: "string" });
     expect(emitted.request.requestedSchema.properties.content).toEqual({ type: "string" });
+    expect(emitPrivateUrlHandoff).toHaveBeenCalledWith({
+      type: "worklab_acp_url_handoff",
+      version: 1,
+      interaction_id: "int-safe",
+      run_id: "run-safe",
+      profile_id: "profile-1",
+      url: `https://example.test/login?token=${sentinel}#${sentinel}`,
+    });
+    expect(JSON.stringify(emit.mock.calls)).not.toContain(sentinel);
+  });
+
+  it("rejects credential-bearing URL elicitations without emitting on either channel", async () => {
+    const emit = vi.fn();
+    const emitPrivateUrlHandoff = vi.fn(() => true);
+    const channel = createAcpInteractionChannel({
+      emit,
+      emitPrivateUrlHandoff,
+      runId: "run-credentials",
+      idFactory: () => "int-credentials",
+    });
+    await expect(channel.request({
+      kind: "elicitation",
+      profileId: "profile-1",
+      payload: { mode: "url", url: "https://user:password@example.test/private" },
+    })).resolves.toEqual({ action: "cancel" });
+    expect(emit).not.toHaveBeenCalled();
+    expect(emitPrivateUrlHandoff).not.toHaveBeenCalled();
   });
 
   it("cancels URL elicitations and all pending requests", async () => {
     const ids = ["int-4", "int-5"];
-    const channel = createAcpInteractionChannel({ emit: () => {}, idFactory: () => ids.shift() });
+    const channel = createAcpInteractionChannel({
+      emit: () => {},
+      emitPrivateUrlHandoff: () => true,
+      runId: "run-url",
+      idFactory: () => ids.shift(),
+    });
     channel._disableTimeouts();
     const url = channel.request({ kind: "elicitation", profileId: "p", payload: { mode: "url", url: "https://example.test" } });
     const permission = channel.request({ kind: "permission", profileId: "p", payload: { options: [] } });

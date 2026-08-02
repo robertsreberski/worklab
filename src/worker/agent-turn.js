@@ -73,7 +73,10 @@ export async function runTaskAgentTurn(ctx, {
   const isAcpAgent = agent.sdk === "acp";
   const acpRuntimeOptions = isAcpAgent
     ? {
-      resolveAcpProfile: createWorklabAcpProfileResolver({ db }),
+      resolveAcpProfile: createWorklabAcpProfileResolver({
+        db,
+        urlHandoffAvailable: acpInteractionChannel?.urlHandoffAvailable === true,
+      }),
       onAcpInteractionRequest: async (request, context) => {
         if (typeof acpInteractionChannel?.request === "function") {
           return acpInteractionChannel.request(request, context);

@@ -1,11 +1,17 @@
 import { parseArgs } from "node:util";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { writeSync } from "node:fs";
 
-import { createLiveInputQueue, loadConfig, normalizeLiveInputBody, openDb } from "./core/index.js";
+import {
+  WORKLAB_RUNTIME_BRAND,
+  createLiveInputQueue,
+  loadConfig,
+  normalizeLiveInputBody,
+  openDb,
+} from "./core/index.js";
 import { renderToolSurfaceMarkdown } from "./mcp/agent/tools/index.js";
 import { configureToolRuntime } from "@mono-agent/agent-runtime/agent/tools/shared/runtime-context.js";
-import { WORKLAB_RUNTIME_BRAND } from "./core/runtime-brand.js";
 
 const WORKLAB_TOOL_SURFACE_MARKDOWN = renderToolSurfaceMarkdown(null);
 
@@ -22,9 +28,30 @@ function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
 }
 
+function emitPrivateUrlHandoff(frame) {
+  if (process.env.WORKLAB_ACP_URL_HANDOFF_FD !== "3") return false;
+  try {
+    const payload = Buffer.from(`${JSON.stringify(frame)}\n`, "utf8");
+    if (payload.length > 16 * 1024) return false;
+    let offset = 0;
+    while (offset < payload.length) {
+      const written = writeSync(3, payload, offset, payload.length - offset);
+      if (!Number.isInteger(written) || written <= 0) return false;
+      offset += written;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const liveInput = createLiveInputQueue();
 const approvalChannel = createApprovalChannel({ emit });
-const acpInteractionChannel = createAcpInteractionChannel({ emit });
+const acpInteractionChannel = createAcpInteractionChannel({
+  emit,
+  emitPrivateUrlHandoff,
+  runId: process.env.WORKLAB_RUN_ID,
+});
 
 // R5: graceful drain protocol. The coordinator sends `{type:"worklab_drain"}`
 // on shutdown so the worker can finish the in-flight tool call instead of

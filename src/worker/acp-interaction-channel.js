@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { sanitizeAcpInteractionSchema } from "../core/acp-operations.js";
+import { normalizeAcpUrlHandoff } from "../core/acp-url-handoff.js";
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 const MAX_TEXT_CHARS = 16_384;
@@ -94,6 +95,8 @@ function normalizeResponse(entry, message) {
  */
 export function createAcpInteractionChannel({
   emit,
+  emitPrivateUrlHandoff,
+  runId,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   idFactory = randomUUID,
 } = {}) {
@@ -140,6 +143,26 @@ export function createAcpInteractionChannel({
       ? interactionId
       : boundedText(String(context.requestId), 1024);
     if (!profileId || !interactionId) return Promise.resolve(cancelledResponse(kind));
+
+    const isUrl = kind === "elicitation" && request?.payload?.mode === "url";
+    if (isUrl) {
+      const privateUrl = normalizeAcpUrlHandoff(request?.payload?.url);
+      const frame = privateUrl ? {
+        type: "worklab_acp_url_handoff",
+        version: 1,
+        interaction_id: String(interactionId),
+        run_id: String(runId || ""),
+        profile_id: String(profileId),
+        url: privateUrl,
+      } : null;
+      let handedOff = false;
+      try {
+        handedOff = Boolean(frame && runId && emitPrivateUrlHandoff?.(frame) === true);
+      } catch {
+        handedOff = false;
+      }
+      if (!handedOff) return Promise.resolve(cancelledResponse(kind));
+    }
 
     const shaped = kind === "permission"
       ? sanitizePermission(request?.payload)
@@ -222,6 +245,7 @@ export function createAcpInteractionChannel({
     cancel,
     cancelAllPending,
     pendingCount: () => pending.size,
+    urlHandoffAvailable: typeof emitPrivateUrlHandoff === "function" && Boolean(runId),
     _disableTimeouts() { timeoutsEnabled = false; },
   };
 }

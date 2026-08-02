@@ -54,10 +54,12 @@ import {
 } from "./spawn-worker/log-events.js";
 import {
   createAcpInteractionControls,
+  createTaskRunAcpUrlHandoffReceiver,
   createTaskRunAcpEventBoundary,
   expireAcpInteractionsForRun,
   persistAcpInteractionRequest,
   sanitizeTaskRunAcpInteractionEvent,
+  taskRunEventNeedsUrlHandoff,
 } from "./spawn-worker/acp-interactions.js";
 
 const FINALISATION_COMPLETION_TOOL_NAMES = new Set(["journal_summary", "worktree_sync", "todo_write"]);
@@ -112,6 +114,7 @@ export function spawnWorker({
   exitCloseGraceMs = 1000,
   stderrTailLimit = 8 * 1024,
   diagnosticsSeed = null,
+  acpUrlHandoffStore = null,
 }) {
   const startedAt = Date.now();
   const workspaceArtifactSnapshot = env.WORKLAB_WORKSPACE
@@ -121,8 +124,8 @@ export function spawnWorker({
     ? captureGitArtifactState(env.WORKLAB_WORKSPACE)
     : null;
   const child = spawn("node", [binary, ...args], {
-    env: { ...process.env, ...env },
-    stdio: ["pipe", "pipe", "pipe"],
+    env: { ...process.env, ...env, WORKLAB_ACP_URL_HANDOFF_FD: "3" },
+    stdio: ["pipe", "pipe", "pipe", "pipe"],
     detached: canSignalProcessGroup(),
   });
 
@@ -186,6 +189,13 @@ export function spawnWorker({
   };
   const acpEventBoundary = createTaskRunAcpEventBoundary({
     profileId: env.WORKLAB_ACP_PROFILE_ID || null,
+  });
+  const acpUrlHandoffReceiver = createTaskRunAcpUrlHandoffReceiver({
+    stream: child.stdio[3],
+    store: acpUrlHandoffStore,
+    runId,
+    profileId: env.WORKLAB_ACP_PROFILE_ID || null,
+    onInvalid: (reason) => logger?.warn?.({ runId, reason }, "ACP private URL handoff channel rejected"),
   });
   // Trailing-edge debounce window for the in-flight events JSON. Long-running
   // agents emit hundreds of events; rewriting the whole JSON each line is
@@ -630,82 +640,108 @@ export function spawnWorker({
       }, "worker emitted malformed stdout");
       return;
     }
-    const safeParsed = acpInteractionControls.redactWorkerEvent(
-      sanitizeTaskRunAcpInteractionEvent(acpEventBoundary.sanitizeWorkerEvent(parsed)),
-    );
-    const { rawEvent } = emitEvent(safeParsed);
-    mergeWorkerDiagnostics(rawEvent.diagnostics);
-    if (["final", "error", "cancelled", "worklab_result_error"].includes(rawEvent.type)) {
-      const providerSessionId = acpEventBoundary.validateProviderSessionId(
-        rawEvent.provider_session_id || rawEvent.providerSessionId,
+    const processParsed = () => {
+      const safeParsed = acpInteractionControls.redactWorkerEvent(
+        sanitizeTaskRunAcpInteractionEvent(acpEventBoundary.sanitizeWorkerEvent(parsed)),
       );
-      if (providerSessionId) {
-        terminalProviderSessionId = providerSessionId;
+      if (safeParsed.type === "acp_interaction_requested" && safeParsed.interaction_id) {
+        try {
+          // Make the pending row visible before the SSE notification. The raw
+          // URL is already isolated on fd3 and is never present in safeParsed.
+          persistAcpInteractionRequest(db, runId, safeParsed);
+        } catch (err) {
+          logger?.warn?.({ err: err.message, runId }, "failed to persist ACP interaction request");
+          writeControlMessage({
+            type: "acp_interaction_cancel",
+            interaction_id: String(safeParsed.interaction_id),
+          }).catch(() => {});
+          return;
+        }
       }
-    }
-    const recoveredStructuredResult = worklabResultFromStructuredOutputEvent(rawEvent);
-    if (recoveredStructuredResult) structuredOutputResult = recoveredStructuredResult;
-    if (rawEvent.type === "final") finalPayload = rawEvent;
-    if (rawEvent.type === "error") {
-      errorMessage = rawEvent.message;
-      explicitFailureKind = rawEvent.failureKind || rawEvent.failure_kind || explicitFailureKind;
-      if (rawEvent.details) errorDetails = rawEvent.details;
-    }
-    if (rawEvent.type === "cancelled") {
-      cancelInitiator = cancelInitiator || rawEvent.initiator || rawEvent.cancel_initiator || null;
-      cancelReason = cancelReason || rawEvent.reason || rawEvent.cancel_reason || null;
-      workerCancelSignal = workerCancelSignal || rawEvent.signal || null;
-      if (rawEvent.drained === true) drainAcknowledged = true;
-    }
-    if (rawEvent.type === "drained") {
-      drainAcknowledged = true;
-    }
-    if (rawEvent.type === "worklab_result_error") {
-      resultError = rawEvent.message || "invalid worklab_result";
-      explicitFailureKind = "invalid_result";
-    }
-    if (rawEvent.type === "approval_requested" && rawEvent.request_id) {
-      try {
-        insertApprovalRequest(db, {
-          taskRunId: runId,
-          requestId: String(rawEvent.request_id),
-          toolName: rawEvent.tool_name || rawEvent.toolName || "",
-          toolUseId: rawEvent.tool_use_id || rawEvent.toolUseId || null,
-          argumentsSummary: rawEvent.arguments_summary || rawEvent.argumentsSummary || "",
-          riskTier: rawEvent.risk_tier || rawEvent.riskTier || "medium",
-          model: rawEvent.model || null,
-        });
-        broker.broadcast(runId, {
-          type: "approval_requested",
-          request_id: String(rawEvent.request_id),
-          tool_name: rawEvent.tool_name || rawEvent.toolName || "",
-          risk_tier: rawEvent.risk_tier || rawEvent.riskTier || "medium",
-        });
-      } catch (err) {
-        logger?.warn?.({ err: err.message, runId }, "failed to persist approval request");
+      const { rawEvent } = emitEvent(safeParsed);
+      mergeWorkerDiagnostics(rawEvent.diagnostics);
+      if (["final", "error", "cancelled", "worklab_result_error"].includes(rawEvent.type)) {
+        const providerSessionId = acpEventBoundary.validateProviderSessionId(
+          rawEvent.provider_session_id || rawEvent.providerSessionId,
+        );
+        if (providerSessionId) {
+          terminalProviderSessionId = providerSessionId;
+        }
       }
-    }
-    if (rawEvent.type === "acp_interaction_requested" && rawEvent.interaction_id) {
-      try {
-        persistAcpInteractionRequest(db, runId, rawEvent);
-      } catch (err) {
-        logger?.warn?.({ err: err.message, runId }, "failed to persist ACP interaction request");
+      const recoveredStructuredResult = worklabResultFromStructuredOutputEvent(rawEvent);
+      if (recoveredStructuredResult) structuredOutputResult = recoveredStructuredResult;
+      if (rawEvent.type === "final") finalPayload = rawEvent;
+      if (rawEvent.type === "error") {
+        errorMessage = rawEvent.message;
+        explicitFailureKind = rawEvent.failureKind || rawEvent.failure_kind || explicitFailureKind;
+        if (rawEvent.details) errorDetails = rawEvent.details;
+      }
+      if (rawEvent.type === "cancelled") {
+        cancelInitiator = cancelInitiator || rawEvent.initiator || rawEvent.cancel_initiator || null;
+        cancelReason = cancelReason || rawEvent.reason || rawEvent.cancel_reason || null;
+        workerCancelSignal = workerCancelSignal || rawEvent.signal || null;
+        if (rawEvent.drained === true) drainAcknowledged = true;
+      }
+      if (rawEvent.type === "drained") {
+        drainAcknowledged = true;
+      }
+      if (rawEvent.type === "worklab_result_error") {
+        resultError = rawEvent.message || "invalid worklab_result";
+        explicitFailureKind = "invalid_result";
+      }
+      if (rawEvent.type === "approval_requested" && rawEvent.request_id) {
+        try {
+          insertApprovalRequest(db, {
+            taskRunId: runId,
+            requestId: String(rawEvent.request_id),
+            toolName: rawEvent.tool_name || rawEvent.toolName || "",
+            toolUseId: rawEvent.tool_use_id || rawEvent.toolUseId || null,
+            argumentsSummary: rawEvent.arguments_summary || rawEvent.argumentsSummary || "",
+            riskTier: rawEvent.risk_tier || rawEvent.riskTier || "medium",
+            model: rawEvent.model || null,
+          });
+          broker.broadcast(runId, {
+            type: "approval_requested",
+            request_id: String(rawEvent.request_id),
+            tool_name: rawEvent.tool_name || rawEvent.toolName || "",
+            risk_tier: rawEvent.risk_tier || rawEvent.riskTier || "medium",
+          });
+        } catch (err) {
+          logger?.warn?.({ err: err.message, runId }, "failed to persist approval request");
+        }
+      }
+      if (rawEvent.type === "acp_interaction_acknowledged" && rawEvent.interaction_id) {
+        try {
+          acpInteractionControls.handleWorkerEvent(rawEvent);
+        } catch (err) {
+          logger?.warn?.({ err: err.message, runId }, "failed to apply ACP interaction acknowledgement");
+        }
+      }
+      if (rawEvent.type === "prompt_built" && rawEvent.diagnostics) {
+        promptDiagnostics = { ...(promptDiagnostics || {}), ...rawEvent.diagnostics };
+      }
+    };
+    if (taskRunEventNeedsUrlHandoff(parsed)) {
+      rl.pause();
+      acpUrlHandoffReceiver.waitFor(parsed.interaction_id).then((ready) => {
+        if (ready) {
+          processParsed();
+          return;
+        }
+        emitEvent({
+          type: "runtime_warning",
+          warning_kind: "acp_url_handoff_unavailable",
+          message: "ACP URL interaction was cancelled because its private handoff was unavailable.",
+          ts: Date.now(),
+        });
         writeControlMessage({
           type: "acp_interaction_cancel",
-          interaction_id: String(rawEvent.interaction_id),
+          interaction_id: String(parsed.interaction_id || ""),
         }).catch(() => {});
-      }
+      }).finally(() => rl.resume());
+      return;
     }
-    if (rawEvent.type === "acp_interaction_acknowledged" && rawEvent.interaction_id) {
-      try {
-        acpInteractionControls.handleWorkerEvent(rawEvent);
-      } catch (err) {
-        logger?.warn?.({ err: err.message, runId }, "failed to apply ACP interaction acknowledgement");
-      }
-    }
-    if (rawEvent.type === "prompt_built" && rawEvent.diagnostics) {
-      promptDiagnostics = { ...(promptDiagnostics || {}), ...rawEvent.diagnostics };
-    }
+    processParsed();
   });
 
   child.stderr.on("data", (chunk) => {
@@ -804,7 +840,13 @@ export function spawnWorker({
     return { ok: true, row };
   }
 
-  const acpInteractionControls = createAcpInteractionControls({ db, runId, writeControlMessage, emitEvent });
+  const acpInteractionControls = createAcpInteractionControls({
+    db,
+    runId,
+    writeControlMessage,
+    emitEvent,
+    urlHandoffStore: acpUrlHandoffStore,
+  });
 
   async function sendLiveMessage(message) {
     const normalized = normalizeLiveInputBody(message?.body);
@@ -840,6 +882,7 @@ export function spawnWorker({
     function finalize(code, signal = null) {
       if (finalized) return;
       finalized = true;
+      acpUrlHandoffReceiver.close();
       if (exitFallbackTimer) {
         clearTimeout(exitFallbackTimer);
         exitFallbackTimer = null;
@@ -1133,7 +1176,7 @@ export function spawnWorker({
       // exited mid-prompt). Pending rows would otherwise hang forever.
       try { expirePendingApprovalsForRun(db, runId, { reason: "run_terminated" }); }
       catch { /* best effort */ }
-      try { expireAcpInteractionsForRun(db, runId); }
+      try { expireAcpInteractionsForRun(db, runId, { urlHandoffStore: acpUrlHandoffStore }); }
       catch { /* best effort */ }
       acpInteractionControls.close();
 

@@ -2,16 +2,21 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 
 import { spawnWorker } from "../../coordinator/spawn-worker.js";
-import { createAcpInteractionControls } from "../../coordinator/spawn-worker/acp-interactions.js";
+import {
+  createAcpInteractionControls,
+  createTaskRunAcpUrlHandoffReceiver,
+} from "../../coordinator/spawn-worker/acp-interactions.js";
 import { insertAcpInteractionRequest } from "../../core/db/queries/acp-interactions.js";
 import { createServer } from "../../api/server.js";
 import { createAdminToolHandlers } from "../../mcp/admin/tools/index.js";
 import { makeTestDb } from "../helpers/test-db.js";
 import { sameOriginTestAgent } from "../helpers/test-server.js";
 import { newRunId, newTaskId } from "../../core/ids.js";
+import { createAcpUrlHandoffStore } from "../../core/acp-url-handoff.js";
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const fakeBinary = resolve(testDirectory, "../helpers/fake-worker.js");
@@ -53,6 +58,136 @@ async function waitForRow(db, id) {
 }
 
 describe("spawnWorker ACP interactions", () => {
+  it("accepts a bounded owner-matched private URL frame and rejects malformed channels generically", async () => {
+    const store = createAcpUrlHandoffStore();
+    const stream = new PassThrough();
+    const invalid = vi.fn();
+    const receiver = createTaskRunAcpUrlHandoffReceiver({
+      stream,
+      store,
+      runId: "run-private",
+      profileId: "profile-private",
+      onInvalid: invalid,
+    });
+    const rawUrl = "https://example.test/authorize?state=private#resume";
+    stream.write(`${JSON.stringify({
+      type: "worklab_acp_url_handoff",
+      version: 1,
+      interaction_id: "interaction-private",
+      run_id: "run-private",
+      profile_id: "profile-private",
+      url: rawUrl,
+    })}\n`);
+
+    await expect(receiver.waitFor("interaction-private")).resolves.toBe(true);
+    expect(store.consume({
+      interactionId: "interaction-private",
+      ownerKind: "run",
+      ownerId: "run-private",
+      profileId: "profile-private",
+    })).toBe(rawUrl);
+    expect(invalid).not.toHaveBeenCalled();
+    receiver.close();
+
+    const malformedStream = new PassThrough();
+    const malformedReasons = [];
+    const malformedReceiver = createTaskRunAcpUrlHandoffReceiver({
+      stream: malformedStream,
+      store,
+      runId: "run-private",
+      profileId: "profile-private",
+      onInvalid: (reason) => malformedReasons.push(reason),
+      waitMs: 5,
+    });
+    malformedStream.write('{"type":"worklab_acp_url_handoff","url":"private-secret"}\n');
+    await expect(malformedReceiver.waitFor("interaction-missing")).resolves.toBe(false);
+    expect(malformedReasons).toEqual(["frame_invalid"]);
+    expect(JSON.stringify(malformedReasons)).not.toContain("private-secret");
+  });
+
+  it("keeps task-run URL query and fragment state exclusively on fd3", async () => {
+    const db = makeTestDb();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-acp-url-handoff-"));
+    const urlHandoffStore = createAcpUrlHandoffStore();
+    try {
+      const { taskId, runId } = seed(db);
+      const sentinel = "PRIVATE_URL_QUERY_SENTINEL";
+      const rawUrl = `https://example.test/authorize?state=${sentinel}#${sentinel}`;
+      const publicUrl = "https://example.test/authorize?state=%5Bredacted%5D";
+      const broadcasts = [];
+      const loggerEvents = [];
+      const handle = spawnWorker({
+        binary: fakeBinary,
+        args: ["--task", taskId, "--mode", "execute", "--agent", "external"],
+        env: {
+          FAKE_WORKER_SCRIPT: JSON.stringify({
+            privateUrlHandoffs: [{
+              type: "worklab_acp_url_handoff",
+              version: 1,
+              interaction_id: "interaction-url",
+              run_id: runId,
+              profile_id: "profile-1",
+              url: rawUrl,
+            }],
+            events: [{
+              type: "acp_interaction_requested",
+              interaction_id: "interaction-url",
+              protocol_request_id: "url-rpc",
+              profile_id: "profile-1",
+              interaction_kind: "elicitation",
+              request: { mode: "url", message: "Continue", url: publicUrl },
+            }],
+            exitAfterMs: 250,
+          }),
+          WORKLAB_RUN_ID: runId,
+          WORKLAB_DATA_DIR: dataDir,
+          WORKLAB_ACP_PROFILE_ID: "profile-1",
+        },
+        runId,
+        taskId,
+        broker: {
+          broadcast: (...args) => broadcasts.push(args),
+          subscribe: () => {},
+          unsubscribe: () => {},
+          size: () => 0,
+        },
+        db,
+        logger: Object.fromEntries(["info", "warn", "error"].map((level) => [
+          level,
+          (...args) => loggerEvents.push({ level, args }),
+        ])),
+        runIdleWarningMs: 0,
+        acpUrlHandoffStore: urlHandoffStore,
+      });
+
+      const row = await waitForRow(db, "interaction-url");
+      expect(JSON.parse(row.request_schema_json).url).toBe(publicUrl);
+      expect(urlHandoffStore.has({
+        interactionId: "interaction-url",
+        ownerKind: "run",
+        ownerId: runId,
+        profileId: "profile-1",
+      })).toBe(true);
+      expect(JSON.stringify({ row, broadcasts, loggerEvents })).not.toContain(sentinel);
+
+      await handle.done;
+      const run = db.prepare("SELECT raw_output_path FROM task_runs WHERE id = ?").get(runId);
+      const logs = db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runId);
+      expect(JSON.stringify({
+        rows: db.prepare("SELECT * FROM acp_interactions").all(),
+        logs,
+        rawLog: readFileSync(run.raw_output_path, "utf8"),
+        broadcasts,
+        loggerEvents,
+      })).not.toContain(sentinel);
+      expect(urlHandoffStore.size).toBe(0);
+    } finally {
+      urlHandoffStore.clear();
+      db.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("persists the request, delivers values only over stdin, and stores disposition only", async () => {
     const db = makeTestDb();
     const dataDir = mkdtempSync(join(tmpdir(), "worklab-acp-private-session-"));

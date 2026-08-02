@@ -13,6 +13,7 @@ import {
   getAcpInteractionById,
   insertAcpInteractionRequest,
 } from "../../core/db/queries/acp-interactions.js";
+import { normalizeAcpUrlHandoff } from "../../core/acp-url-handoff.js";
 
 const DEFAULT_ACK_TIMEOUT_MS = 10_000;
 const TERMINAL_OUTCOMES = new Set(["submitted", "cancelled", "expired", "stale"]);
@@ -27,6 +28,201 @@ const TERMINAL_REASONS = new Set([
   "not_pending",
 ]);
 const MAX_PRIVATE_VALUES = 10_000;
+const ACP_URL_HANDOFF_FRAME_TYPE = "worklab_acp_url_handoff";
+const ACP_URL_HANDOFF_FRAME_VERSION = 1;
+const MAX_URL_HANDOFF_FRAME_BYTES = 16 * 1024;
+const DEFAULT_URL_HANDOFF_WAIT_MS = 250;
+
+function exactIdentifier(value, max = 1024) {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= max
+    && !/[\u0000-\u001f\u007f]/u.test(value)
+    ? value
+    : null;
+}
+
+export function createTaskRunAcpUrlHandoffFrame({
+  interactionId,
+  runId,
+  profileId,
+  url,
+} = {}) {
+  const interaction = exactIdentifier(interactionId);
+  const run = exactIdentifier(runId);
+  const profile = exactIdentifier(profileId);
+  const normalizedUrl = normalizeAcpUrlHandoff(url);
+  if (!interaction || !run || !profile || !normalizedUrl) return null;
+  const frame = {
+    type: ACP_URL_HANDOFF_FRAME_TYPE,
+    version: ACP_URL_HANDOFF_FRAME_VERSION,
+    interaction_id: interaction,
+    run_id: run,
+    profile_id: profile,
+    url: normalizedUrl,
+  };
+  return Buffer.byteLength(JSON.stringify(frame), "utf8") <= MAX_URL_HANDOFF_FRAME_BYTES
+    ? frame
+    : null;
+}
+
+export function taskRunEventNeedsUrlHandoff(event) {
+  return event?.type === "acp_interaction_requested"
+    && event?.interaction_kind !== "permission"
+    && event?.request?.mode === "url";
+}
+
+/**
+ * Consume the worker's dedicated fd3 stream. Raw frames never pass through an
+ * event object or logger; failures are reported only as fixed reason codes.
+ */
+export function createTaskRunAcpUrlHandoffReceiver({
+  stream,
+  store,
+  runId,
+  profileId,
+  onInvalid,
+  waitMs = DEFAULT_URL_HANDOFF_WAIT_MS,
+} = {}) {
+  const owner = {
+    ownerKind: "run",
+    ownerId: exactIdentifier(runId),
+    profileId: exactIdentifier(profileId),
+  };
+  const waiters = new Map();
+  let buffer = Buffer.alloc(0);
+  let closed = !stream || !store || !owner.ownerId || !owner.profileId;
+
+  function report(code) {
+    try { onInvalid?.(code); } catch { /* diagnostics must not break the pipe */ }
+  }
+
+  function settleWaiters(interactionId, result) {
+    const entries = waiters.get(interactionId) || [];
+    waiters.delete(interactionId);
+    for (const entry of entries) {
+      if (entry.timer) clearTimeout(entry.timer);
+      entry.resolve(result);
+    }
+  }
+
+  function rejectChannel(code) {
+    if (closed) return;
+    closed = true;
+    buffer = Buffer.alloc(0);
+    for (const interactionId of waiters.keys()) settleWaiters(interactionId, false);
+    report(code);
+    stream?.destroy?.();
+  }
+
+  function acceptLine(line) {
+    if (line.length === 0) return;
+    if (line.length > MAX_URL_HANDOFF_FRAME_BYTES) {
+      rejectChannel("frame_too_large");
+      return;
+    }
+    let frame;
+    try {
+      frame = JSON.parse(line.toString("utf8"));
+    } catch {
+      rejectChannel("frame_invalid");
+      return;
+    }
+    const expectedKeys = ["interaction_id", "profile_id", "run_id", "type", "url", "version"];
+    if (!frame
+      || typeof frame !== "object"
+      || Array.isArray(frame)
+      || Object.keys(frame).sort().join("\0") !== expectedKeys.join("\0")
+      || frame.type !== ACP_URL_HANDOFF_FRAME_TYPE
+      || frame.version !== ACP_URL_HANDOFF_FRAME_VERSION
+      || frame.run_id !== owner.ownerId
+      || frame.profile_id !== owner.profileId
+      || !exactIdentifier(frame.interaction_id)
+      || !normalizeAcpUrlHandoff(frame.url)) {
+      rejectChannel("frame_invalid");
+      return;
+    }
+    const interactionId = frame.interaction_id;
+    const retained = store.retain({
+      interactionId,
+      ...owner,
+      url: frame.url,
+    }) === true;
+    settleWaiters(interactionId, retained);
+    if (!retained) report("frame_rejected");
+  }
+
+  function onData(chunk) {
+    if (closed) return;
+    const next = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    if (buffer.length + next.length > MAX_URL_HANDOFF_FRAME_BYTES && !next.includes(0x0a)) {
+      rejectChannel("frame_too_large");
+      return;
+    }
+    buffer = Buffer.concat([buffer, next]);
+    let newline;
+    while ((newline = buffer.indexOf(0x0a)) >= 0) {
+      const line = buffer.subarray(0, newline);
+      buffer = buffer.subarray(newline + 1);
+      acceptLine(line);
+      if (closed) return;
+    }
+    if (buffer.length > MAX_URL_HANDOFF_FRAME_BYTES) rejectChannel("frame_too_large");
+  }
+
+  function close() {
+    if (closed) return;
+    closed = true;
+    buffer = Buffer.alloc(0);
+    for (const interactionId of waiters.keys()) settleWaiters(interactionId, false);
+    stream?.off?.("data", onData);
+    stream?.off?.("end", onEnd);
+    stream?.off?.("error", onError);
+  }
+
+  function onEnd() {
+    if (buffer.length > 0) report("frame_incomplete");
+    close();
+  }
+
+  function onError() {
+    report("channel_error");
+    close();
+  }
+
+  if (!closed) {
+    stream.on("data", onData);
+    stream.once("end", onEnd);
+    stream.once("error", onError);
+  }
+
+  function waitFor(interactionId) {
+    const interaction = exactIdentifier(interactionId);
+    if (!interaction || closed) return Promise.resolve(false);
+    if (store.has({ interactionId: interaction, ...owner })) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const entry = { resolve, timer: null };
+      entry.timer = setTimeout(() => {
+        const pending = waiters.get(interaction) || [];
+        waiters.set(interaction, pending.filter((candidate) => candidate !== entry));
+        if (waiters.get(interaction)?.length === 0) waiters.delete(interaction);
+        resolve(false);
+      }, Number.isFinite(waitMs) && waitMs > 0 ? waitMs : DEFAULT_URL_HANDOFF_WAIT_MS);
+      entry.timer.unref?.();
+      const pending = waiters.get(interaction) || [];
+      pending.push(entry);
+      waiters.set(interaction, pending);
+      // The frame can arrive between the first has() check and waiter insert.
+      if (store.has({ interactionId: interaction, ...owner })) settleWaiters(interaction, true);
+    });
+  }
+
+  return {
+    available: !closed,
+    waitFor,
+    close,
+  };
+}
 
 function boundedIdentifier(value, max = 1024) {
   if (value == null) return "";
@@ -166,6 +362,7 @@ export function createAcpInteractionControls({
   emitEvent,
   idFactory = randomUUID,
   ackTimeoutMs = DEFAULT_ACK_TIMEOUT_MS,
+  urlHandoffStore = null,
 } = {}) {
   const deliveries = new Map();
   const activeByInteraction = new Map();
@@ -281,6 +478,11 @@ export function createAcpInteractionControls({
 
   function resultForTerminalEvent(event) {
     const interactionId = boundedIdentifier(event.interaction_id);
+    urlHandoffStore?.remove?.(interactionId, {
+      ownerKind: "run",
+      ownerId: runId,
+      profileId: getAcpInteractionById(db, interactionId)?.profile_id,
+    });
     const outcome = TERMINAL_OUTCOMES.has(event.outcome) ? event.outcome : "stale";
     const deliveryId = boundedIdentifier(event.delivery_id);
     const delivery = deliveryId
@@ -340,6 +542,11 @@ export function createAcpInteractionControls({
     if (!existing || existing.task_run_id !== runId || existing.state !== "pending") {
       return { ok: false, code: "no_pending_interaction", message: "ACP interaction is not pending for this run" };
     }
+    urlHandoffStore?.remove?.(interactionId, {
+      ownerKind: "run",
+      ownerId: runId,
+      profileId: existing.profile_id,
+    });
     if (action === "respond" && !permissionResponseIsOffered(existing, response, disposition)) {
       return { ok: false, code: "invalid_response", message: "permission option was not offered" };
     }
@@ -403,11 +610,13 @@ export function createAcpInteractionControls({
     deliveries.clear();
     activeByInteraction.clear();
     privateValues.clear();
+    urlHandoffStore?.removeOwner?.("run", runId);
   }
 
   return { respond, cancel, handleWorkerEvent, redactText, redactWorkerEvent, close };
 }
 
-export function expireAcpInteractionsForRun(db, runId) {
+export function expireAcpInteractionsForRun(db, runId, { urlHandoffStore = null } = {}) {
+  urlHandoffStore?.removeOwner?.("run", runId);
   return expirePendingAcpInteractionsForRun(db, runId, { disposition: "run_ended" });
 }
