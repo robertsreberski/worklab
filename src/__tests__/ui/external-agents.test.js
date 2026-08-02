@@ -10,6 +10,7 @@ import {
   externalAgentKind,
   externalAgentMutationPayload,
   externalAgentPayload,
+  externalAgentSlugValid,
   externalAgentVolatileState,
   monoSourceCompatibilityHint,
   monoSourceImportable,
@@ -88,6 +89,7 @@ describe("external agent UI helpers", () => {
 
   it("builds a structured stdio payload without environment values or unsupported client capabilities", () => {
     const payload = externalAgentPayload({
+      agentName: "external-one",
       displayName: "External One",
       enabled: true,
       command: " /opt/bin/acp-agent ",
@@ -106,6 +108,7 @@ describe("external agent UI helpers", () => {
     });
 
     expect(payload).toMatchObject({
+      agentName: "external-one",
       driver: "generic",
       command: "/opt/bin/acp-agent",
       args: ["serve", "--stdio"],
@@ -134,6 +137,7 @@ describe("external agent UI helpers", () => {
 
   it("ignores arbitrary configuration policy input and validates typed session policy fields", () => {
     expect(externalAgentPayload({
+      agentName: "external",
       displayName: "External",
       command: "/bin/agent",
       configPolicyText: '{"neutral":"private-policy-value"}',
@@ -141,17 +145,20 @@ describe("external agent UI helpers", () => {
       sessionModeId: "focused",
     }).configPolicy).toEqual({});
     expect(externalAgentPayload({
+      agentName: "external",
       displayName: "External",
       command: "/bin/agent",
       sessionResumeStrategy: "resume",
       sessionModeId: "focused",
     }).sessionPolicy).toEqual({ resumeStrategy: "resume", modeId: "focused" });
     expect(() => externalAgentPayload({
+      agentName: "external",
       displayName: "External",
       command: "/bin/agent",
       sessionResumeStrategy: "restart",
     })).toThrow("Session resume strategy must be auto, load, or resume");
     expect(() => externalAgentPayload({
+      agentName: "external",
       displayName: "External",
       command: "/bin/agent",
       sessionModeId: "x".repeat(201),
@@ -160,6 +167,7 @@ describe("external agent UI helpers", () => {
 
   it("rejects environment values instead of treating them as key names", () => {
     expect(() => externalAgentPayload({
+      agentName: "external",
       displayName: "External",
       command: "/bin/agent",
       envKeysText: "TOKEN=secret",
@@ -169,8 +177,20 @@ describe("external agent UI helpers", () => {
     })).toThrow("Environment entries must contain key names only");
   });
 
+  it("requires the generic ACP id to match the backend lowercase slug contract", () => {
+    expect(externalAgentSlugValid("external-agent-1")).toBe(true);
+    expect(externalAgentSlugValid("a".repeat(64))).toBe(true);
+    expect(externalAgentSlugValid("Has Spaces")).toBe(false);
+    expect(externalAgentSlugValid("a".repeat(65))).toBe(false);
+    expect(() => externalAgentPayload({ displayName: "Missing id", command: "/bin/agent" }))
+      .toThrow("Agent id is required and must be a lowercase slug");
+    expect(() => externalAgentPayload({ agentName: "Bad_Id", displayName: "Bad", command: "/bin/agent" }))
+      .toThrow("Agent id is required and must be a lowercase slug");
+  });
+
   it("keeps agent-owned and mono-managed launch policy out of ordinary patches", () => {
     const draft = {
+      agentName: "managed",
       displayName: "Managed",
       description: "External",
       enabled: true,
@@ -194,13 +214,10 @@ describe("external agent UI helpers", () => {
       displayName: "Managed",
       description: "External",
       enabled: true,
-      configurationOwner: "agent",
-      workspaceOwner: "agent",
-      mcpOwner: "agent",
-      canonicalWorkspace: null,
+      probeTimeoutMs: 12_345,
     });
     expect(generic).not.toHaveProperty("command");
-    expect(externalAgentMutationPayload(draft, { driver: "mono" })).toEqual({
+    expect(externalAgentMutationPayload({ ...draft, probeTimeoutMs: 999_999 }, { driver: "mono" })).toEqual({
       displayName: "Managed",
       description: "External",
       enabled: true,
@@ -224,8 +241,21 @@ describe("external agent UI helpers", () => {
         baseUrl: "http://127.0.0.1:5555",
         configPath: "/private/mono-agent.config.json",
         config: { provider: "secret-provider" },
-        capabilities: { sessions: true, clientMcp: false, clientFilesystem: false, clientTerminal: false },
-        constraints: { promptContent: ["text", "resource_link"], attachments: false },
+        capabilities: { sessions: true },
+        constraints: {
+          promptContent: ["text", "resource_link"],
+          attachments: false,
+          clientMcp: false,
+          clientFilesystem: false,
+          clientTerminal: false,
+        },
+        binding: {
+          profileId: "profile-personal",
+          agentName: "personal-agent",
+          displayName: "Personal Agent",
+          enabled: true,
+          command: "/private/agent",
+        },
       }],
     });
 
@@ -236,7 +266,13 @@ describe("external agent UI helpers", () => {
         label: "Personal Agent",
         health: "running",
         ready: true,
-        imported: false,
+        imported: true,
+        binding: {
+          profileId: "profile-personal",
+          agentName: "personal-agent",
+          displayName: "Personal Agent",
+          enabled: true,
+        },
         compatible: true,
         bridgeVersion: 1,
         protocolVersion: 1,
@@ -250,6 +286,8 @@ describe("external agent UI helpers", () => {
     expect(displayed).not.toContain("secret");
     expect(displayed).not.toContain("127.0.0.1");
     expect(displayed).not.toContain("configPath");
+    expect(displayed).not.toContain("/private/agent");
+    expect(monoSourceImportable(normalized.sources[0])).toBe(false);
   });
 
   it("keeps legacy mono sources visible but blocks import until their bridge is compatible", () => {

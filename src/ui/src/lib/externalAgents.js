@@ -1,4 +1,5 @@
 const OWNER_VALUES = new Set(["client", "agent"]);
+const EXTERNAL_AGENT_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 export const UNSUPPORTED_ACP_CLIENT_CAPABILITIES = Object.freeze([
   Object.freeze({
@@ -124,7 +125,23 @@ export function externalAgentDraft({ agent = {}, profile = {} } = {}) {
   };
 }
 
+export function externalAgentSlugValid(value) {
+  return EXTERNAL_AGENT_SLUG_RE.test(text(value));
+}
+
+function externalProbeTimeout(value) {
+  const timeout = value == null || value === "" ? 30_000 : Number(value);
+  if (!Number.isInteger(timeout) || timeout < 1_000 || timeout > 300_000) {
+    throw new Error("Probe timeout must be an integer from 1,000 to 300,000 milliseconds.");
+  }
+  return timeout;
+}
+
 export function externalAgentPayload(draft = {}) {
+  const agentName = text(draft.agentName);
+  if (!externalAgentSlugValid(agentName)) {
+    throw new Error("Agent id is required and must be a lowercase slug of at most 64 characters.");
+  }
   const envKeys = [...new Set(stringList(draft.envKeysText))];
   if (!externalEnvKeysValid(envKeys)) {
     throw new Error("Environment entries must contain key names only, one per line.");
@@ -139,7 +156,7 @@ export function externalAgentPayload(draft = {}) {
   }
   const configurationOwner = owner(draft.configurationOwner);
   return {
-    agentName: text(draft.agentName) || undefined,
+    agentName,
     displayName: text(draft.displayName),
     description: text(draft.description),
     enabled: draft.enabled !== false,
@@ -152,7 +169,7 @@ export function externalAgentPayload(draft = {}) {
     workspaceOwner: owner(draft.workspaceOwner),
     mcpOwner: owner(draft.mcpOwner),
     canonicalWorkspace: text(draft.canonicalWorkspace) || null,
-    probeTimeoutMs: finiteNumber(draft.probeTimeoutMs, 30_000),
+    probeTimeoutMs: externalProbeTimeout(draft.probeTimeoutMs),
     permissionsPolicy: {
       filesystem: false,
       terminal: false,
@@ -174,27 +191,20 @@ export function externalEnvKeysValid(value) {
 }
 
 export function externalAgentMutationPayload(draft = {}, existingProfile = null) {
-  const payload = externalAgentPayload(draft);
-  const profile = normalizeAcpProfile(existingProfile || {});
+  if (!existingProfile) return externalAgentPayload(draft);
+  const profile = normalizeAcpProfile(existingProfile);
+  const mutable = {
+    displayName: text(draft.displayName),
+    description: text(draft.description),
+    enabled: draft.enabled !== false,
+  };
   if (profile.driver === "mono") {
-    return {
-      displayName: payload.displayName,
-      description: payload.description,
-      enabled: payload.enabled,
-    };
+    return mutable;
   }
-  if (payload.configurationOwner === "agent") {
-    return {
-      displayName: payload.displayName,
-      description: payload.description,
-      enabled: payload.enabled,
-      configurationOwner: payload.configurationOwner,
-      workspaceOwner: payload.workspaceOwner,
-      mcpOwner: payload.mcpOwner,
-      canonicalWorkspace: payload.canonicalWorkspace,
-    };
-  }
-  return payload;
+  return {
+    ...mutable,
+    probeTimeoutMs: externalProbeTimeout(draft.probeTimeoutMs),
+  };
 }
 
 export function externalAgentVolatileState(profile = {}) {
@@ -282,11 +292,26 @@ function discoveryItems(value) {
 }
 
 function safeCapability(value, ...keys) {
-  for (const key of keys) {
-    const capability = value?.capabilities?.[key];
-    if (typeof capability === "boolean") return capability;
+  for (const container of [value?.capabilities, value?.constraints]) {
+    for (const key of keys) {
+      const capability = container?.[key];
+      if (typeof capability === "boolean") return capability;
+    }
   }
   return undefined;
+}
+
+function discoveryBinding(value) {
+  const binding = plainObject(firstDefined(value?.binding, value?.worklabBinding, value?.worklab_binding));
+  const profileId = text(firstDefined(binding.profileId, binding.profile_id));
+  const agentName = text(firstDefined(binding.agentName, binding.agent_name));
+  if (!profileId || !externalAgentSlugValid(agentName)) return null;
+  return {
+    profileId,
+    agentName,
+    displayName: text(firstDefined(binding.displayName, binding.display_name)) || agentName,
+    enabled: bool(binding.enabled, true),
+  };
 }
 
 function promptContent(value) {
@@ -311,7 +336,7 @@ function discoveryWarnings(value) {
 export function monoSourceImportable(source = {}) {
   const healthy = source.ready === true
     || ["running", "ready", "healthy", "online", "alive"].includes(text(source.health).toLowerCase());
-  return source.compatible === true && healthy;
+  return source.imported !== true && source.compatible === true && healthy;
 }
 
 export function monoSourceCompatibilityHint(source = {}) {
@@ -332,12 +357,14 @@ export function normalizeMonoDiscovery(response = {}) {
     if (!sourceId) return null;
     const capabilities = source?.capabilities ? source : entry;
     const constraints = source?.constraints ? source : entry;
+    const binding = discoveryBinding(source) || discoveryBinding(entry);
     return {
       sourceId,
       label: text(firstDefined(source?.label, source?.displayName, source?.display_name, entry?.label)) || sourceId,
       health: text(firstDefined(source?.health, source?.status, entry?.health, entry?.status)).toLowerCase() || "unknown",
       ready: bool(firstDefined(source?.ready, entry?.ready), false),
-      imported: bool(firstDefined(source?.imported, entry?.imported), false),
+      imported: bool(firstDefined(source?.imported, entry?.imported), false) || Boolean(binding),
+      binding,
       compatible: firstDefined(source?.compatible, entry?.compatible) === true,
       bridgeVersion: discoveryVersion(firstDefined(source?.bridgeVersion, source?.bridge_version, entry?.bridgeVersion, entry?.bridge_version)),
       protocolVersion: discoveryVersion(firstDefined(source?.protocolVersion, source?.protocol_version, entry?.protocolVersion, entry?.protocol_version)),
@@ -345,9 +372,12 @@ export function normalizeMonoDiscovery(response = {}) {
       warnings: discoveryWarnings(firstDefined(source?.warnings, entry?.warnings)),
       capabilities: {
         sessions: safeCapability(capabilities, "sessions"),
-        clientMcp: safeCapability(capabilities, "clientMcp", "client_mcp"),
-        filesystem: safeCapability(capabilities, "clientFilesystem", "client_filesystem", "filesystem"),
-        terminal: safeCapability(capabilities, "clientTerminal", "client_terminal", "terminal"),
+        clientMcp: safeCapability(capabilities, "clientMcp", "client_mcp")
+          ?? safeCapability(constraints, "clientMcp", "client_mcp"),
+        filesystem: safeCapability(capabilities, "clientFilesystem", "client_filesystem", "filesystem")
+          ?? safeCapability(constraints, "clientFilesystem", "client_filesystem", "filesystem"),
+        terminal: safeCapability(capabilities, "clientTerminal", "client_terminal", "terminal")
+          ?? safeCapability(constraints, "clientTerminal", "client_terminal", "terminal"),
       },
       constraints: {
         promptContent: promptContent(constraints),
