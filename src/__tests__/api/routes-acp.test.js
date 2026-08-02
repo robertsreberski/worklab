@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readMcpToken } from "../../core/service-token.js";
 import { newAcpInteractionId } from "../../core/ids.js";
+import { createAcpUrlHandoffStore } from "../../core/acp-url-handoff.js";
 import {
   claimAcpInteractionResponse,
   finalizeAcpInteractionResponse,
@@ -704,6 +705,81 @@ describe("ACP API", () => {
       operations: db.prepare("SELECT * FROM acp_operations").all(),
       interactions: db.prepare("SELECT * FROM acp_interactions").all(),
     })).not.toMatch(/actual-form-secret|schema-secret|RAW_REMOTE_OPERATION_SESSION/u);
+  });
+
+  it("redirects URL handoffs once without exposing private URL state elsewhere", async () => {
+    const cwd = workspace();
+    const urlHandoffStore = createAcpUrlHandoffStore();
+    const server = makeTestServer({ acpUrlHandoffStore: urlHandoffStore });
+    const profile = (await createGeneric(server.agent, cwd)).body.profile;
+    const now = Date.now();
+    const runId = "run-url-open";
+    const interactionId = newAcpInteractionId();
+    const sentinel = "PRIVATE_REDIRECT_STATE_SENTINEL";
+    const rawUrl = `https://example.test/authorize?state=${sentinel}#${sentinel}`;
+    server.db.prepare(`
+      INSERT INTO task_runs (id, mode, stage, agent_name, status, process_status, started_at)
+      VALUES (?, 'execute', 'execute', ?, 'running', 'running', ?)
+    `).run(runId, profile.agentName, now);
+    insertAcpInteractionRequest(server.db, {
+      id: interactionId,
+      profileId: profile.id,
+      taskRunId: runId,
+      protocolRequestId: "url-open-request",
+      kind: "url",
+      requestSchemaJson: JSON.stringify({
+        mode: "url",
+        message: "Continue in your browser",
+        url: "https://example.test/authorize?state=%5Bredacted%5D",
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+    expect(urlHandoffStore.retain({
+      interactionId,
+      ownerKind: "run",
+      ownerId: runId,
+      profileId: profile.id,
+      url: rawUrl,
+    })).toBe(true);
+
+    const listed = await server.agent.get("/api/acp/interactions?state=pending").expect(200);
+    expect(JSON.stringify(listed.body)).not.toContain(sentinel);
+    expect(JSON.stringify(server.db.prepare("SELECT * FROM acp_interactions").all()))
+      .not.toContain(sentinel);
+
+    const opened = await server.agent.post(`/api/acp/interactions/${interactionId}/url:open`)
+      .redirects(0)
+      .expect(303);
+    expect(opened.text).toBe("");
+    expect(opened.headers.location).toBe(rawUrl);
+    expect(opened.headers["cache-control"]).toBe("no-store");
+    expect(opened.headers.pragma).toBe("no-cache");
+    expect(opened.headers["referrer-policy"]).toBe("no-referrer");
+    expect(opened.headers["x-robots-tag"]).toBe("noindex");
+    expect(opened.headers["cross-origin-opener-policy"]).toBe("same-origin");
+    expect(opened.headers["x-content-type-options"]).toBe("nosniff");
+    expect(urlHandoffStore.size).toBe(0);
+
+    const second = await server.agent.post(`/api/acp/interactions/${interactionId}/url:open`)
+      .redirects(0)
+      .expect(410);
+    expect(second.body).toEqual({
+      error: {
+        code: "url_handoff_gone",
+        message: "ACP URL handoff is no longer available",
+      },
+    });
+    expect(JSON.stringify(second.body)).not.toContain(sentinel);
+
+    expect(urlHandoffStore.retain({
+      interactionId: "credential-url",
+      ownerKind: "run",
+      ownerId: runId,
+      profileId: profile.id,
+      url: "https://user:password@example.test/private",
+    })).toBe(false);
+    urlHandoffStore.clear();
   });
 
   it("returns 400 and keeps management permissions pending for unoffered options", async () => {

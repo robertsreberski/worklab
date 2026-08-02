@@ -184,6 +184,33 @@ function interactionOr404(db, interactionId) {
   return row;
 }
 
+function interactionUrlOwner(row) {
+  if (row?.operation_id) {
+    return {
+      ownerKind: "operation",
+      ownerId: row.operation_id,
+      profileId: row.profile_id,
+    };
+  }
+  if (row?.task_run_id) {
+    return {
+      ownerKind: "run",
+      ownerId: row.task_run_id,
+      profileId: row.profile_id,
+    };
+  }
+  return null;
+}
+
+function sendUrlHandoffGone(res) {
+  return res.status(410).json({
+    error: {
+      code: "url_handoff_gone",
+      message: "ACP URL handoff is no longer available",
+    },
+  });
+}
+
 function startOperation(res, manager, profileId, kind, options = {}) {
   if (!manager) {
     return sendError(res, routeError("ACP operation manager is not configured", {
@@ -418,9 +445,36 @@ export function registerAcpRoutes(app, {
     }
   });
 
+  app.post("/api/acp/interactions/:id/url:open", (req, res) => {
+    const row = getAcpInteractionById(db, req.params.id);
+    const owner = interactionUrlOwner(row);
+    if (!row || row.state !== "pending" || row.kind !== "url" || !owner) {
+      return sendUrlHandoffGone(res);
+    }
+    const url = acpUrlHandoffStore?.consume?.({
+      interactionId: row.id,
+      ...owner,
+    });
+    if (!url) return sendUrlHandoffGone(res);
+
+    res.status(303);
+    res.set({
+      Location: url,
+      "Cache-Control": "no-store",
+      Pragma: "no-cache",
+      "Referrer-Policy": "no-referrer",
+      "X-Robots-Tag": "noindex",
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "X-Content-Type-Options": "nosniff",
+    });
+    return res.end();
+  });
+
   app.post("/api/acp/interactions/:id/respond", async (req, res) => {
     try {
       const row = interactionOr404(db, req.params.id);
+      const owner = interactionUrlOwner(row);
+      if (owner) acpUrlHandoffStore?.remove?.(row.id, owner);
       const body = req.body || {};
       const response = Object.hasOwn(body, "response") ? body.response : body;
       const disposition = acpInteractionDisposition(
@@ -470,6 +524,8 @@ export function registerAcpRoutes(app, {
   app.post("/api/acp/interactions/:id/cancel", async (req, res) => {
     try {
       const row = interactionOr404(db, req.params.id);
+      const owner = interactionUrlOwner(row);
+      if (owner) acpUrlHandoffStore?.remove?.(row.id, owner);
       let interaction;
       if (row.operation_id) {
         interaction = acpOperationManager?.cancelInteraction?.({
