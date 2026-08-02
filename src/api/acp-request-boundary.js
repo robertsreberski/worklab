@@ -74,11 +74,11 @@ function browserSourceUrl(req) {
 function sameUiBoundary(req, { origins, hosts }) {
   const target = requestUrl(req);
   if (!target || !trustedRequestHost(target.hostname, hosts)) return false;
-  if (String(req.get("sec-fetch-site") || "").toLowerCase() === "cross-site") return false;
 
   const source = browserSourceUrl(req);
   if (!source) return false;
   if (origins.has(source.origin)) return true;
+  if (String(req.get("sec-fetch-site") || "").toLowerCase() === "cross-site") return false;
   return source.origin === target.origin;
 }
 

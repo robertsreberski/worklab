@@ -14,6 +14,7 @@ import { makeTestServer } from "../helpers/test-server.js";
 const cleanup = [];
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const directory of cleanup.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -63,6 +64,7 @@ async function createGeneric(agent, cwd, body = {}) {
 
 describe("ACP API", () => {
   it("rejects cross-site mutations before any ACP process or task can launch", async () => {
+    vi.stubEnv("WORKLAB_ACP_ALLOWED_ORIGINS", "https://split-ui.example");
     const cwd = workspace();
     const dataDir = workspace();
     const probe = vi.fn(async () => ({ status: "ready" }));
@@ -110,6 +112,17 @@ describe("ACP API", () => {
       .expect(401);
     await rawAgent.post("/api/acp/profiles").send(profileBody).expect(401);
     expect(db.prepare("SELECT COUNT(*) AS count FROM acp_profiles").get().count).toBe(0);
+
+    await rawAgent.post("/api/acp/profiles")
+      .set("host", "127.0.0.1:7878")
+      .set("origin", "https://split-ui.example")
+      .set("sec-fetch-site", "cross-site")
+      .send({
+        ...profileBody,
+        agentName: "configured-origin",
+        displayName: "Configured origin",
+      })
+      .expect(201);
 
     const created = await agent.post("/api/acp/profiles").send({
       ...profileBody,
