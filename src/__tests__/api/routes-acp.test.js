@@ -122,7 +122,29 @@ describe("ACP API", () => {
         agentName: "configured-origin",
         displayName: "Configured origin",
       })
+      .expect("access-control-allow-origin", "https://split-ui.example")
       .expect(201);
+
+    const preflight = await rawAgent.options("/api/acp/profiles")
+      .set("host", "127.0.0.1:7878")
+      .set("origin", "https://split-ui.example")
+      .set("access-control-request-method", "POST")
+      .set("access-control-request-headers", "authorization, content-type")
+      .expect(204);
+    expect(preflight.headers).toMatchObject({
+      "access-control-allow-origin": "https://split-ui.example",
+      "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
+      "access-control-allow-headers": "Authorization, Content-Type, Last-Event-ID, X-Attachment-Filename, X-Skill-Filename",
+      "access-control-max-age": "600",
+    });
+    expect(preflight.headers.vary).toMatch(/Origin/u);
+
+    const rejectedPreflight = await rawAgent.options("/api/acp/profiles")
+      .set("host", "127.0.0.1:7878")
+      .set("origin", "https://evil.example")
+      .set("access-control-request-method", "POST")
+      .expect(403);
+    expect(rejectedPreflight.headers).not.toHaveProperty("access-control-allow-origin");
 
     const created = await agent.post("/api/acp/profiles").send({
       ...profileBody,
@@ -175,6 +197,12 @@ describe("ACP API", () => {
       .set("origin", "https://evil.example")
       .expect(200);
     expect(crossOriginRead.headers).not.toHaveProperty("access-control-allow-origin");
+
+    await rawAgent.get("/api/agents")
+      .set("host", "127.0.0.1:7878")
+      .set("origin", "https://split-ui.example")
+      .expect("access-control-allow-origin", "https://split-ui.example")
+      .expect(200);
 
     for (const path of [
       "/api/acp/discovery/mono",

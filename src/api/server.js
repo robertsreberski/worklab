@@ -116,7 +116,8 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
 
   // Inbound webhook ids are capability URLs and intentionally accept
   // server-to-server POSTs. Every other state-changing API call is UI-origin
-  // or service-token scoped; browser cross-origin reads receive no CORS grant.
+  // or service-token scoped; browser CORS grants are restricted to exact UI
+  // origins configured through WORKLAB_ACP_ALLOWED_ORIGINS.
   registerAutomationWebhookRoutes(app, { db, broker, automationManager });
   app.use("/api", createApiMutationBoundary({
     dataDir: dataDir || config?.dataDir,

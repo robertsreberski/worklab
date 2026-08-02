@@ -4,6 +4,8 @@ import { ensureMcpToken, tokenMatches } from "../core/index.js";
 
 const WILDCARD_HOSTS = new Set(["0.0.0.0", "::", "[::]"]);
 const ACTIVE_READ_PATHS = new Set(["/acp/discovery/mono"]);
+const CORS_METHODS = "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS";
+const CORS_HEADERS = "Authorization, Content-Type, Last-Event-ID, X-Attachment-Filename, X-Skill-Filename";
 
 function bearerToken(req) {
   const value = req.get("authorization") || "";
@@ -71,6 +73,26 @@ function browserSourceUrl(req) {
   return parsedHttpUrl(req.get("origin")) || parsedHttpUrl(req.get("referer"));
 }
 
+function configuredCorsOrigin(req, { origins, hosts }) {
+  const source = parsedHttpUrl(req.get("origin"));
+  const target = requestUrl(req);
+  if (!source || !target || !origins.has(source.origin) || !trustedRequestHost(target.hostname, hosts)) {
+    return null;
+  }
+  return source.origin;
+}
+
+function setConfiguredCorsHeaders(res, origin, { preflight = false } = {}) {
+  res.vary("Origin");
+  res.set("Access-Control-Allow-Origin", origin);
+  if (!preflight) return;
+  res.vary("Access-Control-Request-Method");
+  res.vary("Access-Control-Request-Headers");
+  res.set("Access-Control-Allow-Methods", CORS_METHODS);
+  res.set("Access-Control-Allow-Headers", CORS_HEADERS);
+  res.set("Access-Control-Max-Age", "600");
+}
+
 function sameUiBoundary(req, { origins, hosts }) {
   const target = requestUrl(req);
   if (!target || !trustedRequestHost(target.hostname, hosts)) return false;
@@ -99,11 +121,32 @@ export function createApiMutationBoundary({
   const expectedToken = dataDir ? ensureMcpToken(dataDir) : "";
 
   return (req, res, next) => {
+    const corsOrigin = configuredCorsOrigin(req, { origins, hosts });
+    if (corsOrigin) setConfiguredCorsHeaders(res, corsOrigin);
+
     const requestPath = (req.path.length > 1 ? req.path.replace(/\/+$/u, "") : req.path)
       .toLowerCase();
     const activeRead = new Set(["GET", "HEAD"]).has(req.method)
       && ACTIVE_READ_PATHS.has(requestPath);
-    if (req.method === "OPTIONS" || (!activeRead && new Set(["GET", "HEAD"]).has(req.method))) {
+    if (req.method === "OPTIONS") {
+      if (!req.get("origin")) {
+        next();
+        return;
+      }
+      if (corsOrigin) {
+        setConfiguredCorsHeaders(res, corsOrigin, { preflight: true });
+        res.status(204).end();
+        return;
+      }
+      res.status(403).json({
+        error: {
+          code: "forbidden_origin",
+          message: "Browser API access must come from an explicitly configured Worklab UI origin",
+        },
+      });
+      return;
+    }
+    if (!activeRead && new Set(["GET", "HEAD"]).has(req.method)) {
       next();
       return;
     }
