@@ -30,7 +30,8 @@ function boundedIdentifier(value, max = 1024) {
 }
 
 function stripAcpSessionIdentifiers(value, depth = 0) {
-  if (depth > 20 || value == null || typeof value !== "object") return value;
+  if (depth > 20) return null;
+  if (value == null || typeof value !== "object") return value;
   if (Array.isArray(value)) {
     return value.map((entry) => stripAcpSessionIdentifiers(entry, depth + 1));
   }
@@ -142,8 +143,10 @@ export function createAcpInteractionControls({
   function collectPrivateValues(value, collected, depth = 0) {
     if (depth > 10) return false;
     if (value == null) return true;
-    if (typeof value === "string") {
-      if (!value || privateValues.has(value) || collected.has(value)) return true;
+    if (["string", "number", "boolean"].includes(typeof value)) {
+      if ((typeof value === "string" && !value)
+        || privateValues.has(value)
+        || collected.has(value)) return true;
       if (privateValues.size + collected.size >= MAX_PRIVATE_VALUES) return false;
       collected.add(value);
       return true;
@@ -168,13 +171,18 @@ export function createAcpInteractionControls({
   function redactText(value) {
     let result = String(value ?? "");
     for (const privateValue of privateValues) {
+      if (typeof privateValue !== "string") continue;
       result = result.split(privateValue).join("[redacted]");
     }
     return result;
   }
 
   function redactWorkerEvent(value, depth = 0) {
-    if (depth > 20 || value == null || typeof value === "boolean" || typeof value === "number") return value;
+    if (depth > 20) return null;
+    if (value == null) return value;
+    if (typeof value === "boolean" || typeof value === "number") {
+      return privateValues.has(value) ? "[redacted]" : value;
+    }
     if (typeof value === "string") return redactText(value);
     if (Array.isArray(value)) return value.map((entry) => redactWorkerEvent(entry, depth + 1));
     if (typeof value !== "object") return null;

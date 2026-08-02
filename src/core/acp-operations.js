@@ -74,6 +74,7 @@ function sanitizedValue(value, {
   const output = {};
   for (const [key, entry] of Object.entries(value).slice(0, MAX_ITEMS)) {
     const propertyIdentifier = parentKey === "properties";
+    if (key === "sessionId" || key === "session_id") continue;
     if (!propertyIdentifier && SENSITIVE_KEY_RE.test(key)) continue;
     if (schema && !propertyIdentifier && SCHEMA_VALUE_KEYS.has(key.toLowerCase())) continue;
     const sanitized = sanitizedValue(entry, { depth: depth + 1, schema, parentKey: key });
@@ -319,8 +320,7 @@ export function sanitizeAcpOperationError(kind, error, { cancelled = false } = {
 
 export function sanitizeAcpInteractionSchema(value) {
   if (!isPlainObject(value)) return boundedObject({}, { schema: true });
-  const { sessionId: _sessionId, session_id: _sessionIdSnake, ...schema } = value;
-  return boundedObject(schema, { schema: true });
+  return boundedObject(value, { schema: true });
 }
 
 export function rowToAcpOperation(row) {

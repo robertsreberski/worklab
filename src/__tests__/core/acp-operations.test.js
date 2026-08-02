@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { sanitizeAcpOperationResult } from "../../core/acp-operations.js";
+import {
+  sanitizeAcpInteractionSchema,
+  sanitizeAcpOperationResult,
+} from "../../core/acp-operations.js";
 
 const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 const MAX_PERSISTED_JSON_BYTES = 64 * 1024;
@@ -57,6 +60,26 @@ describe("sanitizeAcpOperationResult", () => {
         status: "ready:[redacted]",
       }],
       truncated: false,
+    });
+    expect(JSON.stringify(result)).not.toContain(rawSessionId);
+  });
+
+  it("removes nested protocol session identifiers from interaction schemas", () => {
+    const rawSessionId = "RAW_NESTED_INTERACTION_SESSION";
+    const result = sanitizeAcpInteractionSchema({
+      mode: "form",
+      _meta: {
+        transport: {
+          sessionId: rawSessionId,
+          nested: { session_id: rawSessionId },
+        },
+      },
+      requestedSchema: { type: "object", properties: { name: { type: "string" } } },
+    });
+
+    expect(result).toMatchObject({
+      mode: "form",
+      _meta: { transport: { nested: {} } },
     });
     expect(JSON.stringify(result)).not.toContain(rawSessionId);
   });

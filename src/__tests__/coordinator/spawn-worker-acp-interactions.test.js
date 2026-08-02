@@ -57,6 +57,10 @@ describe("spawnWorker ACP interactions", () => {
       const { taskId, runId } = seed(db);
       const sentinel = "task-run-request-secret-sentinel";
       const rawSessionId = "RAW_REMOTE_SESSION_DO_NOT_PERSIST";
+      let deeplyNestedSession = { sessionId: rawSessionId };
+      for (let depth = 0; depth < 25; depth += 1) {
+        deeplyNestedSession = { nested: deeplyNestedSession };
+      }
       const script = {
         ackAcpControls: true,
         echoControls: true,
@@ -71,6 +75,7 @@ describe("spawnWorker ACP interactions", () => {
             sessionId: rawSessionId,
             mode: "form",
             message: "Choose",
+            _meta: { nested: { session_id: rawSessionId } },
             requestedSchema: {
               type: "object",
               default: sentinel,
@@ -90,6 +95,7 @@ describe("spawnWorker ACP interactions", () => {
             update: {
               sessionUpdate: "agent_message_chunk",
               nested: { session_id: rawSessionId },
+              deeplyNestedSession,
             },
           },
         }],
@@ -257,6 +263,50 @@ describe("spawnWorker ACP interactions", () => {
       expect(db.prepare("SELECT state, disposition FROM acp_interactions WHERE id = ?")
         .get("interaction-retry"))
         .toMatchObject({ state: "pending", disposition: null });
+      controls.close();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("redacts numeric and boolean private form values from later worker events", async () => {
+    const db = makeTestDb();
+    try {
+      const { runId } = seed(db);
+      insertAcpInteractionRequest(db, {
+        id: "interaction-scalars",
+        profileId: "profile-1",
+        taskRunId: runId,
+        protocolRequestId: "rpc-scalars",
+        kind: "form",
+        requestSchemaJson: "{}",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      let controlMessage;
+      const controls = createAcpInteractionControls({
+        db,
+        runId,
+        writeControlMessage: async (message) => { controlMessage = message; },
+        emitEvent: () => {},
+        idFactory: () => "delivery-scalars",
+      });
+
+      const delivered = controls.respond({
+        interactionId: "interaction-scalars",
+        disposition: "accept",
+        response: { action: "accept", content: { pin: 654321, remember: false } },
+      });
+      await vi.waitFor(() => expect(controlMessage?.delivery_id).toBe("delivery-scalars"));
+      expect(controls.redactWorkerEvent({ pin: 654321, remember: false, count: 7, ok: true }))
+        .toEqual({ pin: "[redacted]", remember: "[redacted]", count: 7, ok: true });
+      controls.handleWorkerEvent({
+        type: "acp_interaction_acknowledged",
+        interaction_id: "interaction-scalars",
+        delivery_id: "delivery-scalars",
+        outcome: "submitted",
+      });
+      await expect(delivered).resolves.toMatchObject({ ok: true });
       controls.close();
     } finally {
       db.close();
