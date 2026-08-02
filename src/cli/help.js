@@ -97,7 +97,13 @@ const COMMANDS = [
   {
     name: "backup",
     usage: "worklab backup [options]",
-    summary: "Create a tar.gz backup of the active data directory.",
+    summary: "Create a privacy-scrubbed tar.gz backup of the active data directory.",
+    description: [
+      "Credentials, cryptographic keys, MCP config, provider API keys, browser push",
+      "subscriptions, runtime logs, and process files are omitted. Reconfigure",
+      "credentials, MCP servers, and browser notifications after restoring.",
+      "The output directory and archive use private 0700 and 0600 permissions.",
+    ],
     options: [
       ["--out DIR", "Write the backup archive to DIR. Defaults to ~/worklab-backups."],
     ],
