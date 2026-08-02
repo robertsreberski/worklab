@@ -198,9 +198,18 @@ export function normalizePendingAcpInteractions(response = {}) {
 
 export function acpInteractionEventRequiresRefresh(event = {}) {
   const type = text(event.type, 128).toLowerCase();
+  if (type === "worklab_stream_connected") return true;
   if (type.startsWith("acp_interaction_")) return true;
   if (type !== "run_progress") return false;
   return text(event.lastEvent?.type ?? event.last_event?.type, 128).toLowerCase().startsWith("acp_interaction_");
+}
+
+export function acpInteractionIsReconnectEvent(event = {}) {
+  return text(event.type, 128).toLowerCase() === "worklab_stream_connected";
+}
+
+export function acpInteractionCanAutoOpen(documentLike = globalThis.document) {
+  return !documentLike?.querySelector?.('[role="dialog"][aria-modal="true"]');
 }
 
 export function acpPermissionResponse(interaction, optionId) {

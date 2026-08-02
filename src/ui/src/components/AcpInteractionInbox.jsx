@@ -5,7 +5,9 @@ import {
   acpFormInitialValues,
   acpFormResponse,
   acpFormValues,
+  acpInteractionCanAutoOpen,
   acpInteractionEventRequiresRefresh,
+  acpInteractionIsReconnectEvent,
   acpInteractionIsStale,
   acpPermissionResponse,
   normalizePendingAcpInteractions,
@@ -103,11 +105,23 @@ function FormInteractionFields({ interaction, values, errors, onChange, firstCon
           );
         }
         if (field.choices.length > 0) {
+          const errorId = errors[field.key] ? `${fieldId}-error` : undefined;
           return (
-            <FormField key={field.key} label={field.label} required={field.required} hint={field.description} error={errors[field.key]}>
+            <FormField
+              key={field.key}
+              label={field.label}
+              required={field.required}
+              hint={field.description}
+              error={errors[field.key]}
+              errorId={errorId}
+              htmlFor={fieldId}
+            >
               <Select
+                id={fieldId}
                 variant="native"
                 ariaLabel={field.label}
+                ariaDescribedBy={errorId}
+                invalid={!!errors[field.key]}
                 value={values[field.key] || ""}
                 placeholder="Choose…"
                 options={field.choices}
@@ -116,8 +130,17 @@ function FormInteractionFields({ interaction, values, errors, onChange, firstCon
             </FormField>
           );
         }
+        const errorId = errors[field.key] ? `${fieldId}-error` : undefined;
         return (
-          <FormField key={field.key} label={field.label} required={field.required} hint={field.description} error={errors[field.key]} htmlFor={fieldId}>
+          <FormField
+            key={field.key}
+            label={field.label}
+            required={field.required}
+            hint={field.description}
+            error={errors[field.key]}
+            errorId={errorId}
+            htmlFor={fieldId}
+          >
             <Input
               id={fieldId}
               type={inputType(field)}
@@ -129,6 +152,7 @@ function FormInteractionFields({ interaction, values, errors, onChange, firstCon
               value={values[field.key] ?? ""}
               autoComplete="off"
               aria-invalid={errors[field.key] ? "true" : undefined}
+              aria-describedby={errorId}
               onInput={(event) => onChange(field.key, event.currentTarget.value)}
             />
           </FormField>
@@ -146,6 +170,9 @@ export function AcpInteractionInbox() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [openedUrlId, setOpenedUrlId] = useState("");
   const [unsupported, setUnsupported] = useState(false);
   const initializedRef = useRef(false);
   const knownIdsRef = useRef(new Set());
@@ -153,6 +180,9 @@ export function AcpInteractionInbox() {
   const loadControllerRef = useRef(null);
   const loadGenerationRef = useRef(0);
   const firstControlRef = useRef(null);
+  const fallbackControlRef = useRef(null);
+  const errorRef = useRef(null);
+  const errorFocusModeRef = useRef("banner");
 
   const activeIndex = Math.max(0, interactions.findIndex((interaction) => interaction.id === activeId));
   const active = interactions[activeIndex] || null;
@@ -162,6 +192,12 @@ export function AcpInteractionInbox() {
     loadGenerationRef.current += 1;
     loadControllerRef.current?.abort();
     loadControllerRef.current = null;
+    setLoading(false);
+  }, []);
+
+  const focusActiveControl = useCallback(() => {
+    const primary = firstControlRef.current;
+    (primary && !primary.disabled ? primary : fallbackControlRef.current)?.focus?.();
   }, []);
 
   const load = useCallback(async ({ revealNew = false } = {}) => {
@@ -170,6 +206,7 @@ export function AcpInteractionInbox() {
     loadControllerRef.current?.abort();
     const controller = new AbortController();
     loadControllerRef.current = controller;
+    setLoading(true);
     try {
       const response = await api.listAcpInteractions({ state: "pending" }, { signal: controller.signal });
       if (generation !== loadGenerationRef.current) return;
@@ -181,20 +218,22 @@ export function AcpInteractionInbox() {
       setInteractions(next);
       setActiveId((current) => next.some((interaction) => interaction.id === current) ? current : (next[0]?.id || ""));
       if (next.length === 0) setOpen(false);
-      else if (!hadInitialized || (revealNew && hasNew)) setOpen(true);
+      else if ((!hadInitialized || (revealNew && hasNew)) && acpInteractionCanAutoOpen()) setOpen(true);
       setUnsupported(false);
-      setError("");
+      setLoadError("");
     } catch (loadError) {
       if (loadError?.name === "AbortError" || generation !== loadGenerationRef.current) return;
       if (acpEndpointUnsupported(loadError)) {
         setUnsupported(true);
         setInteractions([]);
         setOpen(false);
+        setLoadError("");
         return;
       }
-      setError(loadError?.message || "Pending agent requests could not be loaded.");
+      setLoadError(loadError?.message || "Pending agent requests could not be loaded.");
     } finally {
       if (loadControllerRef.current === controller) loadControllerRef.current = null;
+      if (generation === loadGenerationRef.current) setLoading(false);
     }
   }, []);
 
@@ -209,20 +248,43 @@ export function AcpInteractionInbox() {
   useSSE("global", (event) => {
     if (!acpInteractionEventRequiresRefresh(event) || unsupported) return;
     if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
-    reloadTimerRef.current = setTimeout(() => load({ revealNew: true }), RELOAD_DELAY_MS);
+    reloadTimerRef.current = setTimeout(() => load({
+      revealNew: !acpInteractionIsReconnectEvent(event),
+    }), RELOAD_DELAY_MS);
   });
+
+  useEffect(() => {
+    const reconcile = () => {
+      if (document.visibilityState !== "hidden") load();
+    };
+    document.addEventListener("visibilitychange", reconcile);
+    window.addEventListener("focus", reconcile);
+    window.addEventListener("online", reconcile);
+    return () => {
+      document.removeEventListener("visibilitychange", reconcile);
+      window.removeEventListener("focus", reconcile);
+      window.removeEventListener("online", reconcile);
+    };
+  }, [load]);
 
   useEffect(() => {
     setValues(active?.kind === "form" ? acpFormInitialValues(active) : {});
     setFieldErrors({});
     setError("");
+    setOpenedUrlId("");
   }, [active?.id, active?.kind]);
 
   useEffect(() => {
     if (!open || !active?.id) return undefined;
-    const frame = window.requestAnimationFrame(() => firstControlRef.current?.focus());
+    const frame = window.requestAnimationFrame(focusActiveControl);
     return () => window.cancelAnimationFrame(frame);
-  }, [active?.id, open]);
+  }, [active?.id, focusActiveControl, open]);
+
+  useEffect(() => {
+    if (!open || !error || errorFocusModeRef.current !== "banner") return undefined;
+    const frame = window.requestAnimationFrame(() => errorRef.current?.focus?.());
+    return () => window.cancelAnimationFrame(frame);
+  }, [error, open]);
 
   const context = useMemo(() => interactionContext(active), [active]);
 
@@ -255,21 +317,24 @@ export function AcpInteractionInbox() {
   async function settle(action, request) {
     if (!active || busy) return;
     const id = active.id;
-    clearPrivateDraft();
+    errorFocusModeRef.current = "banner";
     setError("");
     setBusy(action);
     invalidateLoad();
     try {
       if (action === "cancel") await api.cancelAcpInteraction(id);
       else await api.respondAcpInteraction(id, request);
+      clearPrivateDraft();
       removeSettled(id);
       await load();
     } catch (settleError) {
       if (acpInteractionIsStale(settleError)) {
+        clearPrivateDraft();
         removeSettled(id);
         pushToast("Agent request was already resolved.", { variant: "info" });
         await load();
       } else {
+        errorFocusModeRef.current = "banner";
         setError(settleError?.message || "The agent request could not be resolved.");
       }
     } finally {
@@ -281,8 +346,24 @@ export function AcpInteractionInbox() {
     try {
       settle(`permission:${optionId}`, acpPermissionResponse(active, optionId));
     } catch (responseError) {
+      errorFocusModeRef.current = "banner";
       setError(responseError.message);
     }
+  }
+
+  function focusFirstFieldError(errors) {
+    const firstInvalidIndex = active.fields.findIndex((field) => errors[field.key]);
+    errorFocusModeRef.current = firstInvalidIndex >= 0 ? "field" : "banner";
+    window.requestAnimationFrame(() => {
+      if (firstInvalidIndex < 0) {
+        errorRef.current?.focus?.();
+        return;
+      }
+      const fieldId = `acp-interaction-field-${firstInvalidIndex}`;
+      const control = document.getElementById(fieldId)
+        || document.querySelector(`[id^="${fieldId}-"]`);
+      (control || errorRef.current)?.focus?.();
+    });
   }
 
   function submitForm(event) {
@@ -291,15 +372,16 @@ export function AcpInteractionInbox() {
     if (Object.keys(validation.errors).length > 0) {
       setFieldErrors(validation.errors);
       setError("Complete the required form fields before submitting.");
+      focusFirstFieldError(validation.errors);
       return;
     }
-    const privateValues = values;
-    clearPrivateDraft();
     try {
-      settle("form", acpFormResponse(active, privateValues));
+      settle("form", acpFormResponse(active, values));
     } catch (responseError) {
-      setFieldErrors(responseError.fieldErrors || {});
+      const nextErrors = responseError.fieldErrors || {};
+      setFieldErrors(nextErrors);
       setError(responseError.message);
+      focusFirstFieldError(nextErrors);
     }
   }
 
@@ -307,9 +389,25 @@ export function AcpInteractionInbox() {
     settle("decline", acpElicitationDecision("decline"));
   }
 
-  if (unsupported || interactions.length === 0 || !active) return null;
+  function markUrlOpened() {
+    setOpenedUrlId(active?.id || "");
+    setError("");
+  }
+
+  if (unsupported) return null;
+  if (interactions.length === 0 || !active) {
+    if (!loadError) return null;
+    return (
+      <div class="acp-interaction-load-error" role="alert">
+        <span>Pending agent requests could not be loaded.</span>
+        <Button size="sm" variant="secondary" loading={loading} onClick={() => load()}>Retry</Button>
+      </div>
+    );
+  }
 
   const formId = "acp-interaction-response-form";
+  const urlFormId = `acp-interaction-url-open-${active.id}`;
+  const urlWasOpened = active.kind === "url" && openedUrlId === active.id;
   const footer = (
     <div class="acp-interaction-footer">
       <div class="acp-interaction-queue-controls" aria-label="Pending agent requests">
@@ -321,12 +419,36 @@ export function AcpInteractionInbox() {
         {active.kind !== "permission" && (
           <Button size="sm" variant="secondary" disabled={!!busy} loading={busy === "decline"} onClick={decline}>Decline</Button>
         )}
-        <Button size="sm" variant="ghost" disabled={!!busy} loading={busy === "cancel"} onClick={() => settle("cancel")}>Cancel request</Button>
+        <Button
+          buttonRef={fallbackControlRef}
+          size="sm"
+          variant="ghost"
+          disabled={!!busy}
+          loading={busy === "cancel"}
+          onClick={() => settle("cancel")}
+        >Cancel request</Button>
         {active.kind === "form" && (
           <Button size="sm" variant="primary" type="submit" form={formId} disabled={!!busy || hasUnsafeRequiredFields} loading={busy === "form"}>Submit</Button>
         )}
-        {active.kind === "url" && (
-          <Button size="sm" variant="primary" disabled={!!busy || !active.url} onClick={() => settle("accept", acpElicitationDecision("accept"))}>Continue</Button>
+        {active.kind === "url" && !urlWasOpened && (
+          <Button
+            buttonRef={active.url ? firstControlRef : undefined}
+            size="sm"
+            variant="primary"
+            type="submit"
+            form={urlFormId}
+            disabled={!!busy || !active.url}
+          >Open link</Button>
+        )}
+        {active.kind === "url" && urlWasOpened && (
+          <Button
+            buttonRef={firstControlRef}
+            size="sm"
+            variant="primary"
+            disabled={!!busy}
+            loading={busy === "accept"}
+            onClick={() => settle("accept", acpElicitationDecision("accept"))}
+          >Continue agent</Button>
         )}
       </div>
     </div>
@@ -353,14 +475,27 @@ export function AcpInteractionInbox() {
         class="acp-interaction-modal"
         footer={footer}
         closeOnBackdrop={false}
-        initialFocusRef={firstControlRef}
+        initialFocusRef={fallbackControlRef}
       >
         <div class="acp-interaction-context">
           <span>{context.label}</span>
           <code>{context.value}</code>
         </div>
         {active.message && <p class="acp-interaction-message">{active.message}</p>}
-        {error && <Banner variant="error" title="Request not resolved" detail={error} dismissible={false} />}
+        {loadError && (
+          <Banner
+            variant="warn"
+            title="Pending requests may be out of date"
+            detail={loadError}
+            actions={<Button size="sm" variant="secondary" loading={loading} onClick={() => load()}>Retry</Button>}
+            dismissible={false}
+          />
+        )}
+        {error && (
+          <div id="acp-interaction-error" ref={errorRef} tabIndex={-1}>
+            <Banner variant="error" title="Request not resolved" detail={error} dismissible={false} />
+          </div>
+        )}
 
         {active.kind === "permission" && (
           <div class="acp-interaction-permission">
@@ -400,7 +535,13 @@ export function AcpInteractionInbox() {
         )}
 
         {active.kind === "form" && (
-          <form id={formId} class="acp-interaction-form" autoComplete="off" onSubmit={submitForm}>
+          <form
+            id={formId}
+            class="acp-interaction-form"
+            autoComplete="off"
+            aria-describedby={error ? "acp-interaction-error" : undefined}
+            onSubmit={submitForm}
+          >
             {active.blockedFields.length > 0 && (
               <Banner
                 variant="warn"
@@ -434,21 +575,30 @@ export function AcpInteractionInbox() {
         {active.kind === "url" && (
           <div class="acp-interaction-url">
             {active.url ? (
-              <a
-                ref={firstControlRef}
-                class="acp-interaction-url-link"
-                href={active.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                referrerPolicy="no-referrer"
-              >
+              <div class="acp-interaction-url-link">
                 <Icon name="external" size={16} />
                 <span>{active.url}</span>
-              </a>
+              </div>
             ) : (
               <Banner variant="warn" title="No safe link available" detail="Decline or cancel this request." dismissible={false} />
             )}
-            <p class="soft-meta">The link is sanitized before display. Worklab does not persist credentials or submitted browser values.</p>
+            {active.url && (
+              <form
+                id={urlFormId}
+                class="sr-only"
+                method="post"
+                action={api.acpInteractionUrlOpenPath(active.id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-hidden="true"
+                onSubmit={markUrlOpened}
+              />
+            )}
+            <p class="soft-meta">
+              {urlWasOpened
+                ? "After finishing in the new tab, continue the agent."
+                : "Open the one-use link only if you trust this external agent."}
+            </p>
           </div>
         )}
       </Modal>

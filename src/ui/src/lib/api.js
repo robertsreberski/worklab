@@ -192,6 +192,7 @@ export const api = {
   cancelAcpOperation: (id) => request("POST", `/acp/operations/${pathSegment(id)}/cancel`),
   listAcpOperationInteractions: (id, options) => request("GET", `/acp/operations/${pathSegment(id)}/interactions`, null, options),
   listAcpInteractions: (query, options) => request("GET", withQuery("/acp/interactions", query), null, options),
+  acpInteractionUrlOpenPath: (id) => `/api/acp/interactions/${pathSegment(id)}/url:open`,
   respondAcpInteraction: (id, data) => request("POST", `/acp/interactions/${pathSegment(id)}/respond`, data),
   cancelAcpInteraction: (id) => request("POST", `/acp/interactions/${pathSegment(id)}/cancel`),
   discoverMonoAgents: (options) => request("GET", "/acp/discovery/mono", null, options),

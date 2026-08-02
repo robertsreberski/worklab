@@ -6,7 +6,9 @@ import {
   acpFormInitialValues,
   acpFormResponse,
   acpFormValues,
+  acpInteractionCanAutoOpen,
   acpInteractionEventRequiresRefresh,
+  acpInteractionIsReconnectEvent,
   acpInteractionIsStale,
   acpPermissionResponse,
   normalizeAcpInteraction,
@@ -161,6 +163,13 @@ describe("ACP interaction UI helpers", () => {
       lastEvent: { type: "acp_interaction_resolved" },
     })).toBe(true);
     expect(acpInteractionEventRequiresRefresh({ type: "run_progress", lastEvent: { type: "text" } })).toBe(false);
+    expect(acpInteractionEventRequiresRefresh({ type: "worklab_stream_connected" })).toBe(true);
+    expect(acpInteractionIsReconnectEvent({ type: "worklab_stream_connected" })).toBe(true);
+  });
+
+  it("auto-opens only when another modal is not already active", () => {
+    expect(acpInteractionCanAutoOpen({ querySelector: () => null })).toBe(true);
+    expect(acpInteractionCanAutoOpen({ querySelector: () => ({ role: "dialog" }) })).toBe(false);
   });
 
   it("treats stale interaction conflicts as safe settlement races", () => {
@@ -175,6 +184,13 @@ describe("ACP interaction UI helpers", () => {
 
     expect(component).toContain('listAcpInteractions({ state: "pending" }');
     expect(component).toContain('useSSE("global"');
+    expect(component).toContain('method="post"');
+    expect(component).toContain('target="_blank"');
+    expect(component).toContain('rel="noopener noreferrer"');
+    expect(component).toContain("api.acpInteractionUrlOpenPath(active.id)");
+    expect(component).not.toContain("href={active.url}");
+    expect(component).toContain('document.addEventListener("visibilitychange"');
+    expect(component).toContain("Pending agent requests could not be loaded.");
     expect(component).not.toContain("localStorage");
     expect(appShell.match(/<AcpInteractionInbox \/>/g)).toHaveLength(1);
   });
