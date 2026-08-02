@@ -26,7 +26,6 @@ const MAX_RAW_LOG_BYTES = 16 * 1024 * 1024;
 const MAX_GLOBAL_PRIVATE_VALUES = 4_096;
 const MAX_GLOBAL_PRIVATE_VALUE_CHARS = 16 * 1024;
 const GLOBAL_PRIVATE_VALUE_BATCH_SIZE = 96;
-const MIN_GLOBAL_COPY_VALUE_CHARS = 8;
 const GLOBAL_PRIVACY_PROFILE_ID = "legacy-acp-global-copy";
 const LEGACY_PRIVACY_EVENT = Object.freeze({
   type: "privacy_redaction",
@@ -386,24 +385,72 @@ function relatedRows(db, run) {
   return { logs, comments, compactions, interactions, embeddings };
 }
 
+function mergePrivateValues(target, values) {
+  for (const value of values) target.add(value);
+}
+
+function addOwnedPrivateValues(scope, values, { profileId, runId, taskId } = {}) {
+  mergePrivateValues(scope.all, values);
+  for (const [map, key] of [
+    [scope.byProfile, profileId],
+    [scope.byRun, runId],
+    [scope.byTask, taskId],
+  ]) {
+    if (!key) continue;
+    if (!map.has(key)) map.set(key, new Set());
+    mergePrivateValues(map.get(key), values);
+  }
+}
+
+function finalizedPrivateScope(scope) {
+  const sorted = (values) => [...values].sort((left, right) => right.length - left.length);
+  return {
+    all: sorted(scope.all),
+    byProfile: new Map([...scope.byProfile].map(([key, values]) => [key, sorted(values)])),
+    byRun: new Map([...scope.byRun].map(([key, values]) => [key, sorted(values)])),
+    byTask: new Map([...scope.byTask].map(([key, values]) => [key, sorted(values)])),
+  };
+}
+
 function collectGlobalAcpPrivateValues(db, runs, jsonColumns, dataDir) {
-  const values = new Set();
+  const scope = {
+    all: new Set(),
+    byProfile: new Map(),
+    byRun: new Map(),
+    byTask: new Map(),
+  };
   if (tableExists(db, "acp_operations")) {
     const operations = db.prepare(`
-      SELECT kind, remote_session_id, request_json, result_json, error_json
+      SELECT profile_id, kind, remote_session_id, request_json, result_json, error_json
       FROM acp_operations ORDER BY rowid ASC
     `).all();
     for (const operation of operations) {
+      const values = new Set();
       addGlobalPrivateValue(values, operation.remote_session_id, { provider: true });
       for (const column of ["request_json", "result_json", "error_json"]) {
         collectPrivateValuesFromText(operation[column], values, {
           includeCursors: operation.kind === "list_sessions",
         });
       }
+      addOwnedPrivateValues(scope, values, { profileId: operation.profile_id });
+    }
+  }
+
+  if (tableExists(db, "acp_profiles") && hasColumn(db, "acp_profiles", "last_probe_result_json")) {
+    const profiles = db.prepare(`
+      SELECT id, last_probe_result_json, last_probe_error_json
+      FROM acp_profiles ORDER BY rowid ASC
+    `).all();
+    for (const profile of profiles) {
+      const values = new Set();
+      collectPrivateValuesFromText(profile.last_probe_result_json, values);
+      collectPrivateValuesFromText(profile.last_probe_error_json, values);
+      addOwnedPrivateValues(scope, values, { profileId: profile.id });
     }
   }
 
   for (const run of runs) {
+    const values = new Set();
     addGlobalPrivateValue(values, run.provider_session_id, { provider: true });
     for (const column of jsonColumns) {
       collectPrivateValuesFromText(run[column], values, { includeCursors: true });
@@ -425,8 +472,12 @@ function collectGlobalAcpPrivateValues(db, runs, jsonColumns, dataDir) {
     for (const seed of rawLog.seeds) {
       collectPrivateValuesFromObject(seed, values, { includeCursors: true });
     }
+    addOwnedPrivateValues(scope, values, {
+      runId: run.id,
+      taskId: run.task_id,
+    });
   }
-  return [...values].sort((left, right) => right.length - left.length);
+  return finalizedPrivateScope(scope);
 }
 
 function preparedRunValue(run, jsonColumns, textColumns, related, rawLog) {
@@ -517,12 +568,12 @@ function sanitizePrivateCopies(value, privateValues, failureValue, profileId = G
       profileId,
       failureValue: null,
     });
-    const wrapped = boundary.sanitizeEvent({
-      privateSeeds: batch.map((privateValue) => ({ sessionId: privateValue })),
-      value: sanitized,
-    });
-    if (!wrapped) return failureValue;
-    sanitized = wrapped.value;
+    const wrapped = boundary.sanitizeEvent([
+      batch.map((privateValue) => ({ sessionId: privateValue })),
+      sanitized,
+    ]);
+    if (!Array.isArray(wrapped)) return failureValue;
+    sanitized = wrapped[1];
   }
   return sanitized;
 }
@@ -569,6 +620,21 @@ function deleteEmbeddingRows(db, rows) {
     changes += remove.run(row.id).changes;
   }
   return changes;
+}
+
+function globallyDistinctivePrivateValue(value) {
+  if (value.length < 24) return false;
+  const classes = [/[a-z]/u, /[A-Z]/u, /[0-9]/u, /[^A-Za-z0-9]/u]
+    .filter((pattern) => pattern.test(value)).length;
+  return classes >= 3 || (value.length >= 32 && classes >= 2) || value.length >= 48;
+}
+
+function ownedPrivateValues(privateScope, map, key) {
+  const values = [
+    ...privateScope.all.filter(globallyDistinctivePrivateValue),
+    ...(map.get(key) || []),
+  ];
+  return [...new Set(values)].sort((left, right) => right.length - left.length);
 }
 
 function applyRunPlan(db, run, plan, jsonColumns, textColumns, related) {
@@ -794,9 +860,9 @@ function scrubStandaloneAcpOperations(db) {
   return changes;
 }
 
-function scrubDurableAcpPrivateCopies(db, runs, privateValues) {
-  if (!privateValues.length) return 0;
-  const globallyDistinctive = privateValues.filter((value) => value.length >= MIN_GLOBAL_COPY_VALUE_CHARS);
+function scrubDurableAcpPrivateCopies(db, runs, privateScope) {
+  if (!privateScope.all.length) return 0;
+  const globallyDistinctive = privateScope.all.filter(globallyDistinctivePrivateValue);
   const runIds = new Set(runs.map((run) => run.id));
   const runProfiles = new Map(runs.map((run) => [run.id, profileIdForRun(run)]));
   const taskIds = new Set(runs.map((run) => run.task_id).filter(Boolean));
@@ -813,7 +879,9 @@ function scrubDurableAcpPrivateCopies(db, runs, privateValues) {
           UPDATE tasks SET ${columns.map((column) => `${column} = ?`).join(", ")} WHERE id = ?
         `);
         for (const row of db.prepare(`SELECT id, ${columns.join(", ")} FROM tasks`).all()) {
-          const values = taskIds.has(row.id) ? privateValues : globallyDistinctive;
+          const values = taskIds.has(row.id)
+            ? ownedPrivateValues(privateScope, privateScope.byTask, row.id)
+            : globallyDistinctive;
           if (!values.length) continue;
           const scrubbed = [
             ...jsonColumns.map((column) => scrubPrivateJson(row[column], values, TASK_JSON_DEFAULTS.get(column))),
@@ -831,7 +899,9 @@ function scrubDurableAcpPrivateCopies(db, runs, privateValues) {
       for (const row of db.prepare("SELECT id, task_id, body FROM task_comments").all()) {
         const linked = taskIds.has(row.task_id);
         if (linked) linkedCommentIds.add(row.id);
-        const values = linked ? privateValues : globallyDistinctive;
+        const values = linked
+          ? ownedPrivateValues(privateScope, privateScope.byTask, row.task_id)
+          : globallyDistinctive;
         const body = scrubPrivateText(row.body, values);
         if (body !== row.body) changes += update.run(body, row.id).changes;
       }
@@ -846,7 +916,9 @@ function scrubDurableAcpPrivateCopies(db, runs, privateValues) {
           UPDATE task_runs SET ${columns.map((column) => `${column} = ?`).join(", ")} WHERE id = ?
         `);
         for (const row of db.prepare(`SELECT id, ${columns.join(", ")} FROM task_runs`).all()) {
-          const values = runIds.has(row.id) ? privateValues : globallyDistinctive;
+          const values = runIds.has(row.id)
+            ? ownedPrivateValues(privateScope, privateScope.byRun, row.id)
+            : globallyDistinctive;
           if (!values.length) continue;
           const scrubbed = [
             ...jsonColumns.map((column) => scrubPrivateJson(
@@ -867,7 +939,9 @@ function scrubDurableAcpPrivateCopies(db, runs, privateValues) {
     if (tableExists(db, "agent_logs") && hasColumn(db, "agent_logs", "events")) {
       const update = db.prepare("UPDATE agent_logs SET events = ? WHERE id = ?");
       for (const row of db.prepare("SELECT id, task_run_id, events FROM agent_logs").all()) {
-        const values = runIds.has(row.task_run_id) ? privateValues : globallyDistinctive;
+        const values = runIds.has(row.task_run_id)
+          ? ownedPrivateValues(privateScope, privateScope.byRun, row.task_run_id)
+          : globallyDistinctive;
         const events = scrubPrivateJson(
           row.events,
           values,
@@ -885,7 +959,9 @@ function scrubDurableAcpPrivateCopies(db, runs, privateValues) {
       for (const row of db.prepare(`
         SELECT id, task_run_id, summary, metadata_json, error_text FROM run_compactions
       `).all()) {
-        const values = runIds.has(row.task_run_id) ? privateValues : globallyDistinctive;
+        const values = runIds.has(row.task_run_id)
+          ? ownedPrivateValues(privateScope, privateScope.byRun, row.task_run_id)
+          : globallyDistinctive;
         const scrubbed = {
           summary: scrubPrivateText(row.summary, values),
           metadata: scrubPrivateJson(
@@ -911,8 +987,9 @@ function scrubDurableAcpPrivateCopies(db, runs, privateValues) {
       for (const row of db.prepare(`
         SELECT id, last_probe_result_json, last_probe_error_json FROM acp_profiles
       `).all()) {
-        const result = scrubPrivateJson(row.last_probe_result_json, privateValues, {}, row.id);
-        const error = scrubPrivateJson(row.last_probe_error_json, privateValues, {}, row.id);
+        const values = ownedPrivateValues(privateScope, privateScope.byProfile, row.id);
+        const result = scrubPrivateJson(row.last_probe_result_json, values, {}, row.id);
+        const error = scrubPrivateJson(row.last_probe_error_json, values, {}, row.id);
         if (result !== row.last_probe_result_json || error !== row.last_probe_error_json) {
           changes += update.run(result, error, row.id).changes;
         }
@@ -926,9 +1003,10 @@ function scrubDurableAcpPrivateCopies(db, runs, privateValues) {
       for (const row of db.prepare(`
         SELECT id, profile_id, request_json, result_json, error_json FROM acp_operations
       `).all()) {
-        const request = scrubPrivateJson(row.request_json, privateValues, {}, row.profile_id);
-        const result = scrubPrivateJson(row.result_json, privateValues, {}, row.profile_id);
-        const error = scrubPrivateJson(row.error_json, privateValues, {}, row.profile_id);
+        const values = ownedPrivateValues(privateScope, privateScope.byProfile, row.profile_id);
+        const request = scrubPrivateJson(row.request_json, values, {}, row.profile_id);
+        const result = scrubPrivateJson(row.result_json, values, {}, row.profile_id);
+        const error = scrubPrivateJson(row.error_json, values, {}, row.profile_id);
         if (request !== row.request_json || result !== row.result_json || error !== row.error_json) {
           changes += update.run(request, result, error, row.id).changes;
         }
@@ -944,14 +1022,15 @@ function scrubDurableAcpPrivateCopies(db, runs, privateValues) {
       for (const row of db.prepare(`
         SELECT id, profile_id, protocol_request_id, request_schema_json, disposition FROM acp_interactions
       `).all()) {
-        const protocolRequestId = scrubPrivateText(row.protocol_request_id, privateValues);
+        const values = ownedPrivateValues(privateScope, privateScope.byProfile, row.profile_id);
+        const protocolRequestId = scrubPrivateText(row.protocol_request_id, values);
         const requestSchema = scrubPrivateJson(
           row.request_schema_json,
-          privateValues,
+          values,
           {},
           row.profile_id,
         );
-        const disposition = scrubPrivateText(row.disposition, privateValues);
+        const disposition = scrubPrivateText(row.disposition, values);
         if (protocolRequestId !== row.protocol_request_id
           || requestSchema !== row.request_schema_json
           || disposition !== row.disposition) {
@@ -973,9 +1052,10 @@ function scrubDurableAcpPrivateCopies(db, runs, privateValues) {
         SELECT id, task_run_id, arguments_summary, model, reason FROM task_run_approvals
       `).all()) {
         if (!runIds.has(row.task_run_id)) continue;
-        const summary = scrubPrivateText(row.arguments_summary, privateValues);
-        const model = scrubPrivateText(row.model, privateValues);
-        const reason = scrubPrivateText(row.reason, privateValues);
+        const values = ownedPrivateValues(privateScope, privateScope.byRun, row.task_run_id);
+        const summary = scrubPrivateText(row.arguments_summary, values);
+        const model = scrubPrivateText(row.model, values);
+        const reason = scrubPrivateText(row.reason, values);
         if (summary !== row.arguments_summary || model !== row.model || reason !== row.reason) {
           changes += update.run(summary, model, reason, row.id).changes;
         }
@@ -990,9 +1070,10 @@ function scrubDurableAcpPrivateCopies(db, runs, privateValues) {
         SELECT id, task_run_id, text, error_text, response_json FROM slack_delivery_log
       `).all()) {
         if (!runIds.has(row.task_run_id)) continue;
-        const text = scrubPrivateText(row.text, privateValues);
-        const error = scrubPrivateText(row.error_text, privateValues);
-        const response = scrubPrivateJson(row.response_json, privateValues, {});
+        const values = ownedPrivateValues(privateScope, privateScope.byRun, row.task_run_id);
+        const text = scrubPrivateText(row.text, values);
+        const error = scrubPrivateText(row.error_text, values);
+        const response = scrubPrivateJson(row.response_json, values, {});
         if (text !== row.text || error !== row.error_text || response !== row.response_json) {
           changes += update.run(text, error, response, row.id).changes;
         }
@@ -1070,7 +1151,7 @@ export function scrubLegacyAcpSessionData(db) {
   const runs = acpRuns(db, jsonColumns, textColumns);
   const legacyFootprint = hasLegacyAcpFootprint(db, runs);
   const dataDir = databaseDataDir(db);
-  const privateValues = collectGlobalAcpPrivateValues(db, runs, jsonColumns, dataDir);
+  const privateScope = collectGlobalAcpPrivateValues(db, runs, jsonColumns, dataDir);
   let databaseChanges = 0;
   let filesChanged = 0;
   const previousSecureDelete = db.pragma("secure_delete", { simple: true });
@@ -1086,7 +1167,7 @@ export function scrubLegacyAcpSessionData(db) {
       const plan = sanitized || failedClosedValue(run, jsonColumns, textColumns, related, rawLog, profileId);
       plan.rawEvents = sanitizePrivateCopies(
         plan.rawEvents,
-        privateValues,
+        ownedPrivateValues(privateScope, privateScope.byRun, run.id),
         [LEGACY_PRIVACY_EVENT],
         profileId,
       );
@@ -1099,7 +1180,7 @@ export function scrubLegacyAcpSessionData(db) {
     }
     databaseChanges += scrubAcpProfileProbeData(db);
     databaseChanges += scrubStandaloneAcpOperations(db);
-    databaseChanges += scrubDurableAcpPrivateCopies(db, runs, privateValues);
+    databaseChanges += scrubDurableAcpPrivateCopies(db, runs, privateScope);
   } finally {
     db.pragma(`secure_delete = ${Number(previousSecureDelete) || 0}`);
   }

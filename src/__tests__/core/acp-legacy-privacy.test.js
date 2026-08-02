@@ -108,7 +108,7 @@ describe("legacy ACP session privacy migration", () => {
     const rawCursor = "RAW_CURSOR_SECRET";
     const rawNextCursor = "RAW_NEXT_CURSOR_SECRET";
     const rawPageCursor = "RAW_PAGE_CURSOR_ALIAS_SECRET";
-    const rawPageToken = "RAW_PAGE_TOKEN_ALIAS_SECRET";
+    const rawPageToken = "RAW_PAGE_TOKEN_ALIAS_SECRET_493827";
     const opaqueCursorRaw = "RAW_OPAQUE_CURSOR_COPY";
     const nonAcpSession = "NON_ACP_SESSION_MUST_SURVIVE";
     const providerSessionId = opaqueSessionId(handleOnlySession);
@@ -183,7 +183,7 @@ describe("legacy ACP session privacy migration", () => {
     `).run(
       `promoted ${rawPageToken}`,
       `promoted ${malformedProviderId}`,
-      JSON.stringify([{ label: rawPageCursor }]),
+      JSON.stringify([{ label: rawPageToken }]),
     );
     db.prepare(`
       INSERT INTO tasks (id, title, created_at, updated_at)
@@ -505,6 +505,140 @@ describe("legacy ACP session privacy migration", () => {
       comments: db.prepare("SELECT * FROM task_comments ORDER BY id").all(),
       raw: readFileSync(rawPath, "utf8"),
     })).toBe(stableRows);
+    db.close();
+  });
+
+  it("keeps low-entropy private values inside their owning profile and task graph", () => {
+    const root = mkdtempSync(join(tmpdir(), "worklab-acp-owned-privacy-"));
+    roots.push(root);
+    const dbPath = join(root, "worklab.db");
+    const otherProfileId = "00000000-0000-4000-8000-000000000002";
+    const probePrivateValue = "RAW_PROFILE_PROBE_COPY_493827";
+    const db = openDb(dbPath);
+    runMigrations(db);
+    insertAcpFixture(db);
+    db.prepare(`
+      INSERT INTO agents (name, display_name, sdk, model, execution_mode, created_at, updated_at)
+      VALUES ('external-b', 'External B', 'acp', ?, 'acp', 1, 1)
+    `).run(`acp:${otherProfileId}`);
+    db.prepare(`
+      INSERT INTO acp_profiles (
+        id, agent_name, driver, command, args_json, env_keys_json,
+        configuration_owner, workspace_owner, mcp_owner,
+        last_probe_result_json, created_at, updated_at
+      ) VALUES (?, 'external-b', 'generic', ?, '[]', '[]', 'client', 'client', 'client', ?, 1, 1)
+    `).run(
+      otherProfileId,
+      process.execPath,
+      JSON.stringify({ status: "Java password", label: "alpha" }),
+    );
+    db.prepare(`
+      UPDATE acp_profiles SET last_probe_result_json = ? WHERE id = ?
+    `).run(
+      JSON.stringify({
+        sessionId: probePrivateValue,
+        copied: `Java password ${probePrivateValue}`,
+      }),
+      PROFILE_ID,
+    );
+    db.prepare(`
+      INSERT INTO tasks (
+        id, title, plan_body, pending_actions_json, created_at, updated_at
+      ) VALUES ('task-b', 'Task B', 'Java password', ?, 1, 1)
+    `).run(JSON.stringify([{ label: "alpha", value: "Java password" }]));
+    db.prepare(`
+      UPDATE tasks SET plan_body = 'Java password', pending_actions_json = ?
+      WHERE id = 'task-acp'
+    `).run(JSON.stringify([{ label: "alpha", value: "Java password" }]));
+    db.prepare(`
+      INSERT INTO task_runs (
+        id, task_id, mode, stage, agent_name, provider_kind, status,
+        process_status, started_at, diagnostics_json
+      ) VALUES ('run-a-owned', 'task-acp', 'execute', 'execute', 'external',
+        'acp', 'complete', 'succeeded', 1, ?)
+    `).run(JSON.stringify({ pageToken: "a", nextToken: "password", copied: "Java password" }));
+    db.prepare(`
+      INSERT INTO task_runs (
+        id, task_id, mode, stage, agent_name, provider_kind, status,
+        process_status, started_at, diagnostics_json
+      ) VALUES ('run-b-owned', 'task-b', 'execute', 'execute', 'external-b',
+        'acp', 'complete', 'succeeded', 2, ?)
+    `).run(JSON.stringify({ status: "Java password", label: "alpha" }));
+    db.prepare(`
+      INSERT INTO acp_operations (
+        id, profile_id, kind, state, request_json, result_json, error_json,
+        created_at, updated_at, completed_at
+      ) VALUES ('operation-a-owned', ?, 'list_sessions', 'succeeded', '{}', ?, '{}', 1, 1, 1)
+    `).run(
+      PROFILE_ID,
+      JSON.stringify({ pageToken: "a", nextToken: "password", copied: `Java password ${probePrivateValue}` }),
+    );
+    db.prepare(`
+      INSERT INTO acp_operations (
+        id, profile_id, kind, state, request_json, result_json, error_json,
+        created_at, updated_at, completed_at
+      ) VALUES ('operation-b-owned', ?, 'probe', 'succeeded', ?, ?, '{}', 2, 2, 2)
+    `).run(
+      otherProfileId,
+      JSON.stringify({ label: "alpha" }),
+      JSON.stringify({ status: "Java password", label: "alpha" }),
+    );
+    db.prepare(`
+      INSERT INTO acp_interactions (
+        id, profile_id, operation_id, protocol_request_id, kind,
+        request_schema_json, state, disposition, created_at, updated_at
+      ) VALUES ('interaction-a-owned', ?, 'operation-a-owned', 'request-a',
+        'form', ?, 'submitted', 'accept', 1, 1)
+    `).run(
+      PROFILE_ID,
+      JSON.stringify({ description: `Java password ${probePrivateValue}` }),
+    );
+    db.prepare(`
+      INSERT INTO acp_interactions (
+        id, profile_id, operation_id, protocol_request_id, kind,
+        request_schema_json, state, disposition, created_at, updated_at
+      ) VALUES ('interaction-b-owned', ?, 'operation-b-owned', 'request-b',
+        'form', ?, 'submitted', 'accept', 2, 2)
+    `).run(
+      otherProfileId,
+      JSON.stringify({ description: "Java password", label: "alpha" }),
+    );
+    db.prepare("DELETE FROM schema_meta WHERE key = 'acp_legacy_session_privacy_compacted_v1'").run();
+    db.prepare("UPDATE schema_meta SET value = '48' WHERE key = 'version'").run();
+
+    runMigrations(db);
+
+    const taskA = db.prepare("SELECT plan_body, pending_actions_json FROM tasks WHERE id = 'task-acp'").get();
+    expect(taskA.plan_body).not.toContain("password");
+    expect(taskA.plan_body).not.toContain("Java");
+    expect(taskA.pending_actions_json).not.toContain("password");
+    expect(db.prepare("SELECT plan_body, pending_actions_json FROM tasks WHERE id = 'task-b'").get())
+      .toEqual({
+        plan_body: "Java password",
+        pending_actions_json: '[{"label":"alpha","value":"Java password"}]',
+      });
+    expect(db.prepare(`
+      SELECT last_probe_result_json FROM acp_profiles WHERE id = ?
+    `).get(otherProfileId).last_probe_result_json)
+      .toBe('{"status":"Java password","label":"alpha"}');
+    expect(db.prepare(`
+      SELECT request_json, result_json FROM acp_operations WHERE id = 'operation-b-owned'
+    `).get()).toEqual({
+      request_json: '{"label":"alpha"}',
+      result_json: '{"status":"Java password","label":"alpha"}',
+    });
+    expect(db.prepare(`
+      SELECT request_schema_json FROM acp_interactions WHERE id = 'interaction-b-owned'
+    `).get().request_schema_json)
+      .toBe('{"description":"Java password","label":"alpha"}');
+    expect(db.prepare(`
+      SELECT last_probe_result_json FROM acp_profiles WHERE id = ?
+    `).get(PROFILE_ID).last_probe_result_json).not.toContain(probePrivateValue);
+    expect(db.prepare(`
+      SELECT request_schema_json FROM acp_interactions WHERE id = 'interaction-a-owned'
+    `).get().request_schema_json).not.toContain(probePrivateValue);
+    expect(databaseContains(dbPath, probePrivateValue)).toBe(false);
+    expect(databaseContains(`${dbPath}-wal`, probePrivateValue)).toBe(false);
     db.close();
   });
 
