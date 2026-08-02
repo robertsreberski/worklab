@@ -133,6 +133,23 @@ function sanitizeSession(value) {
   return boundedObject(session);
 }
 
+function boundedSessionListResult({ sessions, nextCursor, truncated }) {
+  const result = {
+    sessions: [],
+    ...(nextCursor ? { nextCursor } : {}),
+    truncated: Boolean(truncated),
+  };
+  for (const session of sessions) {
+    result.sessions.push(session);
+    if (Buffer.byteLength(JSON.stringify(result), "utf8") <= MAX_PERSISTED_JSON_BYTES) continue;
+    result.sessions.pop();
+    result.truncated = true;
+    break;
+  }
+  if (result.sessions.length < sessions.length) result.truncated = true;
+  return result;
+}
+
 function sanitizeAuthMethod(value) {
   const method = picked(value, {
     id: "id",
@@ -229,9 +246,9 @@ export function sanitizeAcpOperationResult(kind, value) {
     try {
       nextCursor = normalizeAcpSessionCursor(rawNextCursor);
     } catch { /* omit an unusable remote cursor without corrupting it */ }
-    return boundedObject({
+    return boundedSessionListResult({
       sessions,
-      ...(nextCursor ? { nextCursor } : {}),
+      nextCursor,
       truncated: source.sessions?.length > sessions.length
         || (typeof rawNextCursor === "string" && rawNextCursor.length > 0),
     });
