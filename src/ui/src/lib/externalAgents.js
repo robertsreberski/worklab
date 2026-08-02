@@ -1,5 +1,23 @@
 const OWNER_VALUES = new Set(["client", "agent"]);
 
+export const UNSUPPORTED_ACP_CLIENT_CAPABILITIES = Object.freeze([
+  Object.freeze({
+    id: "filesystem",
+    label: "Filesystem requests",
+    description: "Unavailable — Worklab does not implement ACP client file read or write handlers.",
+  }),
+  Object.freeze({
+    id: "terminal",
+    label: "Terminal requests",
+    description: "Unavailable — Worklab does not implement the complete ACP client terminal lifecycle.",
+  }),
+  Object.freeze({
+    id: "mcp",
+    label: "Client MCP servers",
+    description: "Unavailable — Worklab starts ACP sessions without client-supplied MCP servers.",
+  }),
+]);
+
 function firstDefined(...values) {
   return values.find((value) => value !== undefined && value !== null);
 }
@@ -113,10 +131,7 @@ export function externalAgentDraft({ agent = {}, profile = {} } = {}) {
     mcpOwner: normalized.mcpOwner,
     canonicalWorkspace: normalized.canonicalWorkspace,
     probeTimeoutMs: normalized.probeTimeoutMs,
-    allowFilesystem: normalized.permissionsPolicy.filesystem,
-    allowTerminal: normalized.permissionsPolicy.terminal,
     allowNetwork: normalized.permissionsPolicy.network,
-    allowMcp: normalized.permissionsPolicy.mcp,
     configPolicyText: jsonObjectText(normalized.configPolicy),
     sessionPolicyText: jsonObjectText(normalized.sessionPolicy),
   };
@@ -143,10 +158,10 @@ export function externalAgentPayload(draft = {}) {
     canonicalWorkspace: text(draft.canonicalWorkspace) || null,
     probeTimeoutMs: finiteNumber(draft.probeTimeoutMs, 30_000),
     permissionsPolicy: {
-      filesystem: !!draft.allowFilesystem,
-      terminal: !!draft.allowTerminal,
+      filesystem: false,
+      terminal: false,
       network: !!draft.allowNetwork,
-      mcp: !!draft.allowMcp,
+      mcp: false,
     },
     configPolicy: parseJsonObject(draft.configPolicyText, "Configuration policy"),
     sessionPolicy: parseJsonObject(draft.sessionPolicyText, "Session policy"),
