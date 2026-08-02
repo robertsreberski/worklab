@@ -40,15 +40,6 @@ import {
   insertApprovalRequest,
   recordApprovalDecision,
 } from "../core/db/queries/task-run-approvals.js";
-import {
-  cancelAcpInteraction,
-  claimAcpInteractionResponse,
-  expirePendingAcpInteractionsForRun,
-  finalizeAcpInteractionResponse,
-  getAcpInteractionById,
-  insertAcpInteractionRequest,
-  releaseAcpInteractionResponse,
-} from "../core/db/queries/acp-interactions.js";
 import { buildTranscriptTailSnapshot } from "@mono-agent/agent-runtime/agent/transcript.js";
 import {
   CONTEXT_BLOAT_TOP_EVENTS,
@@ -61,6 +52,7 @@ import {
   makeRawLogPath,
   truncateDisplayEvent,
 } from "./spawn-worker/log-events.js";
+import { createAcpInteractionControls, expireAcpInteractionsForRun, persistAcpInteractionRequest } from "./spawn-worker/acp-interactions.js";
 
 const FINALISATION_COMPLETION_TOOL_NAMES = new Set(["journal_summary", "worktree_sync", "todo_write"]);
 
@@ -661,22 +653,7 @@ export function spawnWorker({
     }
     if (rawEvent.type === "acp_interaction_requested" && rawEvent.interaction_id) {
       try {
-        const request = rawEvent.request && typeof rawEvent.request === "object"
-          ? rawEvent.request
-          : {};
-        const interactionKind = rawEvent.interaction_kind === "permission"
-          ? "permission"
-          : request.mode === "url" ? "url" : "form";
-        insertAcpInteractionRequest(db, {
-          id: String(rawEvent.interaction_id),
-          profileId: String(rawEvent.profile_id || ""),
-          taskRunId: runId,
-          protocolRequestId: String(rawEvent.protocol_request_id || rawEvent.interaction_id),
-          kind: interactionKind,
-          requestSchemaJson: JSON.stringify(request),
-          createdAt: Number(rawEvent.ts) || Date.now(),
-          updatedAt: Number(rawEvent.ts) || Date.now(),
-        });
+        persistAcpInteractionRequest(db, runId, rawEvent);
       } catch (err) {
         logger?.warn?.({ err: err.message, runId }, "failed to persist ACP interaction request");
         writeControlMessage({
@@ -784,64 +761,7 @@ export function spawnWorker({
     return { ok: true, row };
   }
 
-  async function sendAcpInteractionResponse({ interactionId, response, disposition } = {}) {
-    const existing = interactionId ? getAcpInteractionById(db, interactionId) : null;
-    if (!existing || existing.task_run_id !== runId) {
-      return { ok: false, code: "no_pending_interaction", message: "ACP interaction is not pending for this run" };
-    }
-    let claimed;
-    try {
-      claimed = claimAcpInteractionResponse(db, interactionId, { disposition });
-    } catch {
-      return { ok: false, code: "invalid_response", message: "ACP interaction response is invalid" };
-    }
-    if (!claimed) {
-      return { ok: false, code: "no_pending_interaction", message: "ACP interaction is not pending" };
-    }
-    try {
-      await writeControlMessage({
-        type: "acp_interaction_response",
-        interaction_id: interactionId,
-        response,
-      });
-    } catch (err) {
-      releaseAcpInteractionResponse(db, interactionId);
-      return { ok: false, code: "delivery_failed", message: err?.message || "failed to deliver ACP interaction response" };
-    }
-    const row = finalizeAcpInteractionResponse(db, interactionId);
-    emitEvent({
-      type: "acp_interaction_resolved",
-      interaction_id: interactionId,
-      interaction_kind: existing.kind,
-      disposition,
-      ts: Date.now(),
-    });
-    return { ok: true, row };
-  }
-
-  async function sendAcpInteractionCancel({ interactionId } = {}) {
-    const existing = interactionId ? getAcpInteractionById(db, interactionId) : null;
-    if (!existing || existing.task_run_id !== runId) {
-      return { ok: false, code: "no_pending_interaction", message: "ACP interaction is not pending for this run" };
-    }
-    const row = cancelAcpInteraction(db, interactionId);
-    if (!row) {
-      return { ok: false, code: "no_pending_interaction", message: "ACP interaction is not pending" };
-    }
-    try {
-      await writeControlMessage({ type: "acp_interaction_cancel", interaction_id: interactionId });
-    } catch (err) {
-      return { ok: false, code: "delivery_failed", message: err?.message || "failed to cancel ACP interaction" };
-    }
-    emitEvent({
-      type: "acp_interaction_resolved",
-      interaction_id: interactionId,
-      interaction_kind: existing.kind,
-      disposition: "cancel",
-      ts: Date.now(),
-    });
-    return { ok: true, row };
-  }
+  const acpInteractionControls = createAcpInteractionControls({ db, runId, writeControlMessage, emitEvent });
 
   async function sendLiveMessage(message) {
     const normalized = normalizeLiveInputBody(message?.body);
@@ -1166,7 +1086,7 @@ export function spawnWorker({
       // exited mid-prompt). Pending rows would otherwise hang forever.
       try { expirePendingApprovalsForRun(db, runId, { reason: "run_terminated" }); }
       catch { /* best effort */ }
-      try { expirePendingAcpInteractionsForRun(db, runId, { disposition: "run_ended" }); }
+      try { expireAcpInteractionsForRun(db, runId); }
       catch { /* best effort */ }
 
       broker.broadcast(runId, { type: "done", exitCode: code });
@@ -1231,8 +1151,8 @@ export function spawnWorker({
     drain,
     sendLiveMessage,
     sendApprovalDecision,
-    sendAcpInteractionResponse,
-    sendAcpInteractionCancel,
+    sendAcpInteractionResponse: acpInteractionControls.respond,
+    sendAcpInteractionCancel: acpInteractionControls.cancel,
     get warnings() { return [...warnings]; },
     get exitWatchdogFired() { return exitWatchdogFired; },
     get drainRequested() { return drainRequested; },

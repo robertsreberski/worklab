@@ -60,6 +60,7 @@ import {
 } from "./watcher/run-handler.js";
 import { checkBudget, recordPerRunBudgetOverage } from "./watcher/budget.js";
 import { spawnTaskRun } from "./watcher/spawn-run.js";
+import { createAcpRunInteractionDispatcher } from "./watcher/acp-interactions.js";
 import { findDrainedResumeCandidates, reconcileStaleRunningRuns } from "./watcher/stale-runs.js";
 import { createLeadCycleCoordinator } from "./watcher/lead-cycle-coordinator.js";
 import { createWorktreeReconciler } from "./watcher/worktree-reconciler.js";
@@ -1020,7 +1021,6 @@ export function createTaskWatcher({
     }
     return entry.handle.sendLiveMessage(message);
   }
-
   async function sendRunApprovalDecision(runId, payload) {
     const entry = activeByRunId.get(runId);
     if (!entry) return { ok: false, code: "run_not_active", message: "run is not active" };
@@ -1029,25 +1029,6 @@ export function createTaskWatcher({
     }
     return entry.handle.sendApprovalDecision(payload);
   }
-
-  async function sendRunAcpInteractionResponse({ runId, ...payload } = {}) {
-    const entry = activeByRunId.get(runId);
-    if (!entry) return { ok: false, code: "run_not_active", message: "run is not active" };
-    if (typeof entry.handle?.sendAcpInteractionResponse !== "function") {
-      return { ok: false, code: "acp_interaction_unsupported", message: "worker does not accept ACP interactions" };
-    }
-    return entry.handle.sendAcpInteractionResponse(payload);
-  }
-
-  async function sendRunAcpInteractionCancel({ runId, ...payload } = {}) {
-    const entry = activeByRunId.get(runId);
-    if (!entry) return { ok: false, code: "run_not_active", message: "run is not active" };
-    if (typeof entry.handle?.sendAcpInteractionCancel !== "function") {
-      return { ok: false, code: "acp_interaction_unsupported", message: "worker does not accept ACP interactions" };
-    }
-    return entry.handle.sendAcpInteractionCancel(payload);
-  }
-
   async function shutdown({ drainTimeoutMs: overrideDrainMs } = {}) {
     leadCycle.shutdown();
     for (const timer of recoveryTimers) clearTimeout(timer);
@@ -1206,8 +1187,7 @@ export function createTaskWatcher({
     isActive: (taskId) => active.has(taskId),
     isRunActive: (runId) => activeByRunId.has(runId),
     sendRunApprovalDecision,
-    sendRunAcpInteractionResponse,
-    sendRunAcpInteractionCancel,
+    ...createAcpRunInteractionDispatcher(activeByRunId),
     getRunLiveInputState,
     sendRunMessage,
     maybeAutoStart: maybeAutoStartTask,
