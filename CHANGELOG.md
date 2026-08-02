@@ -43,7 +43,7 @@
   comments, knowledge, memory, attachments, and run results remain in the
   archive, so the result must still be handled as sensitive private data.
 
-- Upgraded `@mono-agent/agent-runtime` from 0.4.1 to 0.18.0. Runtime 0.18.0
+- Upgraded `@mono-agent/agent-runtime` from 0.4.1 to 0.18.2. The 0.18 series
   adds the shared ACP client/control facade consumed by Worklab, including
   bounded typed updates, opaque provider-session handles, mono-agent discovery,
   and private interaction handoffs.
@@ -59,10 +59,10 @@
     `subagent_mode` choices no longer inject roster members or gate provider-
     native helpers; the physical database column remains temporarily as an
     inert downgrade tombstone and is never returned by the API or MCP tools.
-  - Claude all-mode agents retain `TaskOutput` and `TaskStop`, so they can
-    inspect or cancel native helpers launched in the background. Worklab still
-    excludes native todo and task-state tools that would duplicate its durable
-    task model.
+  - Claude all-mode and planning agents retain `TaskOutput` and `TaskStop`, so
+    they can inspect or cancel native helpers launched in the background.
+    Worklab still excludes native todo and task-state tools that would duplicate
+    its durable task model.
   - Claude's native user/project/local settings are a trusted-code boundary:
     they may load hooks, plugins, and provider-native skills in addition to
     agent profiles. Worklab-managed Skills allowlists do not sandbox that
