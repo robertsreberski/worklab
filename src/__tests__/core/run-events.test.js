@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { makeTestDb } from "../helpers/test-db.js";
-import { buildRunLifecycleEvent, tailRunEventsByVisibleItems } from "../../core/run-events.js";
+import {
+  buildRunLifecycleEvent,
+  SUBAGENT_ACTIVITY_ROW_LIMIT,
+  tailRunEventsByVisibleItems,
+} from "../../core/run-events.js";
 
 function seedAgent(db, name = "coder") {
   const now = Date.now();
@@ -102,5 +106,66 @@ describe("run event visible tail", () => {
       2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
       15, 16, 17, 18, 19, 20, 21, 22, 23,
     ]);
+  });
+
+  it("counts a native subagent group as one item and bounds its nested live rows", () => {
+    const parent = {
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id: "spawn-1", name: "Agent", input: { prompt: "Review" } }] },
+      _event_seq: 1,
+    };
+    const opened = {
+      type: "subagent_activity",
+      phase: "agent_started",
+      id: "agent:spawn-1",
+      subagent: { id: "spawn-1", nativeId: "child-1", name: "reviewer", callIndex: 0 },
+      _event_seq: 2,
+    };
+    const nested = Array.from({ length: SUBAGENT_ACTIVITY_ROW_LIMIT + 25 }, (_, index) => ({
+      type: "subagent_activity",
+      phase: "message",
+      id: `agent:spawn-1:message-${index}`,
+      kind: "text",
+      content: `child ${index}`,
+      subagent: { id: "spawn-1", nativeId: "child-1", name: "reviewer", callIndex: 0 },
+      _event_seq: index + 3,
+    }));
+    const closed = {
+      type: "subagent_activity",
+      phase: "agent_completed",
+      id: "agent:spawn-1",
+      subagent: { id: "spawn-1", nativeId: "child-1", name: "reviewer", callIndex: 0 },
+      _event_seq: nested.length + 3,
+    };
+    const later = Array.from({ length: 9 }, (_, index) => textEvent(nested.length + 4 + index));
+
+    const tail = tailRunEventsByVisibleItems([parent, opened, ...nested, closed, ...later], 10);
+
+    expect(tail[0]).toBe(parent);
+    expect(tail).toContain(closed);
+    const retainedNested = tail.filter((event) => event.type === "subagent_activity"
+      && !event.phase.startsWith("agent_"));
+    expect(retainedNested).toHaveLength(SUBAGENT_ACTIVITY_ROW_LIMIT);
+    expect(tail.find((event) => event.phase === "agent_started")?._worklab_subagent_omitted_rows).toBe(25);
+    expect(tail.slice(-9)).toEqual(later);
+  });
+
+  it("does not attach subagent rows to a colliding non-spawn tool id", () => {
+    const events = [
+      { type: "tool_use", tool_use_id: "read-1", name: "Read", input: {}, _event_seq: 1 },
+      {
+        type: "subagent_activity",
+        phase: "agent_started",
+        id: "agent:read-1",
+        subagent: { id: "read-1", name: "reviewer", callIndex: 0 },
+        _event_seq: 2,
+      },
+      ...Array.from({ length: 9 }, (_, index) => textEvent(index + 3)),
+    ];
+
+    const tail = tailRunEventsByVisibleItems(events, 10);
+
+    expect(tail).not.toContain(events[0]);
+    expect(tail).toContain(events[1]);
   });
 });

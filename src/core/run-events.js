@@ -3,6 +3,7 @@ function normalizedProcessStatus(run) {
 }
 
 const CODEX_ITEM_EVENTS = new Set(["item.started", "item.completed"]);
+export const SUBAGENT_ACTIVITY_ROW_LIMIT = 200;
 
 function normalizeCodexItemType(type) {
   if (type === "commandExecution") return "command_execution";
@@ -15,6 +16,59 @@ function eventTarget(event) {
   if (event?.type === "sdk_event" && event.event) return event.event;
   if (event?.type === "cli_event" && event.raw) return event.raw;
   return event;
+}
+
+function subagentActivity(event) {
+  const target = eventTarget(event);
+  return target?.type === "subagent_activity" ? target : null;
+}
+
+function isNativeSubagentParentTool(name) {
+  const compact = String(name || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return compact === "agent"
+    || compact === "task"
+    || compact === "spawnagent"
+    || compact === "codexspawnagent"
+    || compact === "collaborationspawnagent";
+}
+
+function toolBlocks(event) {
+  const target = eventTarget(event);
+  const blocks = contentBlocks(event);
+  return target && (target.type === "tool_use" || target.type === "toolCall")
+    ? [target, ...blocks]
+    : blocks;
+}
+
+function subagentTailContext(events) {
+  const recognizedParentIds = new Set();
+  for (const event of events) {
+    for (const block of toolBlocks(event)) {
+      const id = toolIdFromBlock(block);
+      if (id && isNativeSubagentParentTool(block?.name)) recognizedParentIds.add(id);
+    }
+  }
+
+  const groupKeyByParentId = new Map();
+  const groupKeyByEventIndex = new Map();
+  const activityIndexesByGroupKey = new Map();
+  events.forEach((event, index) => {
+    const activity = subagentActivity(event);
+    if (!activity) return;
+    const canonicalId = activity.subagent?.id || null;
+    const legacyParentId = activity.subagent?.toolUseId || null;
+    const attachedParentId = [canonicalId, legacyParentId]
+      .find((id) => id && recognizedParentIds.has(id));
+    const standaloneId = canonicalId || activity.subagent?.nativeId || legacyParentId || activity.id || index;
+    const groupKey = `subagent:${attachedParentId || standaloneId}`;
+    if (attachedParentId) groupKeyByParentId.set(attachedParentId, groupKey);
+    groupKeyByEventIndex.set(index, groupKey);
+    const indexes = activityIndexesByGroupKey.get(groupKey) || [];
+    indexes.push(index);
+    activityIndexesByGroupKey.set(groupKey, indexes);
+  });
+
+  return { groupKeyByParentId, groupKeyByEventIndex, activityIndexesByGroupKey };
 }
 
 function contentBlocks(event) {
@@ -56,11 +110,15 @@ function coalescibleKind(block, { direct = false } = {}) {
   return String(text).trim() ? block.type : null;
 }
 
-function eventPieces(event, eventIndex) {
+function eventPieces(event, eventIndex, subagentContext) {
+  const subagentGroupKey = subagentContext.groupKeyByEventIndex.get(eventIndex);
+  if (subagentGroupKey) return [{ key: subagentGroupKey, eventIndex }];
+
   const target = eventTarget(event);
   const pieces = [];
   const addToolKey = (id) => {
-    if (id) pieces.push({ key: `tool:${id}`, eventIndex });
+    if (!id) return;
+    pieces.push({ key: subagentContext.groupKeyByParentId.get(id) || `tool:${id}`, eventIndex });
   };
 
   addToolKey(toolIdFromCodexItem(target));
@@ -70,7 +128,7 @@ function eventPieces(event, eventIndex) {
   blocks.forEach((block) => {
     const toolId = toolIdFromBlock(block);
     if (toolId) {
-      pieces.push({ key: `tool:${toolId}`, eventIndex });
+      addToolKey(toolId);
       return;
     }
     const kind = coalescibleKind(block);
@@ -83,6 +141,51 @@ function eventPieces(event, eventIndex) {
     pieces.push(kind ? { coalescibleKind: kind, eventIndex } : { key: `event:${eventIndex}`, eventIndex });
   }
   return pieces;
+}
+
+function internalOmittedRowCount(event) {
+  const count = Number(subagentActivity(event)?._worklab_subagent_omitted_rows);
+  return Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+}
+
+function withInternalOmittedRowCount(event, count) {
+  if (!(count > 0)) return event;
+  if (event?.type === "sdk_event" && event.event) {
+    return { ...event, event: { ...event.event, _worklab_subagent_omitted_rows: count } };
+  }
+  if (event?.type === "cli_event" && event.raw) {
+    return { ...event, raw: { ...event.raw, _worklab_subagent_omitted_rows: count } };
+  }
+  return { ...event, _worklab_subagent_omitted_rows: count };
+}
+
+function capSelectedSubagentRows(events, selectedIndexes, subagentContext) {
+  const replacements = new Map();
+  for (const indexes of subagentContext.activityIndexesByGroupKey.values()) {
+    const selectedActivityIndexes = indexes.filter((index) => selectedIndexes.has(index));
+    if (!selectedActivityIndexes.length) continue;
+    const priorOmitted = selectedActivityIndexes.reduce(
+      (max, index) => Math.max(max, internalOmittedRowCount(events[index])),
+      0,
+    );
+    const bookends = selectedActivityIndexes.filter((index) => {
+      const phase = subagentActivity(events[index])?.phase;
+      return phase === "agent_started" || phase === "agent_completed";
+    });
+    const nested = selectedActivityIndexes.filter((index) => !bookends.includes(index));
+    const removed = Math.max(0, nested.length - SUBAGENT_ACTIVITY_ROW_LIMIT);
+    for (const index of nested.slice(0, removed)) selectedIndexes.delete(index);
+
+    const omitted = priorOmitted + removed;
+    if (!(omitted > 0)) continue;
+    const markerIndex = bookends.find((index) => subagentActivity(events[index])?.phase === "agent_started")
+      ?? nested.slice(removed)[0]
+      ?? bookends[0];
+    if (markerIndex !== undefined) {
+      replacements.set(markerIndex, withInternalOmittedRowCount(events[markerIndex], omitted));
+    }
+  }
+  return replacements;
 }
 
 function eventOrder(event, index) {
@@ -108,11 +211,12 @@ export function tailRunEventsByVisibleItems(events = [], limit = null) {
   if (!Number.isFinite(parsed) || parsed < 1 || events.length <= parsed) return events;
 
   const units = new Map();
+  const subagentContext = subagentTailContext(events);
   let currentCoalesced = null;
   let coalescedIndex = 0;
   events.forEach((event, index) => {
     const order = eventOrder(event, index);
-    for (const piece of eventPieces(event, index)) {
+    for (const piece of eventPieces(event, index, subagentContext)) {
       let key = piece.key;
       if (piece.coalescibleKind) {
         if (currentCoalesced?.kind !== piece.coalescibleKind) {
@@ -137,7 +241,10 @@ export function tailRunEventsByVisibleItems(events = [], limit = null) {
   for (const unit of selectedUnits) {
     for (const index of unit.eventIndexes) selectedEventIndexes.add(index);
   }
-  return events.filter((_, index) => selectedEventIndexes.has(index));
+  const replacements = capSelectedSubagentRows(events, selectedEventIndexes, subagentContext);
+  return events
+    .map((event, index) => replacements.get(index) || event)
+    .filter((_, index) => selectedEventIndexes.has(index));
 }
 
 export function buildRunLifecycleEvent(db, type, runId, fallback = {}) {

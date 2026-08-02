@@ -5,6 +5,8 @@ import {
   normaliseAgentTimelineEvents,
   providerRequestTargetLabel,
   runtimeWarningText,
+  subagentGroupFailed,
+  toolCallHasError,
 } from "../../ui/src/components/AgentEventTimeline.jsx";
 import { fileEditSummary } from "../../ui/src/components/ToolCallBlock.jsx";
 import { normalizeWorklabEvents } from "../../ui/src/components/EventTimeline.jsx";
@@ -354,7 +356,7 @@ describe("native subagent grouping", () => {
   };
   const activity = (phase, extra = {}) => ({
     type: "subagent_activity",
-    subagent: { id: "a700", name: "reviewer", callIndex: 0, toolUseId: "toolu_parent", label: "Review the diff" },
+    subagent: { id: "toolu_parent", nativeId: "a700", name: "reviewer", callIndex: 0, label: "Review the diff" },
     phase,
     ...extra,
   });
@@ -397,7 +399,7 @@ describe("native subagent grouping", () => {
   it("keeps concurrent delegations in separate groups", () => {
     const second = (phase, extra = {}) => ({
       type: "subagent_activity",
-      subagent: { id: "b800", name: "reviewer", callIndex: 1, toolUseId: "toolu_second" },
+      subagent: { id: "toolu_second", nativeId: "b800", name: "reviewer", callIndex: 1 },
       phase,
       ...extra,
     });
@@ -415,10 +417,57 @@ describe("native subagent grouping", () => {
 
     const groups = items.filter((item) => item._toolCall).map((item) => item.subagentGroup);
     expect(groups).toHaveLength(2);
-    expect(groups[0].subagent.id).toBe("a700");
-    expect(groups[1].subagent.id).toBe("b800");
+    expect(groups[0].subagent.id).toBe("toolu_parent");
+    expect(groups[1].subagent.id).toBe("toolu_second");
     expect(groups[0].rows[0].name).toBe("reviewer▸Read");
     expect(groups[1].rows[0].name).toBe("reviewer▸Grep");
+  });
+
+  it("does not attach activity to an unrelated tool even when ids collide", () => {
+    const items = groupAgentTimelineEvents([
+      { type: "tool_use", tool_use_id: "toolu_parent", name: "Read", input: {} },
+      activity("agent_started", { id: "agent:toolu_parent" }),
+    ]);
+
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ _toolCall: true, toolUse: { name: "Read" }, subagentGroup: null });
+    expect(items[1]._subagentGroup).toBe(true);
+  });
+
+  it("keeps nested Codex paths inside the root spawn group", () => {
+    const spawn = {
+      type: "tool_use",
+      tool_use_id: "spawn-1",
+      name: "codex_spawnAgent",
+      input: { prompt: "Review" },
+    };
+    const items = groupAgentTimelineEvents([
+      spawn,
+      {
+        type: "subagent_activity",
+        phase: "agent_started",
+        id: "agent:spawn-1",
+        subagent: { id: "spawn-1", nativeId: "child-1", name: "codex", callIndex: 0 },
+      },
+      {
+        type: "subagent_activity",
+        phase: "message",
+        id: "agent:spawn-1:child-2:m1",
+        kind: "text",
+        content: "nested result",
+        subagent: { id: "spawn-1", nativeId: "child-2", name: "codex", callIndex: 0, agentPath: "root/reviewer" },
+      },
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0].subagentGroup.rows).toHaveLength(1);
+    expect(items[0].subagentGroup.rows[0].subagent.agentPath).toBe("root/reviewer");
+  });
+
+  it("lets child failure override a successful launch result", () => {
+    const group = { closed: { isError: true } };
+    expect(subagentGroupFailed(group)).toBe(true);
+    expect(toolCallHasError({ is_error: false, output: "launched" }, group)).toBe(true);
   });
 
   it("hides the raw task lifecycle events that subagent_activity supersedes", () => {

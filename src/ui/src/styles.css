@@ -5435,6 +5435,23 @@ html.assistant-resizing * {
 .agentlog-phase-sub { padding-left: var(--sp-3); color: var(--text-muted); }
 .agentlog-phase-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agentlog-phase-duration { color: var(--text-subtle); font-size: var(--text-xs); }
+.agentlog-subagent-group-error .agentlog-phase-header { color: var(--status-error); }
+.agentlog-subagent-row { align-items: flex-start; min-width: 0; }
+.agentlog-subagent-row-content {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.agentlog-subagent-row-label { color: var(--text-muted); overflow-wrap: anywhere; }
+.agentlog-subagent-output {
+  color: var(--text);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.agentlog-subagent-omitted { color: var(--text-subtle); font-style: italic; }
 .agentlog-phase-spinner {
   display: inline-block;
   width: 10px; height: 10px;
