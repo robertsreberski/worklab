@@ -12,6 +12,8 @@ import { createProvider, upsertModel } from "../../core/providers.js";
 import { kbList, kbRead } from "../../core/kb.js";
 import { slugify } from "../../core/slugs.js";
 import { syncRunWorktreeFromSource } from "../../core/worktrees.js";
+import { createAcpProfile } from "../../core/acp-profiles.js";
+import { insertAcpInteractionRequest } from "../../core/db/queries/acp-interactions.js";
 
 function stubBroker() {
   const broadcasts = [];
@@ -2153,6 +2155,15 @@ describe("task-watcher", () => {
   it("reconciles stale running runs at boot", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
+    const profile = createAcpProfile({
+      db,
+      input: {
+        agentName: "stale-acp",
+        displayName: "Stale ACP",
+        command: process.execPath,
+        cwd: process.cwd(),
+      },
+    });
     const taskId = seedTask(db, { owner: "coder" });
     const now = Date.now();
     db.prepare(
@@ -2162,6 +2173,16 @@ describe("task-watcher", () => {
       `INSERT INTO task_runs (id, task_id, mode, agent_name, status, started_at)
        VALUES ('stale1', ?, 'execute', 'coder', 'running', ?)`,
     ).run(taskId, now - 1000);
+    insertAcpInteractionRequest(db, {
+      id: "interaction-stale-run",
+      profileId: profile.id,
+      taskRunId: "stale1",
+      protocolRequestId: "permission-1",
+      kind: "permission",
+      requestSchemaJson: "{}",
+      createdAt: now - 500,
+      updatedAt: now - 500,
+    });
 
     const warn = vi.fn();
     createTaskWatcher({
@@ -2181,7 +2202,18 @@ describe("task-watcher", () => {
     expect(task.stage).toBe("execute");
     expect(task.stage_reason).toBe("abandoned");
     expect(task.error_text).toBe("Previous run did not finish");
-    expect(warn).toHaveBeenCalled();
+    expect(db.prepare(`
+      SELECT state, disposition, resolved_at
+      FROM acp_interactions
+      WHERE id = 'interaction-stale-run'
+    `).get()).toMatchObject({
+      state: "expired",
+      disposition: "run_ended",
+      resolved_at: expect.any(Number),
+    });
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({
+      expired_interactions: 1,
+    }), "reconciled stale running runs at boot");
   });
 
   it("cancel() signals the active worker for that task", async () => {
