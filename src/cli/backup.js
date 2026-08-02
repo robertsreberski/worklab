@@ -170,6 +170,7 @@ function collectAcpIdentifiers(value, values, {
       if (entry != null) {
         if (decoded) values.add(decoded);
         else if (typeof entry === "string" && entry) values.add(entry);
+        else state.failed = true;
       }
     }
     collectAcpIdentifiers(entry, values, {

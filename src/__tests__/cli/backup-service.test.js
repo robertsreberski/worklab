@@ -106,11 +106,21 @@ describe("backup command", () => {
         cwd: workspace,
       },
     });
+    const malformedProfile = createAcpProfile({
+      db: sourceDb,
+      input: {
+        agentName: "backup-acp-malformed-cursor",
+        displayName: "Backup ACP malformed cursor",
+        command: process.execPath,
+        cwd: workspace,
+      },
+    });
     const canonicalRawCursor = "backup-canonical-raw-cursor-secret";
     const canonicalCursor = `acp-cursor:v1:${profile.id}:${Buffer.from(canonicalRawCursor).toString("base64url")}`;
     const legacyRawCursor = "backup-legacy-raw-cursor-secret-493827";
     const malformedRawCursor = "backup-malformed-raw-cursor-secret";
     const malformedCursor = `acp-cursor:v1:another-profile:${Buffer.from(malformedRawCursor).toString("base64url")}`;
+    const nestedMalformedCursor = "pin42";
     const aliasRawPageCursor = "backup-page-cursor-alias-secret-493827";
     const aliasCanonicalRawCursor = "backup-next-page-cursor-alias-secret";
     const aliasCanonicalCursor = `acp-cursor:v1:${profile.id}:${Buffer.from(aliasCanonicalRawCursor).toString("base64url")}`;
@@ -145,9 +155,9 @@ describe("backup command", () => {
     );
     insertOperation.run(
       "acpop-backup-malformed-cursor",
-      profile.id,
+      malformedProfile.id,
       JSON.stringify({ cursor: malformedCursor, copied: malformedRawCursor }),
-      JSON.stringify({ sessions: [], nextCursor: { opaque: malformedRawCursor } }),
+      JSON.stringify({ sessions: [], nextCursor: { opaque: nestedMalformedCursor } }),
       now,
       now,
       now,
@@ -186,6 +196,19 @@ describe("backup command", () => {
       INSERT INTO tasks (id, task_key, title, instructions, created_at, updated_at)
       VALUES ('task-backup-cursors', 'T-CURSORS', 'Cursor backup', '', ?, ?)
     `).run(now, now);
+    sourceDb.prepare(`
+      INSERT INTO tasks (id, task_key, title, plan_body, created_at, updated_at)
+      VALUES ('task-backup-malformed-cursor', 'T-MALFORMED-CURSOR',
+        'Malformed cursor backup', ?, ?, ?)
+    `).run(`Copied ${nestedMalformedCursor}`, now, now);
+    sourceDb.prepare(`
+      INSERT INTO task_runs (
+        id, task_id, mode, stage, agent_name, provider_kind, status,
+        process_status, started_at, diagnostics_json
+      ) VALUES ('run-backup-malformed-cursor', 'task-backup-malformed-cursor',
+        'execute', 'execute', 'backup-acp-malformed-cursor', 'acp', 'complete',
+        'succeeded', ?, '{}')
+    `).run(now);
     sourceDb.prepare(`
       INSERT INTO task_comments (id, task_id, author_type, body, created_at)
       VALUES ('comment-backup-cursors', 'task-backup-cursors', 'system', ?, ?)
@@ -229,12 +252,15 @@ describe("backup command", () => {
       `).get();
       expect(JSON.parse(malformed.request_json)).toEqual({
         redacted: true,
-        reason: "ACP pagination cursor data was invalid",
+        reason: "ACP session data exceeded backup scrub limits",
       });
       expect(JSON.parse(malformed.result_json)).toEqual({
         redacted: true,
-        reason: "ACP pagination cursor data was invalid",
+        reason: "ACP session data exceeded backup scrub limits",
       });
+      expect(restoredDb.prepare(`
+        SELECT plan_body FROM tasks WHERE id = 'task-backup-malformed-cursor'
+      `).get().plan_body).toBe("[redacted]");
 
       const aliases = restoredDb.prepare(`
         SELECT request_json, result_json FROM acp_operations WHERE id = 'acpop-backup-cursor-aliases'
@@ -268,6 +294,7 @@ describe("backup command", () => {
       legacyRawCursor,
       malformedRawCursor,
       malformedCursor,
+      nestedMalformedCursor,
       aliasRawPageCursor,
       aliasCanonicalRawCursor,
       aliasRawPageToken,
