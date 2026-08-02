@@ -59,10 +59,14 @@ recovery continuation are not treated as the same behavior.
 An ACP-backed agent is stored as `sdk = 'acp'`, model
 `acp:<profile-id>`, and execution mode `acp`. The coordinator preflights that
 binding before spawn. The worker resolves the profile through the shared
-runtime and routes permission or elicitation requests over its private stdin
-control channel. Operation and task-run interaction schemas are sanitized
-before persistence or broadcast; response values are process-only data and
-must never enter SQLite, run events, logs, or backups.
+runtime and receives permission or elicitation responses over its private
+stdin control channel. A task worker sends an exact browser continuation URL
+to the coordinator over a dedicated inherited pipe rather than stdout or
+stderr; a management operation carries it through a non-enumerable in-process
+handoff. The coordinator retains either form only in its bounded, owner-bound,
+one-use memory store. Operation and task-run interaction schemas are sanitized
+before persistence or broadcast; response values and exact continuation URLs
+are process-only data and must never enter SQLite, run events, logs, or backups.
 
 Generic profiles are client-owned but limited to the services Worklab actually
 implements. Filesystem, terminal, and client-MCP requests are rejected during

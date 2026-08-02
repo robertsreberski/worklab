@@ -160,12 +160,28 @@ executable directly rather than through a shell. Obvious secret-bearing argv
 flags are rejected, but positional arguments are not a credential store;
 provide credentials through named environment variables instead.
 
+The launch and session identity of a generic profile is immutable after
+creation. Change its display name, description, enabled state, or probe timeout
+in place; recreate the profile to change its executable, arguments, working
+directory, environment names, ownership, workspace, permissions, configuration
+policy, or session policy. Imported mono-agent runtime identity remains owned
+by its discovery descriptor rather than Worklab.
+
 The ACP client lives in the shared `@mono-agent/agent-runtime` package. Worklab
 owns profile persistence, task scheduling, and the browser interaction inbox.
 Permission choices, non-secret elicitation forms, and browser continuation URLs
 appear globally while a task or profile operation is waiting. Submitted form
 values travel only to the waiting worker process; they are not stored in the
 database, run events, logs, or backups.
+
+An exact browser continuation URL is likewise never persisted or broadcast.
+Worklab retains it only in bounded process memory, bound to the interaction and
+its owning task run or profile operation. The UI opens it through an owner-
+checked, one-use redirect; it expires and is removed on use, successful
+response or cancellation, terminal owner state, or process shutdown. Public
+interaction data contains only a non-sensitive origin label, so credentials or
+tokens in URL user info, paths, queries, and fragments do not enter SQLite,
+events, logs, the DOM, or backups.
 
 Agent-owned ACP turns receive task-owned context and file attachments as
 `resource_link` blocks. Worklab instructions, memory, knowledge, skills, MCP
