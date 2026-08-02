@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "../../lib/api.js";
 import {
   acpEndpointUnsupported,
@@ -35,6 +35,9 @@ export function MonoAgentImportModal({ open, onClose, onImported }) {
   const [error, setError] = useState(null);
   const [unsupported, setUnsupported] = useState(false);
   const [busySourceId, setBusySourceId] = useState(null);
+  const importTokenRef = useRef(0);
+  const openRef = useRef(open);
+  openRef.current = open;
 
   function load() {
     const controller = new AbortController();
@@ -53,31 +56,49 @@ export function MonoAgentImportModal({ open, onClose, onImported }) {
   }
 
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open) {
+      importTokenRef.current += 1;
+      setBusySourceId(null);
+      return undefined;
+    }
     return load();
   }, [open]);
 
+  useEffect(() => () => {
+    openRef.current = false;
+    importTokenRef.current += 1;
+  }, []);
+
   async function importSource(source) {
+    const token = ++importTokenRef.current;
     setBusySourceId(source.sourceId);
     setError(null);
     try {
       const result = await api.importMonoAgent(source.sourceId);
+      if (!openRef.current || token !== importTokenRef.current) return;
       onImported?.(importedAgentName(result, source.sourceId));
     } catch (err) {
+      if (!openRef.current || token !== importTokenRef.current) return;
       setError(err?.message || "Import failed");
     } finally {
-      setBusySourceId(null);
+      if (openRef.current && token === importTokenRef.current) setBusySourceId(null);
     }
   }
+
+  const committing = busySourceId !== null;
+  const requestClose = () => {
+    if (!committing) onClose?.();
+  };
 
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={requestClose}
       title="Import mono-agent"
       size="lg"
       class="mono-agent-import-modal"
-      footer={<Button variant="ghost" onClick={onClose}>Cancel</Button>}
+      closeOnBackdrop={!committing}
+      footer={<Button variant="ghost" disabled={committing} onClick={requestClose}>Cancel</Button>}
     >
       <p class="soft-meta">
         Worklab reads mono-agent's sanitized discovery contract. Secrets, URLs, and configuration content are never displayed or submitted.
@@ -112,6 +133,9 @@ export function MonoAgentImportModal({ open, onClose, onImported }) {
                   <StatusPill status={healthStatus(source)} label={source.health} size="sm" />
                 </div>
                 <span class="pane-row-mono">{source.sourceId}</span>
+                {source.imported && source.binding && (
+                  <span class="soft-meta">Imported as {source.binding.displayName}</span>
+                )}
                 {source.compatible !== true && (
                   <div class="mono-discovery-compatibility" role="status">
                     <Icon name="alert-triangle" size={14} />
@@ -135,11 +159,16 @@ export function MonoAgentImportModal({ open, onClose, onImported }) {
               <Button
                 variant={source.imported ? "secondary" : "primary"}
                 size="sm"
-                disabled={source.imported || !monoSourceImportable(source)}
+                disabled={committing || (source.imported ? !source.binding?.agentName : !monoSourceImportable(source))}
                 loading={busySourceId === source.sourceId}
-                onClick={() => importSource(source)}
+                onClick={() => {
+                  if (source.imported) onImported?.(source.binding?.agentName);
+                  else importSource(source);
+                }}
               >
-                {source.imported ? "Imported" : source.compatible !== true ? "Upgrade required" : "Import"}
+                {source.imported
+                  ? source.binding?.agentName ? "Open agent" : "Imported"
+                  : source.compatible !== true ? "Upgrade required" : "Import"}
               </Button>
             </div>
           ))}

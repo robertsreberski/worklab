@@ -48,6 +48,21 @@ describe("agentPickerOptions", () => {
     expect(external.options[0].description).toContain("ACP");
   });
 
+  it("distinguishes mono and generic ACP agents using safe summary metadata", () => {
+    const options = agentPickerOptions({
+      agents: [
+        { name: "mono-worker", display_name: "Mono Worker", kind: "external", driver: "mono", enabled: true },
+        { name: "stdio-worker", display_name: "Stdio Worker", kind: "external", driver: "generic", enabled: true },
+      ],
+      allowClear: false,
+    });
+
+    expect(options[0].options.map((option) => [option.value, option.description])).toEqual([
+      ["mono-worker", "ACP · mono"],
+      ["stdio-worker", "ACP · generic"],
+    ]);
+  });
+
   it("accepts eligibility embedded in server agent summaries", () => {
     expect(agentAssignmentEligibility({
       name: "remote",

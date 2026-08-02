@@ -59,7 +59,7 @@ export function AgentsTab({ selectedName = null, createMode = null }) {
     reloadAbortRef.current?.abort?.();
     const controller = new AbortController();
     reloadAbortRef.current = controller;
-    api.listAgents({ signal: controller.signal })
+    api.listAgents({ view: "summary" }, { signal: controller.signal })
       .then((r) => {
         if (!controller.signal.aborted) {
           setAgents(r.agents || []);
