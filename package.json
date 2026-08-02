@@ -71,7 +71,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@mono-agent/agent-runtime": "0.15.3",
+    "@mono-agent/agent-runtime": "0.17.0",
     "@slack/bolt": "^4.7.1",
     "@worklab-ai/webhooks": "0.1.10",
     "better-sqlite3": "^11.7.0",
@@ -87,7 +87,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.80.6",
+    "@earendil-works/pi-ai": "0.83.0",
     "@playwright/test": "^1.59.1",
     "@preact/preset-vite": "^2.9.1",
     "@vitest/coverage-v8": "^2.1.0",
