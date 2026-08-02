@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
 
+import {
+  MAX_ACP_SESSION_CURSOR_CHARS,
+  normalizeAcpPaginationCursorKey,
+  parseAcpSessionCursor,
+  selectAcpPaginationCursorEntry,
+} from "./acp-session-cursors.js";
+
 const MAX_PERSISTED_JSON_BYTES = 64 * 1024;
 const MAX_TEXT_CHARS = 2000;
 const MAX_ITEMS = 200;
@@ -7,54 +14,18 @@ const MAX_DEPTH = 8;
 const MAX_AUTH_METHOD_ID_CHARS = 500;
 const MAX_PROVIDER_SESSION_ID_CHARS = 5_600;
 const MAX_OPAQUE_TOKEN_BYTES = 4_096;
-const MAX_ACP_PROFILE_ID_CHARS = 128;
-const SESSION_CURSOR_PREFIX = "acp-cursor:v1:";
-const MAX_BASE64URL_TOKEN_CHARS = Math.ceil((MAX_OPAQUE_TOKEN_BYTES * 4) / 3);
-const MAX_SESSION_CURSOR_CHARS = SESSION_CURSOR_PREFIX.length
-  + MAX_ACP_PROFILE_ID_CHARS
-  + 1
-  + MAX_BASE64URL_TOKEN_CHARS;
 const MAX_PRIVACY_SCAN_DEPTH = 20;
 const MAX_PRIVACY_SCAN_NODES = 50_000;
 const MAX_RAW_SESSION_IDS = 512;
 const MAX_RAW_SESSION_ID_CHARS = 16 * 1024;
 const MAX_PRIVACY_SCAN_STRING_CHARS = 4 * 1024 * 1024;
 const PROVIDER_SESSION_ID_RE = /^acp:v1:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([A-Za-z0-9_-]+)$/u;
-const SESSION_CURSOR_RE = /^acp-cursor:v1:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([A-Za-z0-9_-]+)$/u;
 const RAW_SESSION_ID_KEYS = new Set([
   "sessionid",
   "rawsessionid",
   "remotesessionid",
 ]);
 const PROVIDER_SESSION_ID_KEYS = new Set(["providersessionid"]);
-const PAGINATION_CURSOR_KEYS = new Set([
-  "cursor",
-  "nextcursor",
-  "pagecursor",
-  "nextpagecursor",
-  "paginationcursor",
-  "continuationcursor",
-  "endcursor",
-  "pagetoken",
-  "nextpagetoken",
-  "continuationtoken",
-  "nextcontinuationtoken",
-  "nexttoken",
-]);
-const PAGINATION_CURSOR_PRIORITY = [
-  "nextcursor",
-  "cursor",
-  "nextpagecursor",
-  "pagecursor",
-  "paginationcursor",
-  "continuationcursor",
-  "endcursor",
-  "nextpagetoken",
-  "pagetoken",
-  "nextcontinuationtoken",
-  "continuationtoken",
-  "nexttoken",
-];
 const OPERATION_KINDS = new Set([
   "probe",
   "authenticate",
@@ -122,11 +93,7 @@ function parsedProviderSessionId(value, profileId = null) {
 }
 
 function parsedSessionCursor(value, profileId = null) {
-  if (typeof value !== "string" || value.length > MAX_SESSION_CURSOR_CHARS) return null;
-  const match = SESSION_CURSOR_RE.exec(value);
-  if (!match || (profileId && match[1] !== profileId)) return null;
-  const rawValue = decodedOpaqueToken(match[2]);
-  return rawValue == null ? null : { profileId: match[1], rawValue, value };
+  return parseAcpSessionCursor(value, profileId);
 }
 
 function canonicalProviderSessionId(value, profileId = null) {
@@ -211,7 +178,7 @@ function privacyScan(value, additionalRawSessionIds = [], { includeCursorSources
         const provider = parsedProviderSessionId(item);
         collectSession(provider?.rawValue ?? item);
       }
-      if (includeCursorSources && PAGINATION_CURSOR_KEYS.has(normalizedKey)) {
+      if (includeCursorSources && normalizeAcpPaginationCursorKey(key)) {
         const cursor = parsedSessionCursor(item);
         collectCursor(cursor?.rawValue ?? item);
       }
@@ -368,18 +335,7 @@ function picked(value, keys) {
 }
 
 function paginationCursorValue(source) {
-  const candidates = new Map();
-  for (const [key, value] of Object.entries(source)) {
-    const normalizedKey = normalizedPrivacyKey(key);
-    if (PAGINATION_CURSOR_KEYS.has(normalizedKey) && !candidates.has(normalizedKey)) {
-      candidates.set(normalizedKey, value);
-    }
-  }
-  for (const key of PAGINATION_CURSOR_PRIORITY) {
-    const candidate = candidates.get(key);
-    if (candidate != null) return candidate;
-  }
-  return null;
+  return selectAcpPaginationCursorEntry(source)?.value ?? null;
 }
 
 function sanitizeSession(value, {
@@ -509,7 +465,7 @@ export function normalizeAcpSessionCursor(value, profileId = null) {
   if (typeof value !== "string"
     || value.length === 0
     || value.trim() !== value
-    || value.length > MAX_SESSION_CURSOR_CHARS
+    || value.length > MAX_ACP_SESSION_CURSOR_CHARS
     || /[\u0000-\u001f\u007f]/u.test(value)) {
     throw Object.assign(new Error("cursor is invalid"), {
       code: "validation",

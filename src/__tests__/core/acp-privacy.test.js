@@ -78,9 +78,10 @@ describe("ACP event privacy boundary", () => {
     expect(JSON.stringify(sanitized)).not.toContain(rawSessionId);
   });
 
-  it("optionally preserves opaque cursors while dropping raw cursor state and redacting copies", () => {
+  it("collects every cursor alias before preserving only the prioritized opaque cursor", () => {
     const rawCursor = "RAW_CURSOR_FROM_HANDLE";
-    const malformedCursor = "RAW_MALFORMED_CURSOR";
+    const rawPageCursor = "RAW_PAGE_CURSOR";
+    const rawPageToken = "RAW_PAGE_TOKEN";
     const cursor = `acp-cursor:v1:${PROFILE_ID}:${Buffer.from(rawCursor).toString("base64url")}`;
     const boundary = createAcpEventPrivacyBoundary({
       profileId: PROFILE_ID,
@@ -88,12 +89,13 @@ describe("ACP event privacy boundary", () => {
     });
 
     expect(boundary.sanitizeEvent({
-      cursor,
-      next_cursor: malformedCursor,
-      note: `${rawCursor} ${malformedCursor}`,
+      pageCursor: rawPageCursor,
+      "next-page-cursor": cursor,
+      page_token: rawPageToken,
+      note: `${rawCursor} ${rawPageCursor} ${rawPageToken}`,
     })).toEqual({
-      cursor,
-      note: "[redacted] [redacted]",
+      "next-page-cursor": cursor,
+      note: "[redacted] [redacted] [redacted]",
     });
   });
 

@@ -1,7 +1,11 @@
 import {
   normalizeAcpProviderSessionId,
-  normalizeAcpSessionCursor,
 } from "./acp-operations.js";
+import {
+  normalizeAcpPaginationCursorKey,
+  parseAcpSessionCursor,
+  selectAcpPaginationCursorEntry,
+} from "./acp-session-cursors.js";
 
 const MAX_ACP_EVENT_DEPTH = 20;
 const MAX_ACP_EVENT_NODES = 50_000;
@@ -10,7 +14,6 @@ const MAX_ACP_RAW_SESSION_IDS = 128;
 const MAX_ACP_RAW_SESSION_ID_CHARS = 16 * 1024;
 const ACP_SESSION_ID_KEYS = new Set(["sessionId", "session_id"]);
 const ACP_PROVIDER_SESSION_ID_KEYS = new Set(["providerSessionId", "provider_session_id"]);
-const ACP_CURSOR_KEYS = new Set(["cursor", "nextCursor", "next_cursor"]);
 
 function decodedAcpProviderSessionId(value, profileId) {
   if (typeof profileId !== "string" || profileId.length === 0) return null;
@@ -35,25 +38,8 @@ function decodedAcpProviderSessionId(value, profileId) {
 
 function decodedAcpSessionCursor(value, profileId) {
   if (typeof profileId !== "string" || profileId.length === 0) return null;
-  let normalized;
-  try {
-    normalized = normalizeAcpSessionCursor(value, profileId);
-  } catch {
-    return null;
-  }
-  if (!normalized) return null;
-  const prefix = `acp-cursor:v1:${profileId}:`;
-  if (!normalized.startsWith(prefix)) return null;
-  const encoded = normalized.slice(prefix.length);
-  try {
-    const bytes = Buffer.from(encoded, "base64url");
-    if (bytes.length === 0 || bytes.length > 4096 || bytes.toString("base64url") !== encoded) return null;
-    const cursor = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    if (!cursor || cursor.trim() !== cursor || cursor.includes("\0")) return null;
-    return { cursor: normalized, rawCursor: cursor };
-  } catch {
-    return null;
-  }
+  const parsed = parseAcpSessionCursor(value, profileId);
+  return parsed ? { cursor: parsed.value, rawCursor: parsed.rawValue } : null;
 }
 
 /**
@@ -123,7 +109,7 @@ export function createAcpEventPrivacyBoundary({
           if (!collectRawSessionId(decoded.sessionId, collected)) return false;
         } else if (!collectRawSessionId(entry, collected)) return false;
       }
-      if (includeCursors && ACP_CURSOR_KEYS.has(key)) {
+      if (includeCursors && normalizeAcpPaginationCursorKey(key)) {
         const decoded = decodedAcpSessionCursor(entry, profileId);
         if (decoded) {
           if (!collectRawSessionId(decoded.rawCursor, collected)) return false;
@@ -151,6 +137,7 @@ export function createAcpEventPrivacyBoundary({
     if (Array.isArray(value)) return value.map((entry) => copySanitized(entry, depth + 1));
     if (typeof value !== "object") return null;
     const output = Object.create(null);
+    const selectedCursor = includeCursors ? selectAcpPaginationCursorEntry(value) : null;
     for (const [key, entry] of Object.entries(value)) {
       if (ACP_SESSION_ID_KEYS.has(key)) continue;
       if (ACP_PROVIDER_SESSION_ID_KEYS.has(key)) {
@@ -158,7 +145,8 @@ export function createAcpEventPrivacyBoundary({
         if (providerSessionId) output[key] = providerSessionId;
         continue;
       }
-      if (includeCursors && ACP_CURSOR_KEYS.has(key)) {
+      if (includeCursors && normalizeAcpPaginationCursorKey(key)) {
+        if (key !== selectedCursor?.key) continue;
         const cursor = decodedAcpSessionCursor(entry, profileId)?.cursor;
         if (cursor) output[key] = cursor;
         continue;
