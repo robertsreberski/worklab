@@ -30,7 +30,6 @@ import {
 const allowlistModeSchema = z.enum(["all", "custom"]).optional();
 const effortSchema = z.enum(["none", "low", "medium", "high", "xhigh", "max"]).optional();
 const executionModeSchema = z.enum(["cli", "sdk"]).optional();
-const subagentModeSchema = z.enum(["disabled", "advisory", "workspace"]).optional();
 const contextWindowSchema = z.enum(["default", "1m"]).optional();
 
 export const agentCreateSchema = z.object({
@@ -51,7 +50,6 @@ export const agentCreateSchema = z.object({
   builtin_allowlist_mode: allowlistModeSchema,
   allow_self_review: z.boolean().optional(),
   browser_tools_review_only: z.boolean().optional(),
-  subagent_mode: subagentModeSchema,
   enabled: z.boolean().optional(),
 });
 
@@ -142,7 +140,6 @@ function agentSummary(row) {
     mcp_allowlist_mode: row.mcp_allowlist_mode,
     builtin_allowlist_mode: row.builtin_allowlist_mode,
     browser_tools_review_only: !!row.browser_tools_review_only,
-    subagent_mode: row.subagent_mode || "advisory",
   };
 }
 
@@ -171,7 +168,6 @@ export const definitions = [
         builtin_allowlist_mode: { type: "string", enum: ["all", "custom"] },
         allow_self_review: { type: "boolean" },
         browser_tools_review_only: { type: "boolean" },
-        subagent_mode: { type: "string", enum: ["disabled", "advisory", "workspace"] },
         enabled: { type: "boolean" },
       },
       required: ["display_name", "model"],
@@ -215,9 +211,8 @@ export function buildHandlers(context) {
             (name, display_name, description, sdk, model, effort, context_window, fast_mode, instructions,
              skills_allowlist, skills_allowlist_mode, mcp_allowlist, mcp_allowlist_mode,
              builtin_allowlist, builtin_allowlist_mode, allow_self_review,
-             browser_tools_review_only,
-             subagent_mode, execution_mode, enabled, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             browser_tools_review_only, execution_mode, enabled, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           finalName,
           parsed.display_name,
@@ -236,7 +231,6 @@ export function buildHandlers(context) {
           builtinAllow.mode,
           parsed.allow_self_review === false ? 0 : 1,
           parsed.browser_tools_review_only === true ? 1 : 0,
-          parsed.subagent_mode || "advisory",
           executionMode,
           parsed.enabled === false ? 0 : 1,
           now,

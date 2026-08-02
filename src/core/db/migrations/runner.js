@@ -254,6 +254,11 @@ function dropLegacyTeamReplacedColumns(db) {
     ["projects", "delegation_allow_unlisted"],
     ["agents", "daily_budget_usd"],
     ["agents", "per_run_budget_usd"],
+    // v49: native subagents now come from the runtime's own on-disk profiles
+    // (~/.claude/agents, .claude/agents), not from a Worklab team roster. The
+    // roster still drives durable delegation into child tasks; it no longer
+    // doubles as an in-run helper roster, so the per-agent mode is meaningless.
+    ["agents", "subagent_mode"],
   ];
   if (hasColumn(db, "projects", "allowed_agents_json")) {
     try {
@@ -881,7 +886,6 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "agents", "builtin_allowlist_mode", "builtin_allowlist_mode TEXT NOT NULL DEFAULT 'all'");
   addColumnIfMissing(db, "agents", "allow_self_review", "allow_self_review INTEGER NOT NULL DEFAULT 1");
   addColumnIfMissing(db, "agents", "browser_tools_review_only", "browser_tools_review_only INTEGER NOT NULL DEFAULT 0");
-  addColumnIfMissing(db, "agents", "subagent_mode", "subagent_mode TEXT NOT NULL DEFAULT 'advisory'");
   // v33: per-agent budgets retired in favor of team budgets. Columns dropped
   // by `dropLegacyTeamReplacedColumns`; we keep them creatable on legacy DBs
   // so the column-drop sweep finds something to remove.

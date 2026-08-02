@@ -55,7 +55,6 @@ export async function runTaskAgentTurn(ctx, {
     toolPolicy,
     systemPrompt,
     messages,
-    nativeSubagents,
   } = input;
   const model = resolveModel(agent.model);
   const sdkEvents = createSdkEventCoalescer((event) => emit({ type: "sdk_event", event }));
@@ -113,7 +112,6 @@ export async function runTaskAgentTurn(ctx, {
       allowedTools,
       disallowedTools,
       ...(toolPolicy ? { toolPolicy } : {}),
-      nativeSubagents,
       permissionMode: "bypassPermissions",
       maxTurns: maxTurnsForModel(model, 30),
       outputSchema,

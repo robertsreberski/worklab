@@ -78,7 +78,6 @@ const emptyAgent = {
   builtin_allowlist_mode: "all",
   allow_self_review: true,
   browser_tools_review_only: false,
-  subagent_mode: "advisory",
   execution_mode: "cli",
   enabled: true,
   require_human_approval: false,
@@ -676,11 +675,6 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
       value: agent.browser_tools_review_only ? "Review only" : "All stages",
       mono: false,
     },
-    {
-      label: "Subagents",
-      value: agent.subagent_mode || "advisory",
-      mono: false,
-    },
   ];
   const runtimeMeta = [
     !isNew ? { label: "Slug", value: agent.name } : null,
@@ -1045,21 +1039,6 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                     onChange={(next) => setAgent({ ...agent, browser_tools_review_only: next })}
                     label="Disable browser tools in execute"
                     description="Playwright MCP and Browser Use or Playwright skills stay available for review runs."
-                  />
-                </FormField>
-                <FormField
-                  label="Native subagents"
-                  description="Controls whether this agent can ask same-runtime teammates for in-run help."
-                >
-                  <RadioGroup
-                    ariaLabel="Native subagents"
-                    value={agent.subagent_mode || "advisory"}
-                    onChange={(v) => setAgent({ ...agent, subagent_mode: v })}
-                    options={[
-                      { value: "disabled", label: "Off" },
-                      { value: "advisory", label: "Advisory" },
-                      { value: "workspace", label: "Workspace" },
-                    ]}
                   />
                 </FormField>
               </FormGrid>

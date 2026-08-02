@@ -63,7 +63,6 @@ function rowToAgent(row) {
     builtin_allowlist_mode: storedAllowlistMode(row.builtin_allowlist_mode),
     allow_self_review: !!row.allow_self_review,
     browser_tools_review_only: !!row.browser_tools_review_only,
-    subagent_mode: normalizeSubagentMode(row.subagent_mode, "advisory"),
     execution_mode: row.execution_mode || "sdk",
     context_window: normalizeContextWindow(row.context_window),
     fast_mode: effectiveFastModeForRow(row),
@@ -79,7 +78,6 @@ function rowToAgentSummary(row) {
   return {
     ...row,
     enabled: !!row.enabled,
-    subagent_mode: normalizeSubagentMode(row.subagent_mode, "advisory"),
     execution_mode: row.execution_mode || "sdk",
     context_window: normalizeContextWindow(row.context_window),
     fast_mode: effectiveFastModeForRow(row),
@@ -103,7 +101,6 @@ const PATCHABLE = [
   "builtin_allowlist_mode",
   "allow_self_review",
   "browser_tools_review_only",
-  "subagent_mode",
   "execution_mode",
   "enabled",
   "require_human_approval",
@@ -113,7 +110,6 @@ const PATCHABLE = [
 ];
 
 const VALID_EXECUTION_MODES = new Set(["sdk", "cli"]);
-const VALID_SUBAGENT_MODES = new Set(["disabled", "advisory", "workspace"]);
 
 function normalizeExecutionMode(value, fallback = "sdk") {
   if (value === undefined || value === null || value === "") return fallback;
@@ -121,16 +117,6 @@ function normalizeExecutionMode(value, fallback = "sdk") {
   const trimmed = value.trim();
   if (!VALID_EXECUTION_MODES.has(trimmed)) {
     throw new Error(`execution_mode must be one of: ${[...VALID_EXECUTION_MODES].join(", ")}`);
-  }
-  return trimmed;
-}
-
-function normalizeSubagentMode(value, fallback = "advisory") {
-  if (value === undefined || value === null || value === "") return fallback;
-  if (typeof value !== "string") throw new Error("subagent_mode must be a string");
-  const trimmed = value.trim();
-  if (!VALID_SUBAGENT_MODES.has(trimmed)) {
-    throw new Error(`subagent_mode must be one of: ${[...VALID_SUBAGENT_MODES].join(", ")}`);
   }
   return trimmed;
 }
@@ -411,13 +397,11 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     const enabled = req.body.enabled === false ? 0 : 1;
     let allowSelfReview;
     let browserToolsReviewOnly;
-    let subagentMode;
     let contextWindow;
     let fastMode;
     try {
       allowSelfReview = normalizeBooleanField("allow_self_review", req.body.allow_self_review, true);
       browserToolsReviewOnly = normalizeBooleanField("browser_tools_review_only", req.body.browser_tools_review_only, false);
-      subagentMode = normalizeSubagentMode(req.body.subagent_mode, "advisory");
     } catch (err) {
       return res.status(400).json({ error: { code: "validation", message: err.message } });
     }
@@ -487,7 +471,6 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       builtinAllowlistMode: builtinAllow.mode,
       allowSelfReview,
       browserToolsReviewOnly,
-      subagentMode,
       executionMode,
       enabled,
       createdAt: now,
@@ -652,12 +635,6 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
           }
         } else if (k === "execution_mode") {
           values.push(targetExecutionMode);
-        } else if (k === "subagent_mode") {
-          try {
-            values.push(normalizeSubagentMode(req.body[k], existing.subagent_mode || "advisory"));
-          } catch (err) {
-            return res.status(400).json({ error: { code: "validation", message: err.message } });
-          }
         } else if (k === "require_human_approval") {
           try {
             values.push(normalizeBooleanField(k, req.body[k], false));
