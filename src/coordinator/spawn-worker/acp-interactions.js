@@ -634,9 +634,19 @@ export function createAcpInteractionControls({
           interaction_id: interactionId,
           delivery_id: delivery.deliveryId,
         };
-    try {
-      await writeControlMessage(message);
-    } catch (error) {
+    const writeAttempt = Promise.resolve()
+      .then(() => writeControlMessage(message))
+      .then(
+        () => ({ state: "written" }),
+        (error) => ({ state: "failed", error }),
+      );
+    const firstOutcome = await Promise.race([
+      writeAttempt,
+      delivery.ack.then((result) => ({ state: "settled", result })),
+    ]);
+    if (firstOutcome.state === "settled") return firstOutcome.result;
+    if (firstOutcome.state === "failed") {
+      const { error } = firstOutcome;
       discardDelivery(delivery);
       return {
         ok: false,

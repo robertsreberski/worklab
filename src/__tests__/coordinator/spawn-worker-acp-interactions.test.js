@@ -1081,4 +1081,56 @@ describe("spawnWorker ACP interactions", () => {
       db.close();
     }
   });
+
+  it("bounds a stalled control write with the acknowledgement deadline", async () => {
+    const db = makeTestDb();
+    let controls;
+    let guardTimer;
+    try {
+      const { runId } = seed(db);
+      insertAcpInteractionRequest(db, {
+        id: "interaction-stalled-write",
+        profileId: "profile-1",
+        taskRunId: runId,
+        protocolRequestId: "rpc-stalled-write",
+        kind: "form",
+        requestSchemaJson: "{}",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const writeControlMessage = vi.fn(() => new Promise(() => {}));
+      controls = createAcpInteractionControls({
+        db,
+        runId,
+        writeControlMessage,
+        emitEvent: () => {},
+        idFactory: () => "delivery-stalled-write",
+        ackTimeoutMs: 10,
+      });
+      const guard = new Promise((_, reject) => {
+        guardTimer = setTimeout(() => reject(new Error("stalled write escaped acknowledgement deadline")), 250);
+      });
+
+      await expect(Promise.race([
+        controls.respond({
+          interactionId: "interaction-stalled-write",
+          disposition: "accept",
+          response: { action: "accept", content: { answer: "private" } },
+        }),
+        guard,
+      ])).resolves.toEqual({
+        ok: false,
+        code: "ack_timeout",
+        message: "worker did not acknowledge the ACP interaction",
+      });
+      expect(writeControlMessage).toHaveBeenCalledOnce();
+      expect(db.prepare("SELECT state, disposition FROM acp_interactions WHERE id = ?")
+        .get("interaction-stalled-write"))
+        .toEqual({ state: "pending", disposition: null });
+    } finally {
+      clearTimeout(guardTimer);
+      controls?.close();
+      db.close();
+    }
+  });
 });
