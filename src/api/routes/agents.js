@@ -52,8 +52,13 @@ import { withMentions } from "../lib/with-mentions.js";
 
 function rowToAgent(row) {
   if (!row) return null;
+  // `subagent_mode` remains in the physical schema for one downgrade window,
+  // but it is not part of the current agent contract. Keep the tombstone from
+  // escaping through SELECT * and being round-tripped into a rejected PATCH.
+  const publicRow = { ...row };
+  delete publicRow.subagent_mode;
   return {
-    ...row,
+    ...publicRow,
     enabled: !!row.enabled,
     skills_allowlist: parseStoredAllowlist(row.skills_allowlist),
     skills_allowlist_mode: storedAllowlistMode(row.skills_allowlist_mode),
@@ -75,8 +80,10 @@ function rowToAgent(row) {
 
 function rowToAgentSummary(row) {
   if (!row) return null;
+  const publicRow = { ...row };
+  delete publicRow.subagent_mode;
   return {
-    ...row,
+    ...publicRow,
     enabled: !!row.enabled,
     execution_mode: row.execution_mode || "sdk",
     context_window: normalizeContextWindow(row.context_window),

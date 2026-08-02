@@ -410,7 +410,18 @@ describe("agents CRUD", () => {
       name: "current-agent",
       display_name: "Current Agent",
       model: "claude:claude-sonnet-4-6",
-    }).expect(201);
+    }).expect(201).expect(({ body }) => {
+      expect(body.agent).not.toHaveProperty("subagent_mode");
+    });
+    const current = await agent.get("/api/agents/current-agent").expect(200);
+    expect(current.body.agent).not.toHaveProperty("subagent_mode");
+    await agent.patch("/api/agents/current-agent").send({
+      ...current.body.agent,
+      display_name: "Current Agent Saved",
+    }).expect(200).expect(({ body }) => {
+      expect(body.agent.display_name).toBe("Current Agent Saved");
+      expect(body.agent).not.toHaveProperty("subagent_mode");
+    });
     const patched = await agent.patch("/api/agents/current-agent").send({
       subagent_mode: "disabled",
     }).expect(400);
