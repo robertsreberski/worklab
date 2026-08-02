@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { customAlphabet } from "nanoid";
 
 const alpha = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -26,3 +27,6 @@ export const newPushSubscriptionId = () => nid21();
 export const newTeamId = () => nid12();
 export const newGoalId = () => nid21();
 export const newLeadCycleId = () => nid21();
+export const newAcpProfileId = () => randomUUID();
+export const newAcpOperationId = () => randomUUID();
+export const newAcpInteractionId = () => randomUUID();
