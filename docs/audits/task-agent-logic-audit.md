@@ -97,7 +97,9 @@ a shell, and project only the values of explicitly named host environment
 variables. Their persisted client capability policy must keep filesystem,
 terminal, network, and client-MCP services disabled. Those flags describe
 services Worklab will provide over ACP; they do not sandbox the child process
-from resources available to the Worklab OS user.
+from resources available to the Worklab OS user. ACP bindings currently accept
+task runs only. Agent-owned workspaces must match the canonical profile
+workspace and cannot be paired with a Worklab-created run worktree.
 
 ## Team Lead Cycles
 

@@ -175,7 +175,9 @@ Worklab client does not provide ACP filesystem, terminal, network, or
 client-MCP services, and a generic profile that requests them is rejected.
 This is an ACP client-service policy, not an operating-system sandbox: the
 external process still has the filesystem, network, and process access granted
-to the user account that runs Worklab.
+to the user account that runs Worklab. ACP profiles currently support task runs
+only. An agent-owned workspace must exactly match its canonical workspace and
+cannot use a Worklab-created per-run worktree.
 
 The mono-agent integration is an ACP v1 core-session profile: initialization,
 sessions, prompts, typed updates, cancellation, text, resource links, and
