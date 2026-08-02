@@ -5,6 +5,7 @@ import {
   getAcpProfile,
   getAcpProfiles,
   normalizeMonoDiscovery,
+  normalizeAcpAuthMethodId,
   rowToAcpInteraction,
   rowToAcpOperation,
   updateAcpProfileRecord,
@@ -140,7 +141,7 @@ function interactionOr404(db, interactionId) {
   return row;
 }
 
-function startOperation(res, manager, profileId, kind, remoteSessionId = null) {
+function startOperation(res, manager, profileId, kind, options = {}) {
   if (!manager) {
     return sendError(res, routeError("ACP operation manager is not configured", {
       code: "not_configured",
@@ -148,7 +149,7 @@ function startOperation(res, manager, profileId, kind, remoteSessionId = null) {
     }));
   }
   try {
-    const operation = manager.start({ profileId, kind, remoteSessionId });
+    const operation = manager.start({ profileId, kind, ...options });
     return res.status(202).json({ operation });
   } catch (error) {
     return sendError(res, error);
@@ -254,9 +255,20 @@ export function registerAcpRoutes(app, {
   app.post("/api/acp/profiles/:id/probe", (req, res) => (
     startOperation(res, acpOperationManager, req.params.id, "probe")
   ));
-  app.post("/api/acp/profiles/:id/authenticate", (req, res) => (
-    startOperation(res, acpOperationManager, req.params.id, "authenticate")
-  ));
+  app.post("/api/acp/profiles/:id/authenticate", (req, res) => {
+    try {
+      const body = req.body || {};
+      if (Object.keys(body).length !== 1 || !Object.hasOwn(body, "authMethodId")) {
+        throw routeError("authenticate accepts exactly one field: authMethodId");
+      }
+      const authMethodId = normalizeAcpAuthMethodId(body.authMethodId);
+      return startOperation(res, acpOperationManager, req.params.id, "authenticate", {
+        authMethodId,
+      });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
   app.post("/api/acp/profiles/:id/logout", (req, res) => (
     startOperation(res, acpOperationManager, req.params.id, "logout")
   ));
@@ -264,7 +276,9 @@ export function registerAcpRoutes(app, {
     startOperation(res, acpOperationManager, req.params.id, "list_sessions")
   ));
   app.delete("/api/acp/profiles/:id/sessions/:sessionId", (req, res) => (
-    startOperation(res, acpOperationManager, req.params.id, "delete_session", req.params.sessionId)
+    startOperation(res, acpOperationManager, req.params.id, "delete_session", {
+      remoteSessionId: req.params.sessionId,
+    })
   ));
 
   app.get("/api/acp/profiles/:id/operations", (req, res) => {

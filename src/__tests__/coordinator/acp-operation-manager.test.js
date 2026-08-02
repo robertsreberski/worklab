@@ -50,6 +50,10 @@ describe("AcpOperationManager", () => {
         protocolVersion: 1,
         accessToken: "probe-secret-token",
         capabilities: { sessions: true, apiKey: "nested-secret" },
+        authMethods: [
+          { id: "browser-login", name: "Browser login", type: "agent", token: "method-secret" },
+          { id: "", name: "Invalid" },
+        ],
       }),
     });
     const queued = manager.start({ profileId: profile.id, kind: "probe" });
@@ -61,9 +65,11 @@ describe("AcpOperationManager", () => {
       status: "ready",
       protocolVersion: 1,
       capabilities: { sessions: true },
+      authMethods: [{ id: "browser-login", name: "Browser login", type: "agent" }],
     });
     expect(JSON.stringify(completed)).not.toContain("probe-secret-token");
     expect(JSON.stringify(completed)).not.toContain("nested-secret");
+    expect(JSON.stringify(completed)).not.toContain("method-secret");
     const probe = db.prepare(`
       SELECT last_probe_state, last_probe_result_json, last_probe_error_json
       FROM acp_profiles WHERE id = ?
@@ -77,8 +83,10 @@ describe("AcpOperationManager", () => {
 
   it("keeps form answers in memory while persisting only schema and disposition", async () => {
     let deliveredResponse;
+    let selectedMethod;
     const { db, profile, manager } = setup({
-      authenticate: async ({ onInteraction }) => {
+      authenticate: async ({ authMethodId, onInteraction }) => {
+        selectedMethod = authMethodId;
         deliveredResponse = await onInteraction({
           requestId: "auth-form-1",
           kind: "form",
@@ -90,10 +98,21 @@ describe("AcpOperationManager", () => {
             required: ["password"],
           },
         });
-        return { authenticated: true, accessToken: "auth-result-secret" };
+        return {
+          authenticated: true,
+          methodId: authMethodId,
+          accessToken: "auth-result-secret",
+        };
       },
     });
-    const operation = manager.start({ profileId: profile.id, kind: "authenticate" });
+    const operation = manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "browser-login",
+    });
+    expect(operation.request).toEqual({ authMethodId: "browser-login" });
+    expect(JSON.parse(db.prepare("SELECT request_json FROM acp_operations WHERE id = ?")
+      .get(operation.id).request_json)).toEqual({ authMethodId: "browser-login" });
     let interaction;
     await vi.waitFor(() => {
       interaction = db.prepare(`
@@ -115,7 +134,12 @@ describe("AcpOperationManager", () => {
     expect(receipt).not.toHaveProperty("response");
     await waitForOperation(manager, operation.id, "succeeded");
 
+    expect(selectedMethod).toBe("browser-login");
     expect(deliveredResponse).toBe(response);
+    expect(manager.get(operation.id).result).toEqual({
+      authenticated: true,
+      authMethodId: "browser-login",
+    });
     const stored = getAcpInteractionById(db, interaction.id);
     expect(stored).toMatchObject({ state: "submitted", disposition: "accept" });
     expect(JSON.parse(stored.request_schema_json)).toEqual({
@@ -139,7 +163,11 @@ describe("AcpOperationManager", () => {
         schema: { options: [{ id: "allow_once", label: "Allow once" }] },
       }),
     });
-    const operation = manager.start({ profileId: profile.id, kind: "authenticate" });
+    const operation = manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "permission-login",
+    });
     await vi.waitFor(() => {
       expect(db.prepare("SELECT state FROM acp_operations WHERE id = ?").get(operation.id)?.state)
         .toBe("waiting_for_interaction");
@@ -162,7 +190,11 @@ describe("AcpOperationManager", () => {
         },
       }),
     });
-    const operation = manager.start({ profileId: profile.id, kind: "authenticate" });
+    const operation = manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "url-login",
+    });
     let interaction;
     await vi.waitFor(() => {
       interaction = db.prepare("SELECT * FROM acp_interactions WHERE operation_id = ?").get(operation.id);
@@ -218,5 +250,26 @@ describe("AcpOperationManager", () => {
     expect(conflict).toMatchObject({ code: "operation_active", status: 409 });
     release({ ok: true });
     await waitForOperation(manager, first.id, "succeeded");
+  });
+
+  it("requires a bounded explicit authentication method id", () => {
+    const { profile, manager } = setup({ authenticate: async () => ({ authenticated: true }) });
+    expect(() => manager.start({ profileId: profile.id, kind: "authenticate" }))
+      .toThrowError("authMethodId is required");
+    expect(() => manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "x".repeat(501),
+    })).toThrowError("authMethodId is invalid");
+    expect(() => manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "browser\nlogin",
+    })).toThrowError("authMethodId is invalid");
+    expect(() => manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: " browser-login ",
+    })).toThrowError("authMethodId is invalid");
   });
 });

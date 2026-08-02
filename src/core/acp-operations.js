@@ -2,6 +2,7 @@ const MAX_PERSISTED_JSON_BYTES = 64 * 1024;
 const MAX_TEXT_CHARS = 2000;
 const MAX_ITEMS = 200;
 const MAX_DEPTH = 8;
+const MAX_AUTH_METHOD_ID_CHARS = 500;
 const SENSITIVE_KEY_RE = /(?:secret|password|passphrase|token|api[_-]?key|credential|authorization|cookie|answer|form[_-]?values?)/iu;
 const SCHEMA_VALUE_KEYS = new Set(["default", "const", "examples", "value", "values", "answer", "answers"]);
 
@@ -101,13 +102,52 @@ function sanitizeSession(value) {
   return boundedObject(session);
 }
 
+function sanitizeAuthMethod(value) {
+  const method = picked(value, {
+    id: "id",
+    name: "name",
+    type: "type",
+  });
+  let id;
+  try {
+    id = normalizeAcpAuthMethodId(method.id);
+  } catch {
+    return null;
+  }
+  return {
+    id,
+    name: clippedText(String(method.name || id), 500)?.trim() || id,
+    type: clippedText(String(method.type || "agent"), 100)?.trim() || "agent",
+  };
+}
+
+export function normalizeAcpAuthMethodId(value) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw Object.assign(new Error("authMethodId is required"), {
+      code: "validation",
+      status: 400,
+      safeMessage: "authMethodId is required",
+    });
+  }
+  if (value.trim() !== value
+    || value.length > MAX_AUTH_METHOD_ID_CHARS
+    || /[\u0000-\u001f\u007f]/u.test(value)) {
+    throw Object.assign(new Error("authMethodId is invalid"), {
+      code: "validation",
+      status: 400,
+      safeMessage: "authMethodId is invalid",
+    });
+  }
+  return value;
+}
+
 export function sanitizeAcpOperationResult(kind, value) {
   const source = isPlainObject(value) ? value : {};
   if (kind === "authenticate" || kind === "logout") {
     return boundedObject(picked(source, {
       authenticated: "authenticated",
       status: "status",
-      method: ["method", "authMethod", "auth_method"],
+      authMethodId: ["authMethodId", "methodId", "method", "authMethod", "auth_method"],
       warnings: "warnings",
     }));
   }
@@ -122,7 +162,7 @@ export function sanitizeAcpOperationResult(kind, value) {
       status: "status",
     }));
   }
-  return boundedObject(picked(source, {
+  const probe = picked(source, {
     ok: "ok",
     status: "status",
     protocolVersion: ["protocolVersion", "protocol_version"],
@@ -133,7 +173,17 @@ export function sanitizeAcpOperationResult(kind, value) {
     authRequired: ["authRequired", "auth_required"],
     capabilities: "capabilities",
     warnings: "warnings",
-  }));
+  });
+  if (Array.isArray(source.authMethods)) {
+    const seen = new Set();
+    probe.authMethods = source.authMethods.slice(0, MAX_ITEMS).flatMap((value) => {
+      const method = sanitizeAuthMethod(value);
+      if (!method || seen.has(method.id)) return [];
+      seen.add(method.id);
+      return [method];
+    });
+  }
+  return boundedObject(probe);
 }
 
 export function sanitizeAcpOperationError(kind, error, { cancelled = false } = {}) {

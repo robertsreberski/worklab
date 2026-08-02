@@ -2,6 +2,7 @@ import { newAcpInteractionId, newAcpOperationId } from "../core/ids.js";
 import { assertAcpProfileBinding } from "../core/acp-profiles.js";
 import {
   acpInteractionDisposition,
+  normalizeAcpAuthMethodId,
   rowToAcpInteraction,
   rowToAcpOperation,
   sanitizeAcpInteractionSchema,
@@ -101,7 +102,7 @@ export class AcpOperationManager {
     return [...this.active.values()].some((entry) => entry.profile.id === profileId);
   }
 
-  start({ profileId, kind, remoteSessionId = null } = {}) {
+  start({ profileId, kind, remoteSessionId = null, authMethodId = null } = {}) {
     if (!this.supports(kind)) {
       throw managerError(`ACP ${kind || "operation"} control is not configured`, {
         code: "not_configured",
@@ -121,14 +122,20 @@ export class AcpOperationManager {
     if (kind === "delete_session" && !sessionId) {
       throw managerError("remoteSessionId is required", { code: "validation", status: 400 });
     }
+    const methodId = kind === "authenticate" ? normalizeAcpAuthMethodId(authMethodId) : null;
     const now = this.now();
     const id = newAcpOperationId();
+    const request = sessionId
+      ? { remoteSessionId: sessionId }
+      : methodId
+        ? { authMethodId: methodId }
+        : {};
     insertAcpOperation(this.db, {
       id,
       profileId,
       kind,
       remoteSessionId: sessionId,
-      requestJson: sessionId ? JSON.stringify({ remoteSessionId: sessionId }) : "{}",
+      requestJson: JSON.stringify(request),
       createdAt: now,
       updatedAt: now,
     });
@@ -137,6 +144,7 @@ export class AcpOperationManager {
       profile,
       kind,
       remoteSessionId: sessionId,
+      authMethodId: methodId,
       controller: new AbortController(),
       pending: new Map(),
       done: null,
@@ -169,6 +177,7 @@ export class AcpOperationManager {
         profile: record.profile,
         operation: this.get(record.id),
         remoteSessionId: record.remoteSessionId,
+        authMethodId: record.authMethodId,
         signal: record.controller.signal,
         onInteraction: (request) => this.#requestInteraction(record, request),
       })), record.controller.signal);
