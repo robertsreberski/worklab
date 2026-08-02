@@ -48,8 +48,94 @@ describe("openDb + runMigrations", () => {
         "automation_triggers", "task_edges", "slack_inbound_events", "slack_triage_runs",
         "slack_agent_logs", "slack_delivery_log", "assistant_threads", "assistant_messages",
         "assistant_runs", "assistant_agent_logs", "run_compactions", "task_attachments",
+        "acp_profiles", "acp_operations", "acp_interactions",
       ]),
     );
+  });
+
+  it("creates the v49 ACP tables, constraints, and pending-owner indexes", () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO agents (name, display_name, sdk, model, execution_mode, created_at, updated_at)
+      VALUES ('external', 'External', 'acp', 'acp:00000000-0000-4000-8000-000000000001', 'acp', ?, ?)
+    `).run(now, now);
+    db.prepare(`
+      INSERT INTO acp_profiles (
+        id, agent_name, driver, command, args_json, env_keys_json,
+        configuration_owner, workspace_owner, mcp_owner, created_at, updated_at
+      ) VALUES (?, 'external', 'generic', ?, '[]', '["ACP_TOKEN"]', 'client', 'client', 'client', ?, ?)
+    `).run("00000000-0000-4000-8000-000000000001", process.execPath, now, now);
+    db.prepare(`
+      INSERT INTO acp_operations (
+        id, profile_id, kind, state, request_json, result_json, error_json, created_at, updated_at
+      ) VALUES (?, ?, 'authenticate', 'running', '{}', '{}', '{}', ?, ?)
+    `).run(
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000001",
+      now,
+      now,
+    );
+
+    const insertInteraction = db.prepare(`
+      INSERT INTO acp_interactions (
+        id, profile_id, task_run_id, operation_id, protocol_request_id,
+        kind, request_schema_json, state, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 'form', '{}', 'pending', ?, ?)
+    `);
+    expect(() => insertInteraction.run(
+      "00000000-0000-4000-8000-000000000003",
+      "00000000-0000-4000-8000-000000000001",
+      null,
+      null,
+      "missing-owner",
+      now,
+      now,
+    )).toThrow();
+
+    insertInteraction.run(
+      "00000000-0000-4000-8000-000000000004",
+      "00000000-0000-4000-8000-000000000001",
+      null,
+      "00000000-0000-4000-8000-000000000002",
+      "request-1",
+      now,
+      now,
+    );
+    expect(() => insertInteraction.run(
+      "00000000-0000-4000-8000-000000000005",
+      "00000000-0000-4000-8000-000000000001",
+      null,
+      "00000000-0000-4000-8000-000000000002",
+      "request-1",
+      now,
+      now,
+    )).toThrow();
+    db.prepare("UPDATE acp_interactions SET state = 'submitted' WHERE id = ?")
+      .run("00000000-0000-4000-8000-000000000004");
+    expect(() => insertInteraction.run(
+      "00000000-0000-4000-8000-000000000006",
+      "00000000-0000-4000-8000-000000000001",
+      null,
+      "00000000-0000-4000-8000-000000000002",
+      "request-1",
+      now,
+      now,
+    )).not.toThrow();
+
+    const indexes = db.prepare(`
+      SELECT name FROM sqlite_master
+      WHERE type = 'index' AND name LIKE 'idx_acp_%'
+      ORDER BY name
+    `).all().map((row) => row.name);
+    expect(indexes).toEqual(expect.arrayContaining([
+      "idx_acp_interactions_pending_operation_request",
+      "idx_acp_interactions_pending_run_request",
+      "idx_acp_interactions_pending_profile",
+      "idx_acp_operations_active",
+      "idx_acp_profiles_mono_source",
+    ]));
   });
 
   it("idempotent: safe to run twice", () => {
@@ -289,6 +375,32 @@ describe("openDb + runMigrations", () => {
     runMigrations(db);
     const row = db.prepare("SELECT value FROM schema_meta WHERE key='version'").get();
     expect(row.value).toBe(String(SCHEMA_VERSION));
+  });
+
+  it("refuses a newer schema before performing or relabeling migrations", () => {
+    const db = openDb(":memory:");
+    db.exec(`
+      CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO schema_meta (key, value) VALUES ('version', '999');
+      CREATE TABLE future_only (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+      INSERT INTO future_only (id, payload) VALUES ('sentinel', 'keep');
+    `);
+
+    let error;
+    try {
+      runMigrations(db);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toMatchObject({
+      code: "schema_too_new",
+      databaseSchemaVersion: 999,
+      supportedSchemaVersion: SCHEMA_VERSION,
+    });
+    expect(error.message).toMatch(/upgrade Worklab or restore a backup/i);
+    expect(db.prepare("SELECT value FROM schema_meta WHERE key = 'version'").get().value).toBe("999");
+    expect(db.prepare("SELECT payload FROM future_only WHERE id = 'sentinel'").get().payload).toBe("keep");
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'projects'").get()).toBeUndefined();
   });
 
   it("migrates assistant run diagnostics columns", () => {

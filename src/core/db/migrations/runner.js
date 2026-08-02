@@ -1,4 +1,4 @@
-import { SCHEMA_SQL, SCHEMA_VERSION } from "../schema/current.js";
+import { ACP_SCHEMA_SQL, SCHEMA_SQL, SCHEMA_VERSION } from "../schema/current.js";
 import { ensureCurrentSchemaColumnsBeforeSchema } from "./preflight.js";
 import { STAGES } from "../../state-machine.js";
 import { backfillTaskKeys } from "../../task-keys.js";
@@ -47,6 +47,23 @@ function getColumn(db, table, column) {
 
 function tableExists(db, table) {
   return !!db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','virtual table') AND name = ?").get(table);
+}
+
+function assertSupportedSchemaVersion(db) {
+  if (!tableExists(db, "schema_meta")) return;
+  const stored = db.prepare("SELECT value FROM schema_meta WHERE key = 'version'").get()?.value;
+  if (stored == null || stored === "") return;
+  const version = Number(stored);
+  if (!Number.isSafeInteger(version) || version <= SCHEMA_VERSION) return;
+
+  const error = new Error(
+    `Worklab database schema v${version} is newer than this binary supports (v${SCHEMA_VERSION}). `
+      + "Upgrade Worklab or restore a backup created by a compatible version; the database was not changed.",
+  );
+  error.code = "schema_too_new";
+  error.databaseSchemaVersion = version;
+  error.supportedSchemaVersion = SCHEMA_VERSION;
+  throw error;
 }
 
 function ensureEmbeddingVectorPresentColumn(db, { backfill = false } = {}) {
@@ -817,6 +834,11 @@ function canonicalizeProviderModelRefs(db) {
 }
 
 export function runMigrations(db) {
+  // This check must stay before every migration write. Otherwise an older
+  // binary can partially rewrite a newer database and then relabel its
+  // schema_meta row with the older SCHEMA_VERSION at the end of this function.
+  assertSupportedSchemaVersion(db);
+
   // Existing pre-v8 databases may have `tasks` but not `stage`; SCHEMA_SQL
   // creates an index on stage, so add the column before executing the full
   // schema block.
@@ -1128,6 +1150,9 @@ export function runMigrations(db) {
   backfillTeamGoalContracts(db);
   backfillNativeGoals(db);
   backfillNativeLeadCycles(db);
+  // Keep the ACP slice explicit in the idempotent upgrade path as well as in
+  // SCHEMA_SQL. The tables depend only on current agents/task_runs tables.
+  db.exec(ACP_SCHEMA_SQL);
   db.prepare(
     "INSERT INTO schema_meta (key, value) VALUES ('version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
   ).run(String(SCHEMA_VERSION));

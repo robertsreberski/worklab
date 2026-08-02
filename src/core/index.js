@@ -112,6 +112,9 @@ export { readPiAuthFile } from "./pi-oauth.js";
 
 // ---------- IDs + slugs ----------
 export {
+  newAcpInteractionId,
+  newAcpOperationId,
+  newAcpProfileId,
   newAttachmentId,
   newAttachmentUploadId,
   newAgentLogId,
