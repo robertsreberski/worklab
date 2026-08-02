@@ -1,4 +1,7 @@
-import { normalizeAcpProviderSessionId } from "./acp-operations.js";
+import {
+  normalizeAcpProviderSessionId,
+  normalizeAcpSessionCursor,
+} from "./acp-operations.js";
 
 const MAX_ACP_EVENT_DEPTH = 20;
 const MAX_ACP_EVENT_NODES = 50_000;
@@ -7,6 +10,7 @@ const MAX_ACP_RAW_SESSION_IDS = 128;
 const MAX_ACP_RAW_SESSION_ID_CHARS = 16 * 1024;
 const ACP_SESSION_ID_KEYS = new Set(["sessionId", "session_id"]);
 const ACP_PROVIDER_SESSION_ID_KEYS = new Set(["providerSessionId", "provider_session_id"]);
+const ACP_CURSOR_KEYS = new Set(["cursor", "nextCursor", "next_cursor"]);
 
 function decodedAcpProviderSessionId(value, profileId) {
   if (typeof profileId !== "string" || profileId.length === 0) return null;
@@ -24,6 +28,29 @@ function decodedAcpProviderSessionId(value, profileId) {
     const sessionId = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     if (!sessionId || sessionId.trim() !== sessionId || sessionId.includes("\0")) return null;
     return { providerSessionId: normalized, sessionId };
+  } catch {
+    return null;
+  }
+}
+
+function decodedAcpSessionCursor(value, profileId) {
+  if (typeof profileId !== "string" || profileId.length === 0) return null;
+  let normalized;
+  try {
+    normalized = normalizeAcpSessionCursor(value, profileId);
+  } catch {
+    return null;
+  }
+  if (!normalized) return null;
+  const prefix = `acp-cursor:v1:${profileId}:`;
+  if (!normalized.startsWith(prefix)) return null;
+  const encoded = normalized.slice(prefix.length);
+  try {
+    const bytes = Buffer.from(encoded, "base64url");
+    if (bytes.length === 0 || bytes.length > 4096 || bytes.toString("base64url") !== encoded) return null;
+    const cursor = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    if (!cursor || cursor.trim() !== cursor || cursor.includes("\0")) return null;
+    return { cursor: normalized, rawCursor: cursor };
   } catch {
     return null;
   }
@@ -48,7 +75,11 @@ export function validateAcpProviderSessionId(value, profileId) {
  * failed closed for the rest of the stream. Otherwise an identifier omitted
  * by the failed scan could leak from a later event.
  */
-export function createAcpEventPrivacyBoundary({ profileId, failureValue = null } = {}) {
+export function createAcpEventPrivacyBoundary({
+  profileId,
+  failureValue = null,
+  includeCursors = false,
+} = {}) {
   const active = typeof profileId === "string" && profileId.length > 0;
   const rawSessionIds = new Set();
   let failedClosed = false;
@@ -92,6 +123,12 @@ export function createAcpEventPrivacyBoundary({ profileId, failureValue = null }
           if (!collectRawSessionId(decoded.sessionId, collected)) return false;
         } else if (!collectRawSessionId(entry, collected)) return false;
       }
+      if (includeCursors && ACP_CURSOR_KEYS.has(key)) {
+        const decoded = decodedAcpSessionCursor(entry, profileId);
+        if (decoded) {
+          if (!collectRawSessionId(decoded.rawCursor, collected)) return false;
+        } else if (!collectRawSessionId(entry, collected)) return false;
+      }
       if (!scan(entry, state, collected, depth + 1)) return false;
     }
     return true;
@@ -119,6 +156,11 @@ export function createAcpEventPrivacyBoundary({ profileId, failureValue = null }
       if (ACP_PROVIDER_SESSION_ID_KEYS.has(key)) {
         const providerSessionId = validateAcpProviderSessionId(entry, profileId);
         if (providerSessionId) output[key] = providerSessionId;
+        continue;
+      }
+      if (includeCursors && ACP_CURSOR_KEYS.has(key)) {
+        const cursor = decodedAcpSessionCursor(entry, profileId)?.cursor;
+        if (cursor) output[key] = cursor;
         continue;
       }
       output[redactText(key)] = copySanitized(entry, depth + 1);

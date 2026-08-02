@@ -54,9 +54,13 @@ describe("legacy ACP session privacy migration", () => {
     const operationSession = "RAW_OPERATION_SESSION";
     const invalidOperationSession = "RAW_INVALID_OPERATION_SESSION";
     const probeSession = "RAW_PROFILE_PROBE_SESSION";
+    const rawCursor = "RAW_CURSOR_SECRET";
+    const rawNextCursor = "RAW_NEXT_CURSOR_SECRET";
+    const opaqueCursorRaw = "RAW_OPAQUE_CURSOR_COPY";
     const nonAcpSession = "NON_ACP_SESSION_MUST_SURVIVE";
     const providerSessionId = opaqueSessionId(handleOnlySession);
     const operationProviderSessionId = opaqueSessionId(operationSession);
+    const opaqueCursor = `acp-cursor:v1:${PROFILE_ID}:${Buffer.from(opaqueCursorRaw).toString("base64url")}`;
     writeFileSync(rawPath, [
       JSON.stringify({
         type: "sdk_event",
@@ -217,6 +221,26 @@ describe("legacy ACP session privacy migration", () => {
         request_schema_json, state, created_at, updated_at
       ) VALUES ('interaction-ordinary', ?, 'operation-invalid', 'ordinary-request-id', 'form', '{}', 'submitted', 2, 2)
     `).run(PROFILE_ID);
+    db.prepare(`
+      INSERT INTO acp_operations (
+        id, profile_id, kind, state, request_json, result_json,
+        error_json, created_at, updated_at, completed_at
+      ) VALUES ('operation-raw-cursor', ?, 'list_sessions', 'succeeded', ?, ?, '{}', 3, 3, 3)
+    `).run(
+      PROFILE_ID,
+      JSON.stringify({ cursor: rawCursor, copied: rawNextCursor }),
+      JSON.stringify({ nextCursor: rawNextCursor, copied: `${rawCursor} ${rawNextCursor}` }),
+    );
+    db.prepare(`
+      INSERT INTO acp_operations (
+        id, profile_id, kind, state, request_json, result_json,
+        error_json, created_at, updated_at, completed_at
+      ) VALUES ('operation-opaque-cursor', ?, 'list_sessions', 'succeeded', ?, ?, '{}', 4, 4, 4)
+    `).run(
+      PROFILE_ID,
+      JSON.stringify({ cursor: opaqueCursor, copied: opaqueCursorRaw }),
+      JSON.stringify({ nextCursor: opaqueCursor, copied: opaqueCursorRaw }),
+    );
 
     runMigrations(db);
 
@@ -277,6 +301,16 @@ describe("legacy ACP session privacy migration", () => {
       .toEqual({ remote_session_id: null, request_json: '{"copied":"[redacted]"}' });
     expect(db.prepare("SELECT protocol_request_id FROM acp_interactions WHERE id = 'interaction-ordinary'").get())
       .toEqual({ protocol_request_id: "ordinary-request-id" });
+    expect(db.prepare("SELECT request_json, result_json FROM acp_operations WHERE id = 'operation-raw-cursor'").get())
+      .toEqual({
+        request_json: '{"copied":"[redacted]"}',
+        result_json: '{"copied":"[redacted] [redacted]"}',
+      });
+    expect(db.prepare("SELECT request_json, result_json FROM acp_operations WHERE id = 'operation-opaque-cursor'").get())
+      .toEqual({
+        request_json: `{"cursor":"${opaqueCursor}","copied":"[redacted]"}`,
+        result_json: `{"nextCursor":"${opaqueCursor}","copied":"[redacted]"}`,
+      });
 
     const sanitizedRaw = readFileSync(rawPath, "utf8");
     expect(sanitizedRaw).toContain(providerSessionId);
@@ -292,6 +326,9 @@ describe("legacy ACP session privacy migration", () => {
       operationSession,
       invalidOperationSession,
       probeSession,
+      rawCursor,
+      rawNextCursor,
+      opaqueCursorRaw,
     ]) {
       expect(sanitizedRaw).not.toContain(sentinel);
       expect(databaseContains(dbPath, sentinel)).toBe(false);

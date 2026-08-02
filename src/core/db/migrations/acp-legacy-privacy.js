@@ -38,7 +38,7 @@ const RUN_JSON_DEFAULTS = new Map([
   ["tool_usage_summary_json", null],
 ]);
 const RUN_TEXT_COLUMNS = ["error_text", "summary", "details"];
-const EXPLICIT_SESSION_VALUE_RE = /"(sessionId|session_id|providerSessionId|provider_session_id)"\s*:\s*"((?:\\.|[^"\\])*)"/gu;
+const EXPLICIT_SESSION_VALUE_RE = /"(sessionId|session_id|providerSessionId|provider_session_id|cursor|nextCursor|next_cursor)"\s*:\s*"((?:\\.|[^"\\])*)"/gu;
 const TASK_EMBEDDING_KINDS = new Set([
   "task",
   "tasks",
@@ -481,7 +481,11 @@ function scrubStandaloneAcpOperations(db) {
       }),
       legacySessionSeeds: seeds,
     };
-    const boundary = createAcpEventPrivacyBoundary({ profileId: row.profile_id, failureValue: null });
+    const boundary = createAcpEventPrivacyBoundary({
+      profileId: row.profile_id,
+      failureValue: null,
+      includeCursors: true,
+    });
     const sanitized = boundary.sanitizeEvent(prepared) || {
       providerSessionId: validateAcpProviderSessionId(row.remote_session_id, row.profile_id),
       request: {},

@@ -78,6 +78,25 @@ describe("ACP event privacy boundary", () => {
     expect(JSON.stringify(sanitized)).not.toContain(rawSessionId);
   });
 
+  it("optionally preserves opaque cursors while dropping raw cursor state and redacting copies", () => {
+    const rawCursor = "RAW_CURSOR_FROM_HANDLE";
+    const malformedCursor = "RAW_MALFORMED_CURSOR";
+    const cursor = `acp-cursor:v1:${PROFILE_ID}:${Buffer.from(rawCursor).toString("base64url")}`;
+    const boundary = createAcpEventPrivacyBoundary({
+      profileId: PROFILE_ID,
+      includeCursors: true,
+    });
+
+    expect(boundary.sanitizeEvent({
+      cursor,
+      next_cursor: malformedCursor,
+      note: `${rawCursor} ${malformedCursor}`,
+    })).toEqual({
+      cursor,
+      note: "[redacted] [redacted]",
+    });
+  });
+
   it("stays failed closed after an event exceeds the depth budget", () => {
     const failure = { type: "privacy_failure" };
     const boundary = createAcpEventPrivacyBoundary({
