@@ -1,39 +1,54 @@
 import supertest from "supertest";
-import { createServer as createHttpServer } from "node:http";
+import { Agent as HttpAgent, createServer as createHttpServer } from "node:http";
 import { makeTestDb } from "./test-db.js";
 import { createServer } from "../../api/server.js";
 
-export function sameOriginTestAgent(app) {
-  const server = createHttpServer(app);
+const ROUTE_HEADER = "x-worklab-test-app";
+const routedApps = new Map();
+let nextRoutedAppId = 0;
+let sharedHarness = null;
+
+function testHarness() {
+  if (sharedHarness) return sharedHarness;
+  const server = createHttpServer((req, res) => {
+    const app = routedApps.get(String(req.headers[ROUTE_HEADER] || ""));
+    if (app) {
+      app(req, res);
+      return;
+    }
+    res.statusCode = 500;
+    res.end("test app is not registered");
+  });
   server.listen(0);
   server.unref();
-  const agent = supertest.agent(server).set({
-    host: "127.0.0.1",
-    origin: "http://127.0.0.1",
-    "sec-fetch-site": "same-origin",
-  });
-  let idleClose = null;
-  const scheduleClose = () => {
-    clearTimeout(idleClose);
-    idleClose = setTimeout(() => {
-      if (server.listening) server.close();
-    }, 1_000);
-    idleClose.unref?.();
+  server.on("connection", (socket) => socket.unref());
+  sharedHarness = {
+    server,
+    transportAgent: new HttpAgent({ keepAlive: true, maxSockets: 8 }),
   };
+  return sharedHarness;
+}
+
+function routedTestAgent(app, defaultHeaders = {}) {
+  const appId = String(++nextRoutedAppId);
+  routedApps.set(appId, app);
+  const { server, transportAgent } = testHarness();
+  const client = supertest(server);
   return Object.fromEntries(
     ["get", "post", "put", "patch", "delete", "head", "options"]
-      .map((method) => [method, (...args) => {
-        clearTimeout(idleClose);
-        if (!server.listening) {
-          server.listen(0);
-          server.unref();
-        }
-        const request = agent[method](...args);
-        request.once("response", scheduleClose);
-        request.once("error", scheduleClose);
-        return request;
-      }]),
+      .map((method) => [method, (...args) => client[method](...args).agent(transportAgent).set({
+        [ROUTE_HEADER]: appId,
+        ...defaultHeaders,
+      })]),
   );
+}
+
+export function sameOriginTestAgent(app) {
+  return routedTestAgent(app, {
+    host: "worklab-test.ts.net",
+    origin: "http://worklab-test.ts.net",
+    "sec-fetch-site": "same-origin",
+  });
 }
 
 export function sameOriginFetch(url, init = {}) {
@@ -75,7 +90,7 @@ export function makeTestServer({ watcher, dataDir, consolidation, automationMana
     acpOperationManager,
     acpUrlHandoffStore,
   });
-  const rawAgent = supertest(app);
+  const rawAgent = routedTestAgent(app);
   const agent = sameOriginTestAgent(app);
   return {
     app,
