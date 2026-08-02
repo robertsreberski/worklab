@@ -8,6 +8,7 @@ export function sameOriginTestAgent(app) {
   server.listen(0);
   server.unref();
   const agent = supertest.agent(server).set({
+    host: "127.0.0.1",
     origin: "http://127.0.0.1",
     "sec-fetch-site": "same-origin",
   });

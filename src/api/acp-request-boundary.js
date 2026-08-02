@@ -79,9 +79,6 @@ function sameUiBoundary(req, { origins, hosts }) {
   const source = browserSourceUrl(req);
   if (!source) return false;
   if (origins.has(source.origin)) return true;
-  if (source.protocol === target.protocol
-    && loopbackHostname(source.hostname)
-    && loopbackHostname(target.hostname)) return true;
   return source.origin === target.origin;
 }
 

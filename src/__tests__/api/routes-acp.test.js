@@ -98,6 +98,12 @@ describe("ACP API", () => {
       .send(profileBody)
       .expect(403);
     await rawAgent.post("/api/acp/profiles")
+      .set("host", "127.0.0.1:7878")
+      .set("origin", "http://localhost:9999")
+      .set("sec-fetch-site", "same-site")
+      .send(profileBody)
+      .expect(403);
+    await rawAgent.post("/api/acp/profiles")
       .set("host", "worklab.example.ts.net")
       .set("sec-fetch-site", "same-origin")
       .send(profileBody)
