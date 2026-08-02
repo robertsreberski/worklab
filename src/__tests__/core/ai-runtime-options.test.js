@@ -126,7 +126,7 @@ describe("generateResponse Codex runtime options", () => {
     }));
   });
 
-  it("threads the skills root without opting into new retry, environment, or subagent surfaces", async () => {
+  it("threads the skills root without opting into new retry or environment surfaces", async () => {
     mockRun.mockResolvedValue({ text: "ok" });
     const skillsRoot = resolve("/tmp/worklab-data/skills");
     const skills = [{
@@ -158,7 +158,49 @@ describe("generateResponse Codex runtime options", () => {
       skillDirs: [skillsRoot],
     });
     expect(runOptions).not.toHaveProperty("toolEnvironment");
-    expect(runOptions).not.toHaveProperty("subagents");
+    // Team-roster subagents are gone; the roster now only drives durable
+    // delegation into child tasks.
     expect(runOptions).not.toHaveProperty("nativeSubagents");
+  });
+
+  // Native subagents come from the runtime's own on-disk profiles, so each
+  // backend gets whatever lets it find them — and only that.
+  it("opts pi into the in-process Agent built-in, which has no on-disk profiles", async () => {
+    mockRun.mockResolvedValue({ text: "ok" });
+    await generateResponse("sys", {
+      model: resolveModel("pi:openai:gpt-5.5"),
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    const runOptions = mockRun.mock.calls[0][1];
+    expect(runOptions.subagents).toEqual({ inline: { enabled: true }, maxConcurrent: 3, maxPerTurn: 10 });
+    // Pi has no filesystem profile concept, so setting sources would be noise.
+    expect(runOptions).not.toHaveProperty("settingSources");
+  });
+
+  it("lets the Claude SDK read the same on-disk settings the Claude CLI already reads", async () => {
+    mockRun.mockResolvedValue({ text: "ok" });
+    await generateResponse("sys", {
+      model: resolveModel("claude:claude-sonnet-4-6"),
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    const runOptions = mockRun.mock.calls[0][1];
+    expect(runOptions.settingSources).toEqual(["user", "project", "local"]);
+    // Claude's subagents are native; the in-process built-in would duplicate them.
+    expect(runOptions).not.toHaveProperty("subagents");
+  });
+
+  it("leaves codex on its own native surface", async () => {
+    mockRun.mockResolvedValue({ text: "ok" });
+    await generateResponse("sys", {
+      model: resolveModel("codex:gpt-5.5"),
+      messages: [{ role: "user", content: "hi" }],
+      executionMode: "cli",
+    });
+
+    const runOptions = mockRun.mock.calls[0][1];
+    expect(runOptions).not.toHaveProperty("subagents");
+    expect(runOptions).not.toHaveProperty("settingSources");
   });
 });

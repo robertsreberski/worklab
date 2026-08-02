@@ -665,10 +665,33 @@ export async function generateResponse(systemPrompt, options) {
     });
   }
 
+  // Native subagents come from the runtime's own on-disk profiles, so each
+  // backend needs whatever lets it find them.
+  //
+  // Claude Agent SDK: it loads no filesystem settings by default, so a run would
+  // never see `.claude/agents`. Opt in to the same sources the Claude Code CLI
+  // already reads on its own — Worklab passes no `--setting-sources` there, so
+  // this makes the two execution modes behave alike rather than diverging on
+  // which agent profiles exist. Requires agent-runtime > 0.17.1; older builds
+  // ignore the option and keep full isolation.
+  //
+  // Pi: it has no on-disk profile concept and reports
+  // `supports_native_subagents: false`, so its subagents are the runtime's
+  // in-process `Agent` built-in instead. Inline authoring means the model
+  // describes the helper it wants at call time; omitting `allowedTools` leaves
+  // the runtime's read-only default set, which is the right ceiling for a
+  // helper Worklab never reviewed.
+  const nativeSubagentOptions = resolved.sdk === "pi"
+    ? { subagents: { inline: { enabled: true }, maxConcurrent: 3, maxPerTurn: 10 } }
+    : resolved.sdk === "claude"
+      ? { settingSources: ["user", "project", "local"] }
+      : {};
+
   const baseOptions = {
     ...options,
     model: resolved,
     skillDirs,
+    ...nativeSubagentOptions,
     ...(skillsRoot === undefined ? {} : { skillsRoot }),
     settings,
     toolLimits,
