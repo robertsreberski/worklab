@@ -121,20 +121,30 @@ export function createAcpInteractionControls({
   const activeByInteraction = new Map();
   const privateValues = new Set();
 
-  function rememberPrivateValues(value, depth = 0) {
-    if (depth > 10 || privateValues.size >= MAX_PRIVATE_VALUES || value == null) return;
+  function collectPrivateValues(value, collected, depth = 0) {
+    if (depth > 10) return false;
+    if (value == null) return true;
     if (typeof value === "string") {
-      if (value) privateValues.add(value);
-      return;
+      if (!value || privateValues.has(value) || collected.has(value)) return true;
+      if (privateValues.size + collected.size >= MAX_PRIVATE_VALUES) return false;
+      collected.add(value);
+      return true;
     }
     if (Array.isArray(value)) {
-      for (const entry of value.slice(0, MAX_PRIVATE_VALUES)) rememberPrivateValues(entry, depth + 1);
-      return;
+      return value.every((entry) => collectPrivateValues(entry, collected, depth + 1));
     }
-    if (typeof value !== "object") return;
-    for (const entry of Object.values(value).slice(0, MAX_PRIVATE_VALUES)) {
-      rememberPrivateValues(entry, depth + 1);
+    if (typeof value !== "object") return true;
+    return Object.values(value).every((entry) => collectPrivateValues(entry, collected, depth + 1));
+  }
+
+  function rememberPrivateResponse(response) {
+    const collected = new Set();
+    if (!collectPrivateValues(response?.content, collected)
+      || !collectPrivateValues(response?.values, collected)) {
+      return false;
     }
+    for (const value of collected) privateValues.add(value);
+    return true;
   }
 
   function redactText(value) {
@@ -277,9 +287,8 @@ export function createAcpInteractionControls({
     if (action === "respond" && !permissionResponseIsOffered(existing, response, disposition)) {
       return { ok: false, code: "invalid_response", message: "permission option was not offered" };
     }
-    if (action === "respond") {
-      rememberPrivateValues(response?.content);
-      rememberPrivateValues(response?.values);
+    if (action === "respond" && !rememberPrivateResponse(response)) {
+      return { ok: false, code: "invalid_response", message: "private response is too deeply nested or complex" };
     }
     const delivery = beginDelivery({ interactionId, action, disposition });
     if (!delivery) {
