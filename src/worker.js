@@ -25,6 +25,7 @@ import { createApprovalChannel } from "./worker/approval-channel.js";
 import {
   createAcpInteractionChannel,
   createAcpPrivateOutputRedactor,
+  protectAcpPrivateOutput,
 } from "./worker/acp-interaction-channel.js";
 
 function emit(obj) {
@@ -51,7 +52,11 @@ function emitPrivateUrlHandoff(frame) {
 const liveInput = createLiveInputQueue();
 const approvalChannel = createApprovalChannel({ emit });
 const acpPrivateOutput = createAcpPrivateOutputRedactor();
-acpPrivateOutput.protectWritable(process.stderr);
+protectAcpPrivateOutput({
+  profileId: process.env.WORKLAB_ACP_PROFILE_ID,
+  stream: process.stderr,
+  redactor: acpPrivateOutput,
+});
 const acpInteractionChannel = createAcpInteractionChannel({
   emit,
   emitPrivateUrlHandoff,

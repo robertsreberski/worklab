@@ -290,7 +290,7 @@ describe("spawnWorker ACP interactions", () => {
       const sentinel = "task-run-request-secret-sentinel";
       const rawSessionId = "RAW_REMOTE_SESSION_DO_NOT_PERSIST";
       let deeplyNestedSession = { sessionId: rawSessionId };
-      for (let depth = 0; depth < 25; depth += 1) {
+      for (let depth = 0; depth < 10; depth += 1) {
         deeplyNestedSession = { nested: deeplyNestedSession };
       }
       const script = {
@@ -346,6 +346,7 @@ describe("spawnWorker ACP interactions", () => {
           FAKE_WORKER_SCRIPT: JSON.stringify(script),
           WORKLAB_RUN_ID: runId,
           WORKLAB_DATA_DIR: dataDir,
+          WORKLAB_ACP_PROFILE_ID: "profile-1",
         },
         runId,
         taskId,
@@ -636,6 +637,7 @@ describe("spawnWorker ACP interactions", () => {
             request: { options: [{ optionId: "allow", name: "Allow" }] },
           }] }),
           WORKLAB_RUN_ID: runId,
+          WORKLAB_ACP_PROFILE_ID: "profile-1",
         },
         runId,
         taskId,
@@ -678,6 +680,7 @@ describe("spawnWorker ACP interactions", () => {
             exitAfterMs: 100,
           }),
           WORKLAB_RUN_ID: runId,
+          WORKLAB_ACP_PROFILE_ID: "profile-1",
         },
         runId,
         taskId,

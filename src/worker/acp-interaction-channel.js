@@ -87,6 +87,11 @@ export function createAcpPrivateOutputRedactor() {
   };
 }
 
+export function protectAcpPrivateOutput({ profileId, stream, redactor } = {}) {
+  if (!profileId) return () => {};
+  return redactor?.protectWritable?.(stream) || (() => {});
+}
+
 function sanitizePermission(payload = {}) {
   const toolCall = payload.toolCall && typeof payload.toolCall === "object"
     ? {

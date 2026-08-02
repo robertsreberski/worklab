@@ -34,6 +34,37 @@ function seedTaskAndRun(db, { mode = "execute" } = {}) {
 }
 
 describe("spawnWorker", () => {
+  it("preserves deeply nested non-ACP worker events", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    let nested = { marker: "deep-leaf" };
+    for (let depth = 0; depth < 30; depth += 1) nested = { child: nested };
+    const script = {
+      events: [
+        { type: "sdk_event", event: { type: "custom", payload: nested } },
+        { type: "final", text: "done", usage: {}, durationMs: 1, numTurns: 1 },
+      ],
+      exitCode: 0,
+    };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId,
+      taskId,
+      broker,
+      db,
+      persistDebounceMs: 10,
+    });
+
+    await handle.done;
+    const sdkEvent = broker.broadcasts.find(({ ch, p }) => ch === runId && p.type === "sdk_event").p;
+    let cursor = sdkEvent.event.payload;
+    for (let depth = 0; depth < 30; depth += 1) cursor = cursor.child;
+    expect(cursor).toEqual({ marker: "deep-leaf" });
+  });
+
   it("streams fake-worker stdout events through broker and resolves on clean exit", async () => {
     const db = makeTestDb();
     const broker = stubBroker();

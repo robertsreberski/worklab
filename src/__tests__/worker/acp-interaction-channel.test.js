@@ -3,6 +3,7 @@ import { PassThrough } from "node:stream";
 import {
   createAcpInteractionChannel,
   createAcpPrivateOutputRedactor,
+  protectAcpPrivateOutput,
 } from "../../worker/acp-interaction-channel.js";
 import { ACP_PRIVATE_VALUE_LIMITS } from "../../core/acp-private-values.js";
 
@@ -183,6 +184,25 @@ describe("createAcpInteractionChannel", () => {
     expect(output).not.toMatch(
       /HOST_LABEL_PRIVATE|PATH_PRIVATE|QUERY_KEY_PRIVATE|QUERY_PRIVATE|FRAGMENT_KEY_PRIVATE|FRAGMENT_PRIVATE/u,
     );
+  });
+
+  it("leaves non-ACP stderr writes completely untouched", () => {
+    const originalWrite = vi.fn(() => true);
+    const stream = { write: originalWrite };
+    const redactor = { protectWritable: vi.fn() };
+    const restore = protectAcpPrivateOutput({
+      profileId: null,
+      stream,
+      redactor,
+    });
+    const binary = Buffer.from([0xff, 0x00, 0x61]);
+    const callback = vi.fn();
+
+    expect(stream.write(binary, callback)).toBe(true);
+    restore();
+
+    expect(redactor.protectWritable).not.toHaveBeenCalled();
+    expect(originalWrite).toHaveBeenCalledWith(binary, callback);
   });
 
   it("redacts accepted private form values from later worker stderr", async () => {

@@ -58,6 +58,12 @@ export function createAcpAwareStdoutPipeline({
   let processing = Promise.resolve();
 
   function processParsed(parsed) {
+    const isAcpEvent = String(parsed?.type || "").startsWith("acp_")
+      || (parsed?.type === "sdk_event" && String(parsed?.event?.type || "").startsWith("acp_"));
+    if (isAcpEvent && !acpProfileId) {
+      logger?.warn?.({ runId, reason: "acp_profile_missing" }, "ACP worker event rejected");
+      return;
+    }
     const isUrlInteraction = taskRunEventNeedsUrlHandoff(parsed);
     if (parsed.type === "acp_interaction_requested"
       && acpProfileId
@@ -79,11 +85,13 @@ export function createAcpAwareStdoutPipeline({
       cancelInteraction(writeControlMessage, parsed.interaction_id);
       return;
     }
-    const safeParsed = acpInteractionControls.redactWorkerEvent(
-      sanitizeTaskRunAcpInteractionEvent(acpEventBoundary.sanitizeWorkerEvent(parsed), {
-        urlPublicRequest,
-      }),
-    );
+    const safeParsed = acpProfileId
+      ? acpInteractionControls.redactWorkerEvent(
+        sanitizeTaskRunAcpInteractionEvent(acpEventBoundary.sanitizeWorkerEvent(parsed), {
+          urlPublicRequest,
+        }),
+      )
+      : parsed;
     if (safeParsed.type === "acp_interaction_requested" && safeParsed.interaction_id) {
       try {
         persistAcpInteractionRequest(db, runId, safeParsed, { profileId: acpProfileId });

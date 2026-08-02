@@ -120,7 +120,11 @@ export function spawnWorker({
     ? captureGitArtifactState(env.WORKLAB_WORKSPACE)
     : null;
   const child = spawn("node", [binary, ...args], {
-    env: { ...process.env, ...env, WORKLAB_ACP_URL_HANDOFF_FD: "3" },
+    env: {
+      ...process.env,
+      ...env,
+      ...(env.WORKLAB_ACP_PROFILE_ID ? { WORKLAB_ACP_URL_HANDOFF_FD: "3" } : {}),
+    },
     stdio: ["pipe", "pipe", "pipe", "pipe"],
     detached: canSignalProcessGroup(),
   });
