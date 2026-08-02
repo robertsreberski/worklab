@@ -110,6 +110,14 @@ const PATCHABLE = [
 ];
 
 const VALID_EXECUTION_MODES = new Set(["sdk", "cli"]);
+const REMOVED_SUBAGENT_MODE_MESSAGE =
+  "subagent_mode was removed; use Worklab subtasks for durable team delegation. Native CLI subagents are controlled by the selected runtime.";
+
+function rejectRemovedSubagentMode(body) {
+  return body && Object.prototype.hasOwnProperty.call(body, "subagent_mode")
+    ? REMOVED_SUBAGENT_MODE_MESSAGE
+    : null;
+}
 
 function normalizeExecutionMode(value, fallback = "sdk") {
   if (value === undefined || value === null || value === "") return fallback;
@@ -350,6 +358,11 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
   app.post("/api/agents", (req, res) => {
     const { name, display_name, model } = req.body || {};
 
+    const removedFieldError = rejectRemovedSubagentMode(req.body);
+    if (removedFieldError) {
+      return res.status(400).json({ error: { code: "removed_field", message: removedFieldError } });
+    }
+
     if (!display_name || !model) {
       return res.status(400).json({ error: { code: "validation", message: "display_name and explicit model reference required" } });
     }
@@ -558,6 +571,11 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
   app.patch("/api/agents/:name", (req, res) => {
     const existing = getAgentByName(db, req.params.name);
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
+
+    const removedFieldError = rejectRemovedSubagentMode(req.body);
+    if (removedFieldError) {
+      return res.status(400).json({ error: { code: "removed_field", message: removedFieldError } });
+    }
 
     const existingExecutionMode = existing.execution_mode || "sdk";
     let targetExecutionMode;

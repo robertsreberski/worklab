@@ -395,6 +395,29 @@ describe("agents CRUD", () => {
     expect(row).toEqual({ allow_self_review: 0, browser_tools_review_only: 1 });
   });
 
+  it("rejects the removed roster-backed subagent_mode on create and update", async () => {
+    const { agent } = makeTestServer();
+    const created = await agent.post("/api/agents").send({
+      name: "legacy-subagents",
+      display_name: "Legacy Subagents",
+      model: "claude:claude-sonnet-4-6",
+      subagent_mode: "workspace",
+    }).expect(400);
+    expect(created.body.error).toMatchObject({ code: "removed_field" });
+    expect(created.body.error.message).toMatch(/Worklab subtasks/);
+
+    await agent.post("/api/agents").send({
+      name: "current-agent",
+      display_name: "Current Agent",
+      model: "claude:claude-sonnet-4-6",
+    }).expect(201);
+    const patched = await agent.patch("/api/agents/current-agent").send({
+      subagent_mode: "disabled",
+    }).expect(400);
+    expect(patched.body.error).toMatchObject({ code: "removed_field" });
+    expect(patched.body.error.message).toMatch(/Native CLI subagents/);
+  });
+
   it("POST /api/agents generates a unique slug from display_name when name is omitted", async () => {
     const { agent } = makeTestServer();
     const first = await agent.post("/api/agents").send({ display_name: "Code Reviewer", model: "claude:claude-sonnet-4-6" }).expect(201);

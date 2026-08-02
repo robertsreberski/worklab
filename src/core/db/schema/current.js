@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS agents (
   builtin_allowlist_mode TEXT NOT NULL DEFAULT 'all',
   allow_self_review INTEGER NOT NULL DEFAULT 1,
   browser_tools_review_only INTEGER NOT NULL DEFAULT 0,
+  -- v49 compatibility tombstone. Kept physically for one release so a
+  -- downgrade can still open this database; application code ignores it.
+  subagent_mode TEXT NOT NULL DEFAULT 'advisory',
   execution_mode TEXT NOT NULL DEFAULT 'sdk',
   enabled INTEGER NOT NULL DEFAULT 1,
   -- HITL approval (v46). When require_human_approval=1, the worker installs

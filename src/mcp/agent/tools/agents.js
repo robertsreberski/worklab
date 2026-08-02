@@ -31,6 +31,8 @@ const allowlistModeSchema = z.enum(["all", "custom"]).optional();
 const effortSchema = z.enum(["none", "low", "medium", "high", "xhigh", "max"]).optional();
 const executionModeSchema = z.enum(["cli", "sdk"]).optional();
 const contextWindowSchema = z.enum(["default", "1m"]).optional();
+const REMOVED_SUBAGENT_MODE_MESSAGE =
+  "subagent_mode was removed; use Worklab subtasks for durable team delegation. Native CLI subagents are controlled by the selected runtime.";
 
 export const agentCreateSchema = z.object({
   name: z.string().optional(),
@@ -179,6 +181,9 @@ export function buildHandlers(context) {
   const { dataDir } = context;
   return {
     async agent_create(input) {
+      if (input && Object.prototype.hasOwnProperty.call(input, "subagent_mode")) {
+        throw new Error(REMOVED_SUBAGENT_MODE_MESSAGE);
+      }
       const parsed = agentCreateSchema.parse(input);
       return await withDb(dataDir, (db) => {
         const resolved = validateAgentModel({ db, dataDir, model: parsed.model });
