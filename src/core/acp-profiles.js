@@ -53,7 +53,7 @@ const DEFAULT_PERMISSIONS_POLICY = Object.freeze({
   network: false,
   mcp: false,
 });
-const UNSUPPORTED_CLIENT_CAPABILITIES = Object.freeze(["filesystem", "terminal", "mcp"]);
+const UNSUPPORTED_CLIENT_CAPABILITIES = Object.freeze(["filesystem", "terminal", "network", "mcp"]);
 const MONO_DESCRIPTOR_OWNED_INPUT_KEYS = Object.freeze([
   "command",
   "args",

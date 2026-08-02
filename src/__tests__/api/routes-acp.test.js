@@ -355,6 +355,11 @@ describe("ACP API", () => {
       permissionsPolicy: { filesystem: false, terminal: true, network: false, mcp: false },
     }).expect(400);
     expect(patchResponse.body.error).toMatchObject({ code: "capability_unsupported" });
+
+    const networkResponse = await agent.patch(`/api/acp/profiles/${profile.id}`).send({
+      permissionsPolicy: { filesystem: false, terminal: false, network: true, mcp: false },
+    }).expect(400);
+    expect(networkResponse.body.error).toMatchObject({ code: "capability_unsupported" });
   });
 
   it("starts control operations with 202 and exposes sanitized operation state", async () => {

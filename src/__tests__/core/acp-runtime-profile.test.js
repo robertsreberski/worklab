@@ -63,7 +63,7 @@ describe("Worklab ACP runtime profiles", () => {
       createGeneric(unsupportedDb, { envKeys: [] });
       unsupportedDb.prepare(`
         UPDATE acp_profiles
-        SET permissions_policy_json = '{"filesystem":true,"terminal":false,"network":false,"mcp":false}'
+        SET permissions_policy_json = '{"filesystem":false,"terminal":false,"network":true,"mcp":false}'
         WHERE id = ?
       `).run(PROFILE_ID);
       await expect(createWorklabAcpProfileResolver({ db: unsupportedDb, env: {} })(PROFILE_ID))

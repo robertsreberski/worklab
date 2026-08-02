@@ -63,7 +63,7 @@ describe("ACP profile persistence", () => {
         args: ["bridge.mjs", "--stdio"],
         cwd,
         envKeys: ["Z_TOKEN_NAME", "A_ENDPOINT", "Z_TOKEN_NAME"],
-        permissionsPolicy: { filesystem: false, terminal: false, network: true, mcp: false },
+        permissionsPolicy: { filesystem: false, terminal: false, network: false, mcp: false },
       },
     });
 
@@ -78,7 +78,7 @@ describe("ACP profile persistence", () => {
       configurationOwner: "client",
       workspaceOwner: "client",
       mcpOwner: "client",
-      permissionsPolicy: { filesystem: false, terminal: false, network: true, mcp: false },
+      permissionsPolicy: { filesystem: false, terminal: false, network: false, mcp: false },
       probeTimeoutMs: 30_000,
       agent: {
         agentName: "external-coder",
@@ -115,7 +115,7 @@ describe("ACP profile persistence", () => {
     })).toThrow(/secret material/i);
     expect(() => createAcpProfile({ db, input: { ...base, probeTimeoutMs: 999 } }))
       .toThrow(/1000.*300000/i);
-    for (const capability of ["filesystem", "terminal", "mcp"]) {
+    for (const capability of ["filesystem", "terminal", "network", "mcp"]) {
       expect(() => createAcpProfile({
         db,
         input: {
@@ -123,7 +123,7 @@ describe("ACP profile persistence", () => {
           permissionsPolicy: {
             filesystem: capability === "filesystem",
             terminal: capability === "terminal",
-            network: false,
+            network: capability === "network",
             mcp: capability === "mcp",
           },
         },

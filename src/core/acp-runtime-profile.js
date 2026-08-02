@@ -56,7 +56,7 @@ export function createWorklabAcpProfileResolver({ db, env = process.env } = {}) 
   return async function resolveAcpProfile(profileId) {
     const profile = assertAcpProfileBinding({ db, id: profileId });
     if (!profile.agent.enabled) throw runtimeProfileError("profile_disabled", "ACP profile agent is disabled");
-    const unsupported = ["filesystem", "terminal", "mcp"]
+    const unsupported = ["filesystem", "terminal", "network", "mcp"]
       .filter((capability) => profile.permissionsPolicy?.[capability] === true);
     if (unsupported.length) {
       throw runtimeProfileError(
