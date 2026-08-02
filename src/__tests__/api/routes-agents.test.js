@@ -122,6 +122,45 @@ describe("agents CRUD", () => {
     await agent.get("/api/agents?view=nope").expect(400);
   });
 
+  it("annotates full and summary agent lists with safe ACP binding metadata", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "worklab-agent-acp-summary-"));
+    tempDirs.push(cwd);
+    const { agent } = makeTestServer();
+    const created = await agent.post("/api/acp/profiles").send({
+      agentName: "external-summary",
+      displayName: "External Summary",
+      command: process.execPath,
+      cwd,
+      envKeys: ["ACP_PRIVATE_TOKEN"],
+    }).expect(201);
+
+    for (const path of ["/api/agents", "/api/agents?view=summary"]) {
+      const response = await agent.get(path).expect(200);
+      const external = response.body.agents.find((row) => row.name === "external-summary");
+      expect(external).toMatchObject({
+        kind: "external",
+        acp_profile_id: created.body.profile.id,
+        driver: "generic",
+      });
+      expect(external).not.toHaveProperty("command");
+      expect(external).not.toHaveProperty("envKeys");
+      expect(JSON.stringify(external)).not.toContain("ACP_PRIVATE_TOKEN");
+    }
+
+    const local = await agent.post("/api/agents").send({
+      name: "local-summary",
+      display_name: "Local Summary",
+      model: "claude:claude-sonnet-4-6",
+    }).expect(201);
+    expect(local.body.agent.kind).toBeUndefined();
+    const listed = await agent.get("/api/agents?view=summary").expect(200);
+    expect(listed.body.agents.find((row) => row.name === "local-summary")).toMatchObject({
+      kind: "local",
+      acp_profile_id: null,
+      driver: null,
+    });
+  });
+
   it("POST /api/agents creates with required fields", async () => {
     const { agent } = makeTestServer();
     const res = await agent.post("/api/agents").send({ name: "coder", display_name: "Coder", sdk: "claude", model: "claude:claude-sonnet-4-6" }).expect(201);
