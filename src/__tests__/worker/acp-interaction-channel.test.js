@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { createAcpInteractionChannel } from "../../worker/acp-interaction-channel.js";
+import { PassThrough } from "node:stream";
+import {
+  createAcpInteractionChannel,
+  createAcpPrivateOutputRedactor,
+} from "../../worker/acp-interaction-channel.js";
 
 describe("createAcpInteractionChannel", () => {
   it("round-trips an offered permission option and strips raw tool data", async () => {
@@ -124,6 +128,65 @@ describe("createAcpInteractionChannel", () => {
     expect(JSON.stringify(emit.mock.calls)).not.toMatch(
       /task-run-schema-secret-sentinel|TASK_PATH_SECRET|TASK_QUERY_SECRET|TASK_FRAGMENT_SECRET|USERINFO_SECRET|host-secret/u,
     );
+  });
+
+  it("redacts SDK stderr before the private fd handoff callback can settle", () => {
+    const stderr = new PassThrough();
+    let output = "";
+    stderr.on("data", (chunk) => { output += chunk.toString(); });
+    const privateOutput = createAcpPrivateOutputRedactor();
+    const restore = privateOutput.protectWritable(stderr);
+    const rawUrl = "https://HOST_LABEL_PRIVATE.example/PATH_PRIVATE?QUERY_KEY_PRIVATE=QUERY_PRIVATE#FRAGMENT_KEY_PRIVATE=FRAGMENT_PRIVATE";
+    const channel = createAcpInteractionChannel({
+      emit: () => {},
+      runId: "run-stderr-race",
+      idFactory: () => "interaction-stderr-race",
+      rememberPrivateValues: privateOutput.remember,
+      emitPrivateUrlHandoff: () => {
+        // Deliberately model stderr winning the parent-side pipe callback race.
+        stderr.write(`SDK diagnostic ${rawUrl} HOST_LABEL_PRIVATE QUERY_PRIVATE FRAGMENT_PRIVATE\n`);
+        return true;
+      },
+    });
+    channel._disableTimeouts();
+
+    channel.request({
+      kind: "elicitation",
+      profileId: "profile-1",
+      payload: { mode: "url", url: rawUrl },
+    });
+    restore();
+
+    expect(output).toContain("[redacted]");
+    expect(output).not.toMatch(
+      /HOST_LABEL_PRIVATE|PATH_PRIVATE|QUERY_KEY_PRIVATE|QUERY_PRIVATE|FRAGMENT_KEY_PRIVATE|FRAGMENT_PRIVATE/u,
+    );
+  });
+
+  it("redacts accepted private form values from later worker stderr", async () => {
+    const privateOutput = createAcpPrivateOutputRedactor();
+    const channel = createAcpInteractionChannel({
+      emit: () => {},
+      idFactory: () => "interaction-private-response",
+      rememberPrivateValues: privateOutput.remember,
+    });
+    channel._disableTimeouts();
+    const response = channel.request({
+      kind: "elicitation",
+      profileId: "profile-1",
+      payload: { mode: "form" },
+    });
+    channel.acceptResponse({
+      interaction_id: "interaction-private-response",
+      response: { action: "accept", content: { password: "FORM_RESPONSE_PRIVATE" } },
+    });
+
+    await expect(response).resolves.toEqual({
+      action: "accept",
+      content: { password: "FORM_RESPONSE_PRIVATE" },
+    });
+    expect(privateOutput.redactText("SDK echoed FORM_RESPONSE_PRIVATE"))
+      .toBe("SDK echoed [redacted]");
   });
 
   it("rejects credential-bearing URL elicitations without emitting on either channel", async () => {

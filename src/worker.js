@@ -22,7 +22,10 @@ import { runReview } from "./worker/review-runner.js";
 import { runLeadCycle } from "./worker/lead-cycle-runner.js";
 import { emitCancelledEvent, emitFinalResult } from "./worker/result-emitter.js";
 import { createApprovalChannel } from "./worker/approval-channel.js";
-import { createAcpInteractionChannel } from "./worker/acp-interaction-channel.js";
+import {
+  createAcpInteractionChannel,
+  createAcpPrivateOutputRedactor,
+} from "./worker/acp-interaction-channel.js";
 
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -47,10 +50,13 @@ function emitPrivateUrlHandoff(frame) {
 
 const liveInput = createLiveInputQueue();
 const approvalChannel = createApprovalChannel({ emit });
+const acpPrivateOutput = createAcpPrivateOutputRedactor();
+acpPrivateOutput.protectWritable(process.stderr);
 const acpInteractionChannel = createAcpInteractionChannel({
   emit,
   emitPrivateUrlHandoff,
   runId: process.env.WORKLAB_RUN_ID,
+  rememberPrivateValues: acpPrivateOutput.remember,
 });
 
 // R5: graceful drain protocol. The coordinator sends `{type:"worklab_drain"}`

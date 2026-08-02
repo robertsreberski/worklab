@@ -7,6 +7,10 @@ import {
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 const MAX_TEXT_CHARS = 16_384;
+const MAX_PRIVATE_OUTPUT_VALUES = 10_000;
+const MAX_PRIVATE_OUTPUT_DEPTH = 10;
+const MAX_PRIVATE_OUTPUT_NODES = 20_000;
+const MAX_PRIVATE_OUTPUT_CHARS = 4 * 1024 * 1024;
 
 function boundedText(value, limit = MAX_TEXT_CHARS) {
   if (typeof value !== "string") return null;
@@ -17,6 +21,89 @@ function cancelledResponse(kind) {
   return kind === "permission"
     ? { outcome: { outcome: "cancelled" } }
     : { action: "cancel" };
+}
+
+/**
+ * Worker-local last line of defense for ACP values that an SDK may echo to
+ * stderr. URL components are registered before fd3 is written, so redaction
+ * does not depend on callback ordering between the fd3 and stderr pipes.
+ */
+export function createAcpPrivateOutputRedactor() {
+  const values = new Set();
+  let totalChars = 0;
+  let failedClosed = false;
+
+  function collect(value, collected, state, depth = 0) {
+    if (depth > MAX_PRIVATE_OUTPUT_DEPTH) return false;
+    state.nodes += 1;
+    if (state.nodes > MAX_PRIVATE_OUTPUT_NODES) return false;
+    if (value == null) return true;
+    if (["string", "number", "boolean"].includes(typeof value)) {
+      const scalar = String(value);
+      if (!scalar || values.has(scalar) || collected.has(scalar)) return true;
+      if (values.size + collected.size >= MAX_PRIVATE_OUTPUT_VALUES
+        || totalChars + state.chars + scalar.length > MAX_PRIVATE_OUTPUT_CHARS) return false;
+      collected.add(scalar);
+      state.chars += scalar.length;
+      return true;
+    }
+    if (Array.isArray(value)) {
+      return value.every((entry) => collect(entry, collected, state, depth + 1));
+    }
+    if (typeof value !== "object") return true;
+    return Object.values(value).every((entry) => collect(entry, collected, state, depth + 1));
+  }
+
+  function remember(value) {
+    if (failedClosed) return false;
+    const collected = new Set();
+    const state = { nodes: 0, chars: 0 };
+    if (!collect(value, collected, state)) {
+      failedClosed = true;
+      values.clear();
+      totalChars = 0;
+      return false;
+    }
+    for (const entry of collected) values.add(entry);
+    totalChars += state.chars;
+    return true;
+  }
+
+  function redactText(value) {
+    if (failedClosed) return "[redacted]";
+    let result = String(value ?? "");
+    for (const entry of [...values].sort((left, right) => right.length - left.length)) {
+      result = result.split(entry).join("[redacted]");
+    }
+    return result;
+  }
+
+  function protectWritable(stream) {
+    if (!stream || typeof stream.write !== "function") return () => {};
+    const originalWrite = stream.write;
+    function protectedWrite(chunk, encoding, callback) {
+      const cb = typeof encoding === "function" ? encoding : callback;
+      const inputEncoding = typeof encoding === "string" ? encoding : "utf8";
+      const source = Buffer.isBuffer(chunk) || ArrayBuffer.isView(chunk)
+        ? Buffer.from(chunk.buffer || chunk, chunk.byteOffset || 0, chunk.byteLength).toString(inputEncoding)
+        : String(chunk ?? "");
+      const redacted = redactText(source);
+      return cb
+        ? originalWrite.call(stream, redacted, inputEncoding, cb)
+        : originalWrite.call(stream, redacted, inputEncoding);
+    }
+    stream.write = protectedWrite;
+    return () => {
+      if (stream.write === protectedWrite) stream.write = originalWrite;
+    };
+  }
+
+  return {
+    remember,
+    redactText,
+    protectWritable,
+    get failedClosed() { return failedClosed; },
+  };
 }
 
 function sanitizePermission(payload = {}) {
@@ -102,6 +189,7 @@ export function createAcpInteractionChannel({
   runId,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   idFactory = randomUUID,
+  rememberPrivateValues = () => true,
 } = {}) {
   const pending = new Map();
   let timeoutsEnabled = true;
@@ -133,7 +221,8 @@ export function createAcpInteractionChannel({
     pending.delete(interactionId);
     if (entry.timer) clearTimeout(entry.timer);
     entry.signal?.removeEventListener("abort", entry.onAbort);
-    entry.resolve(normalizeResponse(entry, message));
+    const response = normalizeResponse(entry, message);
+    entry.resolve(rememberPrivateValues(response) ? response : cancelledResponse(entry.kind));
     acknowledge(interactionId, "submitted", { deliveryId });
     return true;
   }
@@ -151,6 +240,9 @@ export function createAcpInteractionChannel({
     let privateUrl = null;
     if (isUrl) {
       privateUrl = inspectAcpUrlHandoff(request?.payload?.url);
+      if (!privateUrl || !rememberPrivateValues(privateUrl.privateValues)) {
+        return Promise.resolve(cancelledResponse(kind));
+      }
       const frame = privateUrl ? {
         type: "worklab_acp_url_handoff",
         version: 1,
