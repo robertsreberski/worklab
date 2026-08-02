@@ -2,7 +2,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createAcpProfile } from "../../core/acp-profiles.js";
+import {
+  createAcpProfile,
+  deleteAcpProfileRecord,
+} from "../../core/acp-profiles.js";
 import { createAcpOperationManager } from "../../coordinator/acp-operation-manager.js";
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
@@ -915,6 +918,13 @@ describe("AcpOperationManager", () => {
       conflict = error;
     }
     expect(conflict).toMatchObject({ code: "operation_active", status: 409 });
+    let deletionConflict;
+    try {
+      deleteAcpProfileRecord({ db, id: profile.id });
+    } catch (error) {
+      deletionConflict = error;
+    }
+    expect(deletionConflict).toMatchObject({ code: "profile_in_use", status: 409 });
 
     finishCleanup();
     await waitForOperation(manager, operation.id, "cancelled");
@@ -922,6 +932,10 @@ describe("AcpOperationManager", () => {
 
     const replacement = manager.start({ profileId: profile.id, kind: "probe" });
     await waitForOperation(manager, replacement.id, "succeeded");
+    expect(deleteAcpProfileRecord({ db, id: profile.id })).toEqual({
+      id: profile.id,
+      agentName: profile.agentName,
+    });
   });
 
   it("keeps shutdown bounded without clearing a quarantined database guard", async () => {
