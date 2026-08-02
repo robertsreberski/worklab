@@ -4,6 +4,7 @@ import {
   createAcpInteractionChannel,
   createAcpPrivateOutputRedactor,
 } from "../../worker/acp-interaction-channel.js";
+import { ACP_PRIVATE_VALUE_LIMITS } from "../../core/acp-private-values.js";
 
 describe("createAcpInteractionChannel", () => {
   it("round-trips an offered permission option and strips raw tool data", async () => {
@@ -35,15 +36,29 @@ describe("createAcpInteractionChannel", () => {
   });
 
   it("fails closed when a permission option was not offered", async () => {
-    const channel = createAcpInteractionChannel({ emit: () => {}, idFactory: () => "int-2" });
+    const emit = vi.fn();
+    const channel = createAcpInteractionChannel({ emit, idFactory: () => "int-2" });
     channel._disableTimeouts();
     const result = channel.request({
       kind: "permission",
       profileId: "profile-1",
       payload: { options: [{ optionId: "deny", name: "Deny" }] },
     });
-    channel.acceptResponse({ interaction_id: "int-2", optionId: "invented", action: "selected" });
+    channel.acceptResponse({
+      interaction_id: "int-2",
+      delivery_id: "delivery-int-2",
+      disposition: "selected",
+      optionId: "invented",
+      action: "selected",
+    });
     await expect(result).resolves.toEqual({ outcome: { outcome: "cancelled" } });
+    expect(emit).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: "acp_interaction_acknowledged",
+      delivery_id: "delivery-int-2",
+      outcome: "cancelled",
+      disposition: "cancel",
+      reason: "response_rejected",
+    }));
   });
 
   it("keeps accepted form content off emitted events", async () => {
@@ -61,10 +76,17 @@ describe("createAcpInteractionChannel", () => {
     });
     channel.acceptResponse({
       interaction_id: "int-3",
-      response: { disposition: "accept", values: { answer: "private" } },
+      delivery_id: "delivery-int-3",
+      disposition: "accept",
+      response: { disposition: "accepted", values: { answer: "private" } },
     });
     await expect(result).resolves.toEqual({ action: "accept", content: { answer: "private" } });
     expect(JSON.stringify(emit.mock.calls)).not.toContain("private");
+    expect(emit).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: "acp_interaction_acknowledged",
+      outcome: "submitted",
+      disposition: "accept",
+    }));
   });
 
   it("applies the durable interaction sanitizer before emitting schemas", () => {
@@ -187,6 +209,43 @@ describe("createAcpInteractionChannel", () => {
     });
     expect(privateOutput.redactText("SDK echoed FORM_RESPONSE_PRIVATE"))
       .toBe("SDK echoed [redacted]");
+  });
+
+  it("acknowledges a privacy-limit substitution as the cancellation ACP receives", async () => {
+    const emit = vi.fn();
+    const privateOutput = createAcpPrivateOutputRedactor();
+    const channel = createAcpInteractionChannel({
+      emit,
+      idFactory: () => "interaction-private-limit",
+      rememberPrivateValues: privateOutput.remember,
+    });
+    channel._disableTimeouts();
+    const result = channel.request({
+      kind: "elicitation",
+      profileId: "profile-1",
+      payload: { mode: "form" },
+    });
+
+    channel.acceptResponse({
+      interaction_id: "interaction-private-limit",
+      delivery_id: "delivery-private-limit",
+      disposition: "accept",
+      response: {
+        action: "accept",
+        content: "x".repeat(ACP_PRIVATE_VALUE_LIMITS.maxChars + 1),
+      },
+    });
+
+    await expect(result).resolves.toEqual({ action: "cancel" });
+    expect(privateOutput.failedClosed).toBe(true);
+    expect(emit).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: "acp_interaction_acknowledged",
+      interaction_id: "interaction-private-limit",
+      delivery_id: "delivery-private-limit",
+      outcome: "cancelled",
+      disposition: "cancel",
+      reason: "response_rejected",
+    }));
   });
 
   it("rejects credential-bearing URL elicitations without emitting on either channel", async () => {

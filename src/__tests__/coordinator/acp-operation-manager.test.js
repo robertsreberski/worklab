@@ -177,6 +177,51 @@ describe("AcpOperationManager", () => {
     expect(JSON.stringify(events)).not.toContain(rawSessionId);
   });
 
+  it("rejects contradictory form dispositions while accepting equivalent aliases", async () => {
+    let deliveredResponse;
+    const { db, profile, manager } = setup({
+      authenticate: async ({ onInteraction }) => {
+        deliveredResponse = await onInteraction({
+          requestId: "form-disposition-integrity",
+          kind: "form",
+          schema: { title: "Confirm" },
+        });
+        return { authenticated: false };
+      },
+    });
+    const operation = manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "form-disposition-integrity",
+    });
+    let interaction;
+    await vi.waitFor(() => {
+      interaction = db.prepare("SELECT * FROM acp_interactions WHERE operation_id = ?")
+        .get(operation.id);
+      expect(interaction?.state).toBe("pending");
+    });
+
+    expect(() => manager.respond({
+      operationId: operation.id,
+      interactionId: interaction.id,
+      disposition: "cancel",
+      response: { action: "accept" },
+    })).toThrowError("invalid form interaction disposition");
+    expect(db.prepare("SELECT state, disposition FROM acp_interactions WHERE id = ?").get(interaction.id))
+      .toEqual({ state: "pending", disposition: null });
+    expect(deliveredResponse).toBeUndefined();
+
+    const receipt = manager.respond({
+      operationId: operation.id,
+      interactionId: interaction.id,
+      disposition: "cancelled",
+      response: { action: "cancel" },
+    });
+    expect(receipt).toMatchObject({ state: "submitted", disposition: "cancel" });
+    await waitForOperation(manager, operation.id, "succeeded");
+    expect(deliveredResponse).toEqual({ action: "cancel" });
+  });
+
   it.each([
     ["first then second", ["concurrent-first", "concurrent-second"]],
     ["second then first", ["concurrent-second", "concurrent-first"]],

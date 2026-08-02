@@ -790,27 +790,52 @@ export function rowToAcpInteraction(row) {
   };
 }
 
+const ACP_INTERACTION_DISPOSITION_ALIASES = Object.freeze({
+  accepted: "accept",
+  declined: "decline",
+  cancelled: "cancel",
+  canceled: "cancel",
+  approved: "allow_once",
+  denied: "reject_once",
+});
+
+export function normalizeAcpInteractionDispositionValue(candidate) {
+  const value = String(candidate || "").trim().toLowerCase();
+  return ACP_INTERACTION_DISPOSITION_ALIASES[value] || value;
+}
+
 export function acpInteractionDisposition(interaction, response, explicit = null) {
   const source = isPlainObject(response) ? response : {};
   const nested = isPlainObject(source.outcome) ? source.outcome : {};
-  let value = explicit
-    || source.disposition
-    || source.action
-    || source.selection
-    || nested.outcome
-    || nested.optionId
-    || nested.option_id
-    || source.outcome;
-  value = String(value || "").trim().toLowerCase();
-  const aliases = {
-    accepted: "accept",
-    declined: "decline",
-    cancelled: "cancel",
-    canceled: "cancel",
-    approved: "allow_once",
-    denied: "reject_once",
-  };
-  value = aliases[value] || value;
+  let value;
+  if (interaction?.kind === "permission") {
+    value = normalizeAcpInteractionDispositionValue(explicit
+      || source.disposition
+      || source.action
+      || source.selection
+      || nested.outcome
+      || nested.optionId
+      || nested.option_id
+      || source.outcome);
+  } else {
+    const candidates = [
+      explicit,
+      source.disposition,
+      source.action,
+      source.selection,
+      nested.outcome,
+      isPlainObject(source.outcome) ? null : source.outcome,
+    ].filter((candidate) => candidate != null && String(candidate).trim().length > 0)
+      .map(normalizeAcpInteractionDispositionValue);
+    value = candidates[0] || "";
+    if (candidates.some((candidate) => candidate !== value)) {
+      throw Object.assign(new Error(`invalid ${interaction?.kind || "ACP"} interaction disposition`), {
+        code: "validation",
+        status: 400,
+        safeMessage: `invalid ${interaction?.kind || "ACP"} interaction disposition`,
+      });
+    }
+  }
   const allowed = interaction?.kind === "permission"
     ? new Set(["selected", "cancel", "allow_once", "allow_always", "reject_once", "reject_always"])
     : new Set(["accept", "decline", "cancel"]);

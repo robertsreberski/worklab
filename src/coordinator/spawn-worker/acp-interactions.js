@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { sanitizeAcpInteractionSchema } from "../../core/acp-operations.js";
+import {
+  acpInteractionDisposition,
+  normalizeAcpInteractionDispositionValue,
+  rowToAcpInteraction,
+  sanitizeAcpInteractionSchema,
+} from "../../core/acp-operations.js";
 import {
   createAcpEventPrivacyBoundary,
   validateAcpProviderSessionId,
@@ -17,6 +22,7 @@ import {
   createAcpUrlPublicRequest,
   inspectAcpUrlHandoff,
 } from "../../core/acp-url-handoff.js";
+import { scanAcpPrivateValues } from "../../core/acp-private-values.js";
 
 const DEFAULT_ACK_TIMEOUT_MS = 10_000;
 const TERMINAL_OUTCOMES = new Set(["submitted", "cancelled", "expired", "stale"]);
@@ -29,8 +35,18 @@ const TERMINAL_REASONS = new Set([
   "run_terminated",
   "worker_terminated",
   "not_pending",
+  "response_rejected",
 ]);
-const MAX_PRIVATE_VALUES = 10_000;
+const ACKNOWLEDGED_DISPOSITIONS = new Set([
+  "accept",
+  "decline",
+  "cancel",
+  "selected",
+  "allow_once",
+  "allow_always",
+  "reject_once",
+  "reject_always",
+]);
 const ACP_URL_HANDOFF_FRAME_TYPE = "worklab_acp_url_handoff";
 const ACP_URL_HANDOFF_FRAME_VERSION = 1;
 const MAX_URL_HANDOFF_FRAME_BYTES = 16 * 1024;
@@ -282,11 +298,15 @@ export function sanitizeTaskRunAcpInteractionEvent(event, { urlPublicRequest = n
     };
   }
   if (event.type === "acp_interaction_acknowledged") {
+    const disposition = normalizeAcpInteractionDispositionValue(event.disposition);
     return {
       type: "acp_interaction_acknowledged",
       interaction_id: boundedIdentifier(event.interaction_id),
       outcome: TERMINAL_OUTCOMES.has(event.outcome) ? event.outcome : "stale",
       ...(event.delivery_id ? { delivery_id: boundedIdentifier(event.delivery_id) } : {}),
+      ...(ACKNOWLEDGED_DISPOSITIONS.has(disposition)
+        ? { disposition }
+        : {}),
       ...(TERMINAL_REASONS.has(event.reason) ? { reason: event.reason } : {}),
       ts: Number(event.ts) || Date.now(),
       ...(Number.isFinite(Number(event._event_seq)) ? { _event_seq: Number(event._event_seq) } : {}),
@@ -365,30 +385,19 @@ export function createAcpInteractionControls({
   const deliveries = new Map();
   const activeByInteraction = new Map();
   const privateValues = new Set();
+  const privateValueTokens = new Set();
+  let privateValueChars = 0;
   const urlPublicRequests = new Map();
 
-  function collectPrivateValues(value, collected, depth = 0) {
-    if (depth > 10) return false;
-    if (value == null) return true;
-    if (["string", "number", "boolean"].includes(typeof value)) {
-      if ((typeof value === "string" && !value)
-        || privateValues.has(value)
-        || collected.has(value)) return true;
-      if (privateValues.size + collected.size >= MAX_PRIVATE_VALUES) return false;
-      collected.add(value);
-      return true;
-    }
-    if (Array.isArray(value)) {
-      return value.every((entry) => collectPrivateValues(entry, collected, depth + 1));
-    }
-    if (typeof value !== "object") return true;
-    return Object.values(value).every((entry) => collectPrivateValues(entry, collected, depth + 1));
-  }
-
   function rememberPrivateValues(value) {
-    const collected = new Set();
-    if (!collectPrivateValues(value, collected)) return false;
-    for (const value of collected) privateValues.add(value);
+    const scanned = scanAcpPrivateValues(value, {
+      knownTokens: privateValueTokens,
+      knownChars: privateValueChars,
+    });
+    if (!scanned.ok) return false;
+    for (const value of scanned.values) privateValues.add(value);
+    for (const token of scanned.tokens) privateValueTokens.add(token);
+    privateValueChars += scanned.chars;
     return true;
   }
 
@@ -412,8 +421,8 @@ export function createAcpInteractionControls({
 
   function redactText(value) {
     let result = String(value ?? "");
-    for (const privateValue of privateValues) {
-      result = result.split(String(privateValue)).join("[redacted]");
+    for (const token of [...privateValueTokens].sort((left, right) => right.length - left.length)) {
+      result = result.split(token).join("[redacted]");
     }
     return result;
   }
@@ -509,9 +518,12 @@ export function createAcpInteractionControls({
       return null;
     }
 
+    const acknowledgedDisposition = normalizeAcpInteractionDispositionValue(event.disposition);
     if (outcome === "submitted" && delivery?.action === "respond") {
       const claimed = claimAcpInteractionResponse(db, interactionId, {
-        disposition: delivery.disposition,
+        disposition: ACKNOWLEDGED_DISPOSITIONS.has(acknowledgedDisposition)
+          ? acknowledgedDisposition
+          : delivery.disposition,
       });
       row = claimed ? finalizeAcpInteractionResponse(db, interactionId) : null;
     } else if (outcome === "cancelled") {
@@ -557,7 +569,19 @@ export function createAcpInteractionControls({
     if (!existing || existing.task_run_id !== runId || existing.state !== "pending") {
       return { ok: false, code: "no_pending_interaction", message: "ACP interaction is not pending for this run" };
     }
-    if (action === "respond" && !permissionResponseMatchesOffer(existing, response, disposition)) {
+    let safeDisposition = disposition;
+    if (action === "respond") {
+      try {
+        safeDisposition = acpInteractionDisposition(rowToAcpInteraction(existing), response, disposition);
+      } catch {
+        return {
+          ok: false,
+          code: "invalid_response",
+          message: "interaction response disposition is invalid",
+        };
+      }
+    }
+    if (action === "respond" && !permissionResponseMatchesOffer(existing, response, safeDisposition)) {
       return {
         ok: false,
         code: "invalid_response",
@@ -565,9 +589,9 @@ export function createAcpInteractionControls({
       };
     }
     if (action === "respond" && !rememberPrivateResponse(response)) {
-      return { ok: false, code: "invalid_response", message: "private response is too deeply nested or complex" };
+      return { ok: false, code: "invalid_response", message: "private response exceeds safety limits" };
     }
-    const delivery = beginDelivery({ interactionId, action, disposition });
+    const delivery = beginDelivery({ interactionId, action, disposition: safeDisposition });
     if (!delivery) {
       return { ok: false, code: "delivery_in_progress", message: "ACP interaction delivery is already in progress" };
     }
@@ -576,6 +600,7 @@ export function createAcpInteractionControls({
           type: "acp_interaction_response",
           interaction_id: interactionId,
           delivery_id: delivery.deliveryId,
+          disposition: safeDisposition,
           response,
         }
       : {
@@ -624,6 +649,8 @@ export function createAcpInteractionControls({
     deliveries.clear();
     activeByInteraction.clear();
     privateValues.clear();
+    privateValueTokens.clear();
+    privateValueChars = 0;
     urlPublicRequests.clear();
     urlHandoffStore?.removeOwner?.("run", runId);
   }

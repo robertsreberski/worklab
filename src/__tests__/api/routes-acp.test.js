@@ -690,6 +690,18 @@ describe("ACP API", () => {
       expect(interaction?.state).toBe("pending");
     });
 
+    const mismatchSecret = "PRIVATE_FORM_DISPOSITION_MISMATCH";
+    const rejected = await agent.post(`/api/acp/interactions/${interaction.id}/respond`).send({
+      disposition: "cancel",
+      response: { action: "accept", content: { answer: mismatchSecret } },
+    }).expect(400, {
+      error: { code: "validation", message: "invalid form interaction disposition" },
+    });
+    expect(JSON.stringify(rejected.body)).not.toContain(mismatchSecret);
+    expect(db.prepare("SELECT state, disposition FROM acp_interactions WHERE id = ?").get(interaction.id))
+      .toEqual({ state: "pending", disposition: null });
+    expect(delivered).toBeUndefined();
+
     const response = await agent.post(`/api/acp/interactions/${interaction.id}/respond`).send({
       disposition: "accept",
       values: { password: "actual-form-secret" },

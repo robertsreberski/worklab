@@ -1,16 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { sanitizeAcpInteractionSchema } from "../core/acp-operations.js";
+import {
+  normalizeAcpInteractionDispositionValue,
+  sanitizeAcpInteractionSchema,
+} from "../core/acp-operations.js";
 import {
   createAcpUrlPublicRequest,
   inspectAcpUrlHandoff,
 } from "../core/acp-url-handoff.js";
+import { scanAcpPrivateValues } from "../core/acp-private-values.js";
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 const MAX_TEXT_CHARS = 16_384;
-const MAX_PRIVATE_OUTPUT_VALUES = 10_000;
-const MAX_PRIVATE_OUTPUT_DEPTH = 10;
-const MAX_PRIVATE_OUTPUT_NODES = 20_000;
-const MAX_PRIVATE_OUTPUT_CHARS = 4 * 1024 * 1024;
 
 function boundedText(value, limit = MAX_TEXT_CHARS) {
   if (typeof value !== "string") return null;
@@ -33,39 +33,20 @@ export function createAcpPrivateOutputRedactor() {
   let totalChars = 0;
   let failedClosed = false;
 
-  function collect(value, collected, state, depth = 0) {
-    if (depth > MAX_PRIVATE_OUTPUT_DEPTH) return false;
-    state.nodes += 1;
-    if (state.nodes > MAX_PRIVATE_OUTPUT_NODES) return false;
-    if (value == null) return true;
-    if (["string", "number", "boolean"].includes(typeof value)) {
-      const scalar = String(value);
-      if (!scalar || values.has(scalar) || collected.has(scalar)) return true;
-      if (values.size + collected.size >= MAX_PRIVATE_OUTPUT_VALUES
-        || totalChars + state.chars + scalar.length > MAX_PRIVATE_OUTPUT_CHARS) return false;
-      collected.add(scalar);
-      state.chars += scalar.length;
-      return true;
-    }
-    if (Array.isArray(value)) {
-      return value.every((entry) => collect(entry, collected, state, depth + 1));
-    }
-    if (typeof value !== "object") return true;
-    return Object.values(value).every((entry) => collect(entry, collected, state, depth + 1));
-  }
-
   function remember(value) {
     if (failedClosed) return false;
-    const collected = new Set();
-    const state = { nodes: 0, chars: 0 };
-    if (!collect(value, collected, state)) {
+    const scanned = scanAcpPrivateValues(value, {
+      knownTokens: values,
+      knownChars: totalChars,
+    });
+    if (!scanned.ok) {
       failedClosed = true;
       values.clear();
       totalChars = 0;
       return false;
     }
-    for (const entry of collected) values.add(entry);
-    totalChars += state.chars;
+    for (const token of scanned.tokens) values.add(token);
+    totalChars += scanned.chars;
     return true;
   }
 
@@ -143,39 +124,73 @@ function sanitizeElicitation(payload = {}) {
   };
 }
 
+function rejectedResponse(kind) {
+  return { response: cancelledResponse(kind), disposition: "cancel", rejected: true };
+}
+
 function normalizeResponse(entry, message) {
   if (entry.kind === "permission") {
     const outcome = message?.response?.outcome || message?.outcome;
-    const outcomeKind = outcome?.outcome
+    const outcomeKind = normalizeAcpInteractionDispositionValue(outcome?.outcome
       || message?.response?.action
       || message?.response?.disposition
       || message?.action
-      || message?.disposition;
+      || message?.disposition);
     const optionId = outcome?.optionId
       || outcome?.option_id
       || message?.response?.optionId
       || message?.response?.option_id
       || message?.optionId
       || message?.option_id;
-    if (!["selected", "allow_once", "allow_always", "reject_once", "reject_always"].includes(outcomeKind)) {
-      return cancelledResponse(entry.kind);
+    const disposition = normalizeAcpInteractionDispositionValue(message?.disposition || outcomeKind);
+    if (outcomeKind === "cancel" && optionId == null) {
+      return { response: cancelledResponse(entry.kind), disposition: "cancel", rejected: false };
     }
-    if (!entry.offeredOptionIds.has(optionId)) return cancelledResponse(entry.kind);
-    return { outcome: { outcome: "selected", optionId } };
+    if (!["selected", "allow_once", "allow_always", "reject_once", "reject_always"].includes(outcomeKind)) {
+      return rejectedResponse(entry.kind);
+    }
+    const option = entry.offeredOptions.get(optionId);
+    if (!option) return rejectedResponse(entry.kind);
+    const optionKind = typeof option.kind === "string" ? option.kind.trim().toLowerCase() : "";
+    if (disposition !== "selected" && disposition !== optionKind) return rejectedResponse(entry.kind);
+    return {
+      response: { outcome: { outcome: "selected", optionId } },
+      disposition,
+      rejected: false,
+    };
   }
 
   const response = message?.response && typeof message.response === "object"
     ? message.response
     : message;
-  const action = response?.action || response?.disposition;
-  if (action === "decline" || action === "cancel") return { action };
-  if (action !== "accept") return cancelledResponse(entry.kind);
-  if (Object.prototype.hasOwnProperty.call(response, "content")) {
-    return { action: "accept", content: response.content };
+  const action = normalizeAcpInteractionDispositionValue(
+    response?.action || response?.disposition || message?.disposition,
+  );
+  if (action === "decline" || action === "cancel") {
+    return { response: { action }, disposition: action, rejected: false };
   }
-  return Object.prototype.hasOwnProperty.call(response, "values")
-    ? { action: "accept", content: response.values }
-    : { action: "accept" };
+  if (action !== "accept") return rejectedResponse(entry.kind);
+  if (Object.prototype.hasOwnProperty.call(response, "content")) {
+    return {
+      response: { action: "accept", content: response.content },
+      disposition: "accept",
+      rejected: false,
+    };
+  }
+  return {
+    response: Object.prototype.hasOwnProperty.call(response, "values")
+      ? { action: "accept", content: response.values }
+      : { action: "accept" },
+    disposition: "accept",
+    rejected: false,
+  };
+}
+
+function privateResponseValues(message) {
+  const response = message?.response && typeof message.response === "object"
+    ? message.response
+    : message;
+  return [response?.content, response?.values];
 }
 
 /**
@@ -196,6 +211,7 @@ export function createAcpInteractionChannel({
 
   function acknowledge(interactionId, outcome, {
     deliveryId = null,
+    disposition = null,
     reason = null,
   } = {}) {
     try {
@@ -204,6 +220,7 @@ export function createAcpInteractionChannel({
         interaction_id: boundedText(String(interactionId), 1024),
         outcome,
         ...(deliveryId ? { delivery_id: boundedText(String(deliveryId), 1024) } : {}),
+        ...(disposition ? { disposition: boundedText(String(disposition), 128) } : {}),
         ...(reason ? { reason: boundedText(String(reason), 128) } : {}),
         ts: Date.now(),
       });
@@ -221,9 +238,20 @@ export function createAcpInteractionChannel({
     pending.delete(interactionId);
     if (entry.timer) clearTimeout(entry.timer);
     entry.signal?.removeEventListener("abort", entry.onAbort);
-    const response = normalizeResponse(entry, message);
-    entry.resolve(rememberPrivateValues(response) ? response : cancelledResponse(entry.kind));
-    acknowledge(interactionId, "submitted", { deliveryId });
+    const normalized = normalizeResponse(entry, message);
+    let privateValuesAccepted = true;
+    if (!normalized.rejected) {
+      try { privateValuesAccepted = rememberPrivateValues(privateResponseValues(message)); }
+      catch { privateValuesAccepted = false; }
+    }
+    const rejected = normalized.rejected || !privateValuesAccepted;
+    const response = rejected ? cancelledResponse(entry.kind) : normalized.response;
+    entry.resolve(response);
+    acknowledge(interactionId, rejected ? "cancelled" : "submitted", {
+      deliveryId,
+      disposition: rejected ? "cancel" : normalized.disposition,
+      ...(rejected ? { reason: "response_rejected" } : {}),
+    });
     return true;
   }
 
@@ -266,8 +294,8 @@ export function createAcpInteractionChannel({
         ? createAcpUrlPublicRequest(request.payload.url)
         : sanitizeElicitation(request?.payload);
     const sanitized = sanitizeAcpInteractionSchema(shaped);
-    const offeredOptionIds = new Set(
-      kind === "permission" ? sanitized.options.map((option) => option.optionId) : [],
+    const offeredOptions = new Map(
+      kind === "permission" ? sanitized.options.map((option) => [option.optionId, option]) : [],
     );
 
     return new Promise((resolve) => {
@@ -279,13 +307,13 @@ export function createAcpInteractionChannel({
           pending.delete(interactionId);
           entry.signal?.removeEventListener("abort", entry.onAbort);
           resolve(cancelledResponse(kind));
-          acknowledge(interactionId, "expired", { reason: "worker_timeout" });
+          acknowledge(interactionId, "expired", { disposition: "cancel", reason: "worker_timeout" });
         }, timeoutMs);
         timer.unref?.();
       }
       const signal = context?.signal;
       const onAbort = () => cancel(interactionId, { reason: "request_aborted" });
-      pending.set(interactionId, { kind, resolve, timer, offeredOptionIds, signal, onAbort });
+      pending.set(interactionId, { kind, resolve, timer, offeredOptions, signal, onAbort });
       signal?.addEventListener("abort", onAbort, { once: true });
       if (signal?.aborted) {
         onAbort();
@@ -329,7 +357,7 @@ export function createAcpInteractionChannel({
     if (entry.timer) clearTimeout(entry.timer);
     entry.signal?.removeEventListener("abort", entry.onAbort);
     entry.resolve(cancelledResponse(entry.kind));
-    acknowledge(interactionId, outcome, { deliveryId, reason });
+    acknowledge(interactionId, outcome, { deliveryId, disposition: "cancel", reason });
     return true;
   }
 
