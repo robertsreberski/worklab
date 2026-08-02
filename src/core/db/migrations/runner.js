@@ -86,7 +86,7 @@ function reconcileAcpOperationsBeforeActiveProfileIndex(db) {
       `).run(completedAt, completedAt, errorJson, completedAt);
     }
     db.exec(`
-      CREATE UNIQUE INDEX idx_acp_operations_one_active_profile
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_acp_operations_one_active_profile
       ON acp_operations(profile_id)
       WHERE state IN ('queued', 'running', 'waiting_for_interaction')
     `);
