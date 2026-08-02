@@ -53,7 +53,7 @@ describe("openDb + runMigrations", () => {
     );
   });
 
-  it("creates the v49 ACP tables, constraints, and pending-owner indexes", () => {
+  it("creates the v50 ACP tables, constraints, and active-owner indexes", () => {
     const db = openDb(":memory:");
     runMigrations(db);
     const now = Date.now();
@@ -134,8 +134,71 @@ describe("openDb + runMigrations", () => {
       "idx_acp_interactions_pending_run_request",
       "idx_acp_interactions_pending_profile",
       "idx_acp_operations_active",
+      "idx_acp_operations_one_active_profile",
       "idx_acp_profiles_mono_source",
     ]));
+  });
+
+  it("reconciles legacy active ACP operations before adding the unique profile guard", () => {
+    const db = openDb(":memory:");
+    db.exec(SCHEMA_SQL);
+    db.exec("DROP INDEX idx_acp_operations_one_active_profile");
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO agents (name, display_name, sdk, model, execution_mode, created_at, updated_at)
+      VALUES ('legacy-acp', 'Legacy ACP', 'acp', 'acp:00000000-0000-4000-8000-000000000011', 'acp', ?, ?)
+    `).run(now, now);
+    db.prepare(`
+      INSERT INTO acp_profiles (
+        id, agent_name, driver, command, args_json, env_keys_json,
+        configuration_owner, workspace_owner, mcp_owner, created_at, updated_at
+      ) VALUES (?, 'legacy-acp', 'generic', ?, '[]', '[]', 'client', 'client', 'client', ?, ?)
+    `).run("00000000-0000-4000-8000-000000000011", process.execPath, now, now);
+    const insertOperation = db.prepare(`
+      INSERT INTO acp_operations (
+        id, profile_id, kind, state, request_json, result_json, error_json, created_at, updated_at
+      ) VALUES (?, ?, 'probe', ?, '{}', '{}', '{}', ?, ?)
+    `);
+    insertOperation.run(
+      "00000000-0000-4000-8000-000000000012",
+      "00000000-0000-4000-8000-000000000011",
+      "running",
+      now - 2,
+      now - 2,
+    );
+    insertOperation.run(
+      "00000000-0000-4000-8000-000000000013",
+      "00000000-0000-4000-8000-000000000011",
+      "waiting_for_interaction",
+      now - 1,
+      now - 1,
+    );
+    db.prepare(`
+      INSERT INTO schema_meta (key, value) VALUES ('version', '49')
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run();
+
+    runMigrations(db);
+
+    const rows = db.prepare(`
+      SELECT state, error_json, completed_at
+      FROM acp_operations ORDER BY id
+    `).all();
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.state).toBe("failed");
+      expect(row.completed_at).toEqual(expect.any(Number));
+      expect(JSON.parse(row.error_json)).toEqual({
+        code: "coordinator_restarted",
+        message: "Worklab restarted before the ACP operation completed.",
+      });
+    }
+    expect(db.prepare(`
+      SELECT sql FROM sqlite_master
+      WHERE type = 'index' AND name = 'idx_acp_operations_one_active_profile'
+    `).get()?.sql).toContain("CREATE UNIQUE INDEX");
+    expect(db.prepare("SELECT value FROM schema_meta WHERE key = 'version'").get()?.value)
+      .toBe(String(SCHEMA_VERSION));
   });
 
   it("idempotent: safe to run twice", () => {

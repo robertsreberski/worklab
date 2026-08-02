@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 49;
+export const SCHEMA_VERSION = 50;
 
 export const ACP_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS acp_profiles (
@@ -59,6 +59,9 @@ CREATE INDEX IF NOT EXISTS idx_acp_operations_profile_created
   ON acp_operations(profile_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_acp_operations_active
   ON acp_operations(state, created_at ASC)
+  WHERE state IN ('queued', 'running', 'waiting_for_interaction');
+CREATE UNIQUE INDEX IF NOT EXISTS idx_acp_operations_one_active_profile
+  ON acp_operations(profile_id)
   WHERE state IN ('queued', 'running', 'waiting_for_interaction');
 
 CREATE TABLE IF NOT EXISTS acp_interactions (

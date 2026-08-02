@@ -53,6 +53,40 @@ function tableExists(db, table) {
   return !!db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','virtual table') AND name = ?").get(table);
 }
 
+function indexExists(db, index) {
+  return !!db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?").get(index);
+}
+
+function reconcileAcpOperationsBeforeActiveProfileIndex(db) {
+  if (!tableExists(db, "acp_operations")
+    || indexExists(db, "idx_acp_operations_one_active_profile")) return;
+
+  const completedAt = Date.now();
+  const errorJson = JSON.stringify({
+    code: "coordinator_restarted",
+    message: "Worklab restarted before the ACP operation completed.",
+  });
+  db.transaction(() => {
+    const terminalized = db.prepare(`
+      UPDATE acp_operations
+      SET state = 'failed', error_json = ?, updated_at = ?, completed_at = ?
+      WHERE state IN ('queued', 'running', 'waiting_for_interaction')
+    `).run(errorJson, completedAt, completedAt);
+    if (terminalized.changes === 0 || !tableExists(db, "acp_interactions")) return;
+    db.prepare(`
+      UPDATE acp_interactions
+      SET state = 'expired', disposition = 'operation_ended',
+          updated_at = ?, resolved_at = ?
+      WHERE resolved_at IS NULL
+        AND state IN ('pending', 'submitted')
+        AND operation_id IN (
+          SELECT id FROM acp_operations
+          WHERE state = 'failed' AND error_json = ? AND completed_at = ?
+        )
+    `).run(completedAt, completedAt, errorJson, completedAt);
+  })();
+}
+
 function assertSupportedSchemaVersion(db) {
   if (!tableExists(db, "schema_meta")) return;
   const row = db.prepare("SELECT value FROM schema_meta WHERE key = 'version'").get();
@@ -911,6 +945,11 @@ export function runMigrations(db) {
   }
   ensureCurrentSchemaColumnsBeforeSchema(db);
   ensureEmbeddingVectorPresentColumn(db);
+  // v50 adds a partial unique index enforcing one live management operation
+  // per ACP profile. Active rows in an older database are crash-orphaned at
+  // this startup boundary and must be terminalized before SQLite can create
+  // the index, including the duplicate rows the index is meant to prevent.
+  reconcileAcpOperationsBeforeActiveProfileIndex(db);
   db.exec(SCHEMA_SQL);
   ensureCurrentLeadCycleColumns(db);
   ensureNullableTaskRunsTaskId(db);
