@@ -1074,6 +1074,7 @@ describe("task-watcher", () => {
     });
     const { runId } = await watcher.handleRunRequested(taskId);
 
+    const rejectedMemory = "Never persist this invalid ACP delegation memory";
     resolveDone({
       exitCode: 0,
       status: "complete",
@@ -1088,6 +1089,12 @@ describe("task-watcher", () => {
         blocking_issues: [],
         pending_actions: [],
         subtasks: [{ title: "Unauthorized child", instructions: "Do work." }],
+        memory_candidates: [{
+          kind: "fact",
+          scope: "agent",
+          content: rejectedMemory,
+          confidence: 1,
+        }],
       },
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -1097,6 +1104,7 @@ describe("task-watcher", () => {
       .toMatchObject({ process_status: "failed", failure_kind: "invalid_result" });
     expect(db.prepare("SELECT stage, error_text FROM tasks WHERE id = ?").get(taskId))
       .toMatchObject({ stage: "execute", error_text: "delegation is unavailable for this agent runtime" });
+    expect(db.prepare("SELECT id FROM agent_memories WHERE content = ?").get(rejectedMemory)).toBeUndefined();
   });
 
   it("adds delegated acceptance criteria and expected artifact to child instructions", async () => {

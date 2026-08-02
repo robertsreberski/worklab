@@ -955,6 +955,8 @@ export function createTaskWatcher({
     }
 
     const result = res.worklabResult || safeParseJson(run.result_json, null);
+    let resultForLearning = result;
+    let runForLearning = run;
     const acpResultValidation = run.provider_kind === "acp" && result
       ? validateWorklabResultSemantics(result, { allowDelegation: false })
       : { ok: true };
@@ -973,14 +975,26 @@ export function createTaskWatcher({
         error: acpResultValidation.error,
         failureKind: "invalid_result",
       };
+      resultForLearning = null;
+      runForLearning = {
+        ...run,
+        status: "error",
+        process_status: "failed",
+        failure_kind: "invalid_result",
+        error_text: acpResultValidation.error,
+        result_json: null,
+        decision: null,
+        summary: null,
+        details: null,
+      };
       processStatus = "failed";
     }
 
     try {
       const recorded = recordRunResultLearning(db, {
         task,
-        run: { ...run, process_status: processStatus, status: res.status || run.status },
-        result: res.worklabResult || safeParseJson(run.result_json, null),
+        run: { ...runForLearning, process_status: processStatus, status: res.status || runForLearning.status },
+        result: resultForLearning,
         settings: readSettings(db),
       });
       if (recorded.memories?.length) {
