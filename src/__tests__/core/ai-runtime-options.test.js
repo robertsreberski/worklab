@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resolve } from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 const mockRun = vi.fn();
 const mockCreateRuntime = vi.fn(() => ({ run: mockRun }));
 const mockCreateRouterRuntime = vi.fn(() => ({ run: mockRun }));
+const temporaryDirectories = [];
 
 vi.mock("@mono-agent/agent-runtime", () => ({
   createRuntime: mockCreateRuntime,
@@ -21,6 +24,9 @@ afterEach(() => {
   delete process.env.WORKLAB_CODEX_THREAD_START_ATTEMPTS;
   delete process.env.WORKLAB_CODEX_THREAD_START_BACKOFF_MS;
   delete process.env.WORKLAB_PI_CODEX_TRANSPORT;
+  for (const directory of temporaryDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 describe("generateResponse Codex runtime options", () => {
@@ -99,6 +105,28 @@ describe("generateResponse Codex runtime options", () => {
         clientInfoTitle: "Worklab",
       }),
     }));
+  });
+
+  it("binds a persistent session-token key only for ACP runtimes", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-acp-runtime-key-"));
+    temporaryDirectories.push(dataDir);
+    mockRun.mockResolvedValue({ text: "ok" });
+
+    await generateResponse("sys", {
+      model: resolveModel("acp:11111111-1111-4111-8111-111111111111"),
+      dataDir,
+      messages: [{ role: "user", content: "hi" }],
+    });
+    await generateResponse("sys", {
+      model: resolveModel("codex:gpt-5.5"),
+      dataDir,
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    const acpKey = mockCreateRuntime.mock.calls[0][0].acpSessionTokenKey;
+    expect(acpKey).toBeInstanceOf(Uint8Array);
+    expect(acpKey).toHaveLength(32);
+    expect(mockCreateRuntime.mock.calls[1][0]).not.toHaveProperty("acpSessionTokenKey");
   });
 
   it("lets explicit and environment Pi Codex transport overrides win over settings", async () => {

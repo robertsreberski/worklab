@@ -156,6 +156,7 @@ describe("coordinator startup services", () => {
 
     expect(createWorklabAcpControls).toHaveBeenCalledWith({
       db: coordinator.db,
+      dataDir: config.dataDir,
       urlHandoffAvailable: true,
     });
     expect(coordinator.acpOperationManager.supports("probe")).toBe(true);

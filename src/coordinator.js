@@ -129,6 +129,7 @@ export async function startCoordinator({
   const acpUrlHandoffStore = createAcpUrlHandoffStore();
   const acpControls = deps.createWorklabAcpControls({
     db,
+    dataDir: config.dataDir,
     urlHandoffAvailable: acpUrlHandoffStore.available === true,
   });
   const { app, broker, acpOperationManager } = createServer({

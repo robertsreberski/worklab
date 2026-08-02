@@ -10,12 +10,22 @@ import { ACP_PRIVATE_URL_HANDOFF } from "../../core/acp-url-handoff.js";
 
 const cleanup = [];
 const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
+const ACP_SESSION_TOKEN_KEY = Buffer.alloc(32, 0x51);
+
+function opaqueToken(kind, profileId = PROFILE_ID, sealedBytes = 29) {
+  const prefix = kind === "cursor" ? "acp-cursor:v2" : "acp:v2";
+  return `${prefix}:${profileId}:${Buffer.alloc(sealedBytes, 0xa7).toString("base64url")}`;
+}
 
 afterEach(() => {
   for (const directory of cleanup.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
-function setup(agentRuntime, { loadAgentRuntime, agentOwnedWorkspace = false } = {}) {
+function setup(agentRuntime, {
+  loadAgentRuntime,
+  agentOwnedWorkspace = false,
+  acpSessionTokenKey = ACP_SESSION_TOKEN_KEY,
+} = {}) {
   const db = makeTestDb();
   const cwd = mkdtempSync(join(tmpdir(), "worklab-acp-controls-"));
   cleanup.push(cwd);
@@ -48,11 +58,32 @@ function setup(agentRuntime, { loadAgentRuntime, agentOwnedWorkspace = false } =
       resolveMonoSource: vi.fn(),
     },
     urlHandoffAvailable: true,
+    acpSessionTokenKey,
   });
   return { db, profile, controls };
 }
 
 describe("createWorklabAcpControls", () => {
+  it("snapshots an injected session-token key before runtime operations", async () => {
+    const mutableKey = Buffer.alloc(32, 0x6c);
+    const expectedKey = Buffer.from(mutableKey);
+    const runtime = {
+      listAcpSessions: vi.fn(async (_id, _request, options) => ({
+        sessions: [],
+        capturedKey: Buffer.from(options.acpSessionTokenKey),
+      })),
+    };
+    const { db, profile, controls } = setup(runtime, { acpSessionTokenKey: mutableKey });
+    mutableKey.fill(0);
+    try {
+      await expect(controls.listSessions({ profile })).resolves.toMatchObject({
+        capturedKey: expectedKey,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
   it("delegates lifecycle operations through the shared runtime profile resolver", async () => {
     const signal = new AbortController().signal;
     const runtime = {
@@ -90,7 +121,7 @@ describe("createWorklabAcpControls", () => {
         .resolves.toMatchObject({ authenticated: true, methodId: "browser" });
       await expect(controls.logout({ profile, signal }))
         .resolves.toMatchObject({ loggedOut: true, status: "logged_out" });
-      const cursor = `acp-cursor:v1:${PROFILE_ID}:${Buffer.from("opaque/page-2?state=keep+exact==").toString("base64url")}`;
+      const cursor = opaqueToken("cursor");
       await expect(controls.listSessions({
         profile: { ...profile, cwd: "/client/must-not-control-cwd" },
         cursor,
@@ -99,7 +130,7 @@ describe("createWorklabAcpControls", () => {
         sessions: [],
         request: { cursor },
       });
-      const opaque = `acp:v1:${PROFILE_ID}:cmVtb3RlLTE`;
+      const opaque = opaqueToken("session");
       await expect(controls.deleteSession({ profile, providerSessionId: opaque, signal }))
         .resolves.toMatchObject({ deleted: true, providerSessionId: opaque });
 
@@ -121,7 +152,11 @@ describe("createWorklabAcpControls", () => {
         opaque,
         expect.objectContaining({ resolveAcpProfile: expect.any(Function), signal }),
       );
-      expect(runtime.validateAcpProviderSessionId).toHaveBeenCalledWith(opaque, PROFILE_ID);
+      expect(runtime.validateAcpProviderSessionId).toHaveBeenCalledWith(
+        opaque,
+        PROFILE_ID,
+        ACP_SESSION_TOKEN_KEY,
+      );
     } finally {
       db.close();
     }
@@ -182,8 +217,7 @@ describe("createWorklabAcpControls", () => {
   it("accepts long canonical runtime cursors only for their bound profile", async () => {
     const runtime = { listAcpSessions: vi.fn(async (_id, request) => ({ sessions: [], request })) };
     const { db, profile, controls } = setup(runtime);
-    const rawCursor = `next/${"x".repeat(3_000)}`;
-    const cursor = `acp-cursor:v1:${PROFILE_ID}:${Buffer.from(rawCursor).toString("base64url")}`;
+    const cursor = opaqueToken("cursor", PROFILE_ID, 3_033);
     try {
       expect(cursor.length).toBeGreaterThan(2_000);
       await expect(controls.listSessions({ profile, cursor })).resolves.toMatchObject({
@@ -191,11 +225,11 @@ describe("createWorklabAcpControls", () => {
       });
       await expect(controls.listSessions({
         profile,
-        cursor: `acp-cursor:v1:22222222-2222-4222-8222-222222222222:${Buffer.from("next").toString("base64url")}`,
+        cursor: opaqueToken("cursor", "22222222-2222-4222-8222-222222222222"),
       })).rejects.toMatchObject({ code: "validation", safeMessage: "cursor is invalid" });
       await expect(controls.listSessions({
         profile,
-        cursor: `acp-cursor:v1:${PROFILE_ID}:bmV4dA==`,
+        cursor: `acp-cursor:v2:${PROFILE_ID}:bmV4dA==`,
       })).rejects.toMatchObject({ code: "validation", safeMessage: "cursor is invalid" });
       expect(runtime.listAcpSessions).toHaveBeenCalledTimes(1);
     } finally {
@@ -324,7 +358,12 @@ describe("createWorklabAcpControls", () => {
         payload: { mode: "url", url: "https://example.test/private?state=secret" },
       }, { requestId: "url-no-handoff" })),
     };
-    const controls = createWorklabAcpControls({ db, env: {}, agentRuntime: runtime });
+    const controls = createWorklabAcpControls({
+      db,
+      env: {},
+      agentRuntime: runtime,
+      acpSessionTokenKey: ACP_SESSION_TOKEN_KEY,
+    });
     try {
       await expect(controls.authenticate({
         profile,
@@ -391,7 +430,7 @@ describe("createWorklabAcpControls", () => {
     try {
       await expect(controls.deleteSession({
         profile,
-        providerSessionId: `acp:v1:${PROFILE_ID}:cmVtb3RlLTE`,
+        providerSessionId: opaqueToken("session"),
       })).rejects.toMatchObject({ code: "invalid_session_id" });
       expect(runtime.deleteAcpSession).not.toHaveBeenCalled();
     } finally {
@@ -410,7 +449,7 @@ describe("createWorklabAcpControls", () => {
     ["list sessions", (controls, profile, signal) => controls.listSessions({ profile, signal })],
     ["delete session", (controls, profile, signal) => controls.deleteSession({
       profile,
-      providerSessionId: `acp:v1:${PROFILE_ID}:cmVtb3RlLTE`,
+      providerSessionId: opaqueToken("session"),
       signal,
     })],
   ])("does not invoke %s after cancellation during lazy runtime loading", async (_name, invoke) => {

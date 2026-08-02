@@ -22,6 +22,7 @@ import { withWorklabRuntimeBrand } from "./runtime-brand.js";
 import { getSkillAccessDirs, inferSkillsRoot } from "./skills.js";
 import { createToolOutputSink } from "./tool-artifacts.js";
 import { readSettings } from "./settings.js";
+import { getAcpSessionTokenKey } from "./crypto.js";
 import {
   buildModelCapabilities,
   getModelByProviderAndName,
@@ -641,6 +642,9 @@ export async function generateResponse(systemPrompt, options) {
     persistArtifact: options.persistArtifact || createToolOutputSink(runArtifactDir),
     resolvePiApiKey: options.resolvePiApiKey
       || ((provider) => resolvePiApiKey(provider, { dataDir: options.dataDir })),
+    ...(resolved.sdk === "acp"
+      ? { acpSessionTokenKey: getAcpSessionTokenKey({ dataDir: options.dataDir }) }
+      : {}),
     observers: [metricsObserver, ...callObservers],
   });
 

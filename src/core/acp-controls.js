@@ -11,6 +11,7 @@ import {
   createAcpUrlPublicRequest,
   inspectAcpUrlHandoff,
 } from "./acp-url-handoff.js";
+import { getAcpSessionTokenKey } from "./crypto.js";
 
 function controlError(code, message) {
   return Object.assign(new Error(message), {
@@ -125,6 +126,16 @@ function throwIfAborted(signal) {
     : controlError("cancelled", "ACP operation was cancelled");
 }
 
+function copySessionTokenKey(value) {
+  if (!(value instanceof Uint8Array) || value.byteLength !== 32) {
+    throw controlError(
+      "runtime_configuration_invalid",
+      "ACP session token key must be exactly 32 bytes",
+    );
+  }
+  return Buffer.from(value);
+}
+
 /**
  * Compose Worklab's persisted ACP profiles and mono-agent discovery with the
  * shared @mono-agent/agent-runtime ACP client. Runtime loading is lazy so the
@@ -133,14 +144,19 @@ function throwIfAborted(signal) {
  */
 export function createWorklabAcpControls({
   db,
+  dataDir,
   env = process.env,
   agentRuntime = null,
   loadAgentRuntime = defaultRuntimeLoader,
   monoDiscoveryControls = null,
   urlHandoffAvailable = false,
+  acpSessionTokenKey = null,
 } = {}) {
   const resolveAcpProfile = createWorklabAcpProfileResolver({ db, env, urlHandoffAvailable });
   const discovery = monoDiscoveryControls || createMonoAcpDiscoveryControls({ env });
+  const sessionTokenKey = copySessionTokenKey(
+    acpSessionTokenKey ?? getAcpSessionTokenKey({ dataDir }),
+  );
   let runtimePromise = agentRuntime ? Promise.resolve(agentRuntime) : null;
   const runtime = () => {
     runtimePromise ||= Promise.resolve().then(() => loadAgentRuntime());
@@ -150,6 +166,7 @@ export function createWorklabAcpControls({
     const onAcpInteractionRequest = interactionAdapter(onInteraction, { urlHandoffAvailable });
     return {
       resolveAcpProfile,
+      acpSessionTokenKey: sessionTokenKey,
       signal,
       ...(onAcpInteractionRequest ? { onAcpInteractionRequest } : {}),
     };
@@ -220,6 +237,7 @@ export function createWorklabAcpControls({
       requiredRuntimeMethod(client, "validateAcpProviderSessionId")(
         opaqueSessionId,
         profileId(profile),
+        sessionTokenKey,
       );
       return requiredRuntimeMethod(client, "deleteAcpSession")(
         opaqueSessionId,
