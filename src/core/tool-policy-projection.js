@@ -82,6 +82,13 @@ function coversEveryBuiltin(allowed) {
   return WORKLAB_BUILTIN_TOOLS.every((tool) => granted.has(tool));
 }
 
+export function toolPolicyIsUnrestricted({ allowedTools, disallowedTools } = {}) {
+  const allowed = Array.isArray(allowedTools) ? allowedTools : null;
+  const disallowed = Array.isArray(disallowedTools) ? disallowedTools : [];
+  return disallowed.length === 0
+    && (allowed === null || allowed.includes(WILDCARD) || coversEveryBuiltin(allowed));
+}
+
 function hasExactly(tools, expected) {
   if (!Array.isArray(tools)) return false;
   const actual = new Set(tools);

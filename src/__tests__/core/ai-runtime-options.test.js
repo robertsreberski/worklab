@@ -11,7 +11,7 @@ vi.mock("@mono-agent/agent-runtime", () => ({
   createMetricsObserver: () => ({ recordEvent: () => {}, snapshot: () => ({}) }),
 }));
 
-const { generateResponse, resolveModel } = await import("../../core/ai.js");
+const { generateResponse, resolveModel, WORKLAB_BUILTIN_TOOLS } = await import("../../core/ai.js");
 
 afterEach(() => {
   mockRun.mockReset();
@@ -160,5 +160,45 @@ describe("generateResponse Codex runtime options", () => {
     expect(runOptions).not.toHaveProperty("toolEnvironment");
     expect(runOptions).not.toHaveProperty("subagents");
     expect(runOptions).not.toHaveProperty("nativeSubagents");
+  });
+
+  it("projects an unrestricted mixed fallback chain per route", async () => {
+    mockRun.mockResolvedValue({ text: "ok" });
+
+    await generateResponse("sys", {
+      model: resolveModel("codex:gpt-5.5"),
+      messages: [{ role: "user", content: "hi" }],
+      allowedTools: [...WORKLAB_BUILTIN_TOOLS],
+      disallowedTools: [],
+      fallbackChain: [{ sdk: "claude", model: "claude-sonnet-4-6" }],
+    });
+
+    expect(mockCreateRouterRuntime).toHaveBeenCalledWith(expect.objectContaining({
+      routeSafety: "per-route-native",
+    }));
+    expect(mockRun).toHaveBeenCalledWith("sys", expect.objectContaining({
+      allowedTools: WORKLAB_BUILTIN_TOOLS,
+      disallowedTools: [],
+    }));
+  });
+
+  it("keeps a restricted mixed fallback policy named so unsupported routes fail closed", async () => {
+    mockRun.mockResolvedValue({ text: "ok" });
+
+    await generateResponse("sys", {
+      model: resolveModel("codex:gpt-5.5"),
+      messages: [{ role: "user", content: "hi" }],
+      allowedTools: ["Read", "Grep"],
+      disallowedTools: ["Write", "Edit"],
+      toolPolicy: { planning: true, policy: "read_only_shell_allowlist" },
+      fallbackChain: [{ sdk: "pi", provider: "openai", model: "gpt-5.5" }],
+    });
+
+    expect(mockCreateRouterRuntime.mock.calls[0][0]).not.toHaveProperty("routeSafety");
+    expect(mockRun).toHaveBeenCalledWith("sys", expect.objectContaining({
+      allowedTools: ["Read", "Grep"],
+      disallowedTools: ["Write", "Edit"],
+    }));
+    expect(mockRun.mock.calls[0][1]).not.toHaveProperty("permissionMode", "plan");
   });
 });
