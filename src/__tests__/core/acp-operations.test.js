@@ -13,6 +13,22 @@ import {
 const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 const MAX_PERSISTED_JSON_BYTES = 64 * 1024;
 
+function sealedToken(raw) {
+  return Buffer.concat([
+    Buffer.alloc(12, 0x6e),
+    Buffer.from(raw),
+    Buffer.alloc(16, 0x74),
+  ]).toString("base64url");
+}
+
+function opaqueSessionId(raw, profileId = PROFILE_ID) {
+  return `acp:v2:${profileId}:${sealedToken(raw)}`;
+}
+
+function opaqueCursor(raw, profileId = PROFILE_ID) {
+  return `acp-cursor:v2:${profileId}:${sealedToken(raw)}`;
+}
+
 describe("sanitizeAcpOperationResult", () => {
   it("redacts embedded numeric and boolean private-response scalars", () => {
     const privateValues = new Set([493827, true]);
@@ -53,23 +69,24 @@ describe("sanitizeAcpOperationResult", () => {
     }, { privateValues: new Set([privateValue]) }).code).toBe("operation_failed");
   });
 
-  it("does not preserve private-response scalars inside opaque session handles", () => {
+  it("does not decode v2 ciphertext to match private-response scalars", () => {
     const privateValue = "private-form-value";
     const privateValues = new Set([privateValue]);
-    const providerSessionId = `acp:v1:${PROFILE_ID}:${Buffer.from(privateValue).toString("base64url")}`;
-    const nextCursor = `acp-cursor:v1:${PROFILE_ID}:${Buffer.from(`page:${privateValue}`).toString("base64url")}`;
+    const providerSessionId = opaqueSessionId(privateValue);
+    const nextCursor = opaqueCursor(`page:${privateValue}`);
 
     expect(sanitizeAcpOperationResult("list_sessions", {
       sessions: [{ providerSessionId, title: "Private handle" }],
       nextCursor,
     }, { profileId: PROFILE_ID, privateValues })).toEqual({
-      sessions: [],
+      sessions: [{ id: providerSessionId, title: "Private handle" }],
+      nextCursor,
       truncated: true,
     });
     expect(sanitizeAcpOperationResult("delete_session", {
       deleted: true,
       providerSessionId,
-    }, { profileId: PROFILE_ID, privateValues })).toEqual({ deleted: true });
+    }, { profileId: PROFILE_ID, privateValues })).toEqual({ deleted: true, id: providerSessionId });
     expect(sanitizeAcpOperationResult("delete_session", {
       deleted: true,
       providerSessionId,
@@ -80,12 +97,12 @@ describe("sanitizeAcpOperationResult", () => {
 
   it("retains a usable bounded session prefix and continuation cursor for large pages", () => {
     const rawCursor = `page-2/${"c".repeat(1_900)}`;
-    const nextCursor = `acp-cursor:v1:${PROFILE_ID}:${Buffer.from(rawCursor).toString("base64url")}`;
+    const nextCursor = opaqueCursor(rawCursor);
     const sourceSessions = Array.from({ length: 200 }, (_, index) => {
       const rawSessionId = `raw-session/${index}`;
       return {
         sessionId: rawSessionId,
-        providerSessionId: `acp:v1:${PROFILE_ID}:${Buffer.from(rawSessionId).toString("base64url")}`,
+        providerSessionId: opaqueSessionId(rawSessionId),
         title: `${rawSessionId} ${"Long session title ".repeat(40)}`,
         status: "ready",
       };
@@ -112,13 +129,17 @@ describe("sanitizeAcpOperationResult", () => {
   it("accepts the exact canonical cursor maximum and rejects one additional character", () => {
     const maxProfileId = "p".repeat(128);
     const maxRawCursor = "x".repeat(4_096);
-    const exactMaxCursor = `acp-cursor:v1:${maxProfileId}:${Buffer.from(maxRawCursor).toString("base64url")}`;
+    const exactMaxCursor = opaqueCursor(maxRawCursor, maxProfileId);
     const oversizedRawCursor = `${maxRawCursor}x`;
-    const oversizedCursor = `acp-cursor:v1:${maxProfileId}:${Buffer.from(oversizedRawCursor).toString("base64url")}`;
+    const oversizedCursor = opaqueCursor(oversizedRawCursor, maxProfileId);
 
-    expect(exactMaxCursor).toHaveLength(5_605);
-    expect(oversizedCursor).toHaveLength(5_606);
+    expect(exactMaxCursor).toHaveLength(5_642);
+    expect(oversizedCursor).toHaveLength(5_643);
     expect(normalizeAcpSessionCursor(exactMaxCursor, maxProfileId)).toBe(exactMaxCursor);
+    expect(() => normalizeAcpSessionCursor(
+      `acp-cursor:v1:${maxProfileId}:${Buffer.from(maxRawCursor).toString("base64url")}`,
+      maxProfileId,
+    )).toThrow("cursor is invalid");
     expect(sanitizeAcpOperationResult("list_sessions", {
       sessions: [],
       nextCursor: exactMaxCursor,
@@ -140,7 +161,7 @@ describe("sanitizeAcpOperationResult", () => {
 
   it("redacts raw pagination aliases before sanitizing session metadata", () => {
     const rawCursor = "RAW_CURSOR_COPIED_INTO_METADATA";
-    const providerSessionId = `acp:v1:${PROFILE_ID}:${Buffer.from("remote-session").toString("base64url")}`;
+    const providerSessionId = opaqueSessionId("remote-session");
     const aliases = [
       "cursor",
       "nextCursor",
@@ -173,7 +194,7 @@ describe("sanitizeAcpOperationResult", () => {
       expect(JSON.stringify(result)).not.toContain(rawCursor);
     }
 
-    const canonicalCursor = `acp-cursor:v1:${PROFILE_ID}:${Buffer.from(rawCursor).toString("base64url")}`;
+    const canonicalCursor = opaqueCursor(rawCursor);
     expect(sanitizeAcpOperationResult("list_sessions", {
       sessions: [],
       next_page_token: canonicalCursor,
@@ -185,7 +206,7 @@ describe("sanitizeAcpOperationResult", () => {
   });
 
   it("fails closed for non-string and oversized pagination cursors", () => {
-    const providerSessionId = `acp:v1:${PROFILE_ID}:${Buffer.from("remote-session").toString("base64url")}`;
+    const providerSessionId = opaqueSessionId("remote-session");
     const sessions = [{ providerSessionId, title: "Otherwise safe" }];
 
     expect(sanitizeAcpOperationResult("list_sessions", {
@@ -216,9 +237,10 @@ describe("sanitizeAcpOperationResult", () => {
 
   it("does not retain a raw session id hidden in session metadata", () => {
     const rawSessionId = "2026-08-02T18:30:00.000Z";
-    const providerSessionId = `acp:v1:${PROFILE_ID}:${Buffer.from(rawSessionId).toString("base64url")}`;
+    const providerSessionId = opaqueSessionId(rawSessionId);
     const result = sanitizeAcpOperationResult("list_sessions", {
       sessions: [{
+        sessionId: rawSessionId,
         providerSessionId,
         title: `Continue ${rawSessionId}`,
         status: `ready:${rawSessionId}`,
@@ -260,7 +282,7 @@ describe("sanitizeAcpOperationResult", () => {
 
   it("redacts raw ids across list metadata and rejects cursors that repeat them", () => {
     const rawSessionId = "RAW_LIST_CURSOR_SESSION";
-    const providerSessionId = `acp:v1:${PROFILE_ID}:${Buffer.from(rawSessionId).toString("base64url")}`;
+    const providerSessionId = opaqueSessionId(rawSessionId);
     const result = sanitizeAcpOperationResult("list_sessions", {
       sessions: [{
         sessionId: rawSessionId,
@@ -284,7 +306,7 @@ describe("sanitizeAcpOperationResult", () => {
 
   it("scrubs delete status and uses fixed operation error messages", () => {
     const rawSessionId = "RAW_DELETE_STATUS_SESSION";
-    const providerSessionId = `acp:v1:${PROFILE_ID}:${Buffer.from(rawSessionId).toString("base64url")}`;
+    const providerSessionId = opaqueSessionId(rawSessionId);
     const result = sanitizeAcpOperationResult("delete_session", {
       sessionId: rawSessionId,
       providerSessionId,
@@ -340,7 +362,7 @@ describe("sanitizeAcpOperationResult", () => {
     });
   });
 
-  it("sanitizes legacy operation and interaction rows at read time", () => {
+  it("sanitizes legacy rows and rejects v1 operational handles at read time", () => {
     const rawSessionId = "RAW_LEGACY_MANAGEMENT_SESSION";
     const providerSessionId = `acp:v1:${PROFILE_ID}:${Buffer.from(rawSessionId).toString("base64url")}`;
     const operation = rowToAcpOperation({
@@ -389,7 +411,7 @@ describe("sanitizeAcpOperationResult", () => {
       remoteSessionId: null,
       request: {},
       result: {
-        sessions: [{ id: providerSessionId, title: "Legacy [redacted]" }],
+        sessions: [],
         truncated: true,
       },
       error: { code: "protocol", message: "ACP list_sessions operation failed." },
@@ -401,10 +423,10 @@ describe("sanitizeAcpOperationResult", () => {
     expect(JSON.stringify({ operation, interaction })).not.toContain(rawSessionId);
   });
 
-  it("preserves canonical opaque cursors and sanitized legacy session rows", () => {
+  it("preserves canonical v2 handles without decoding their sealed bytes", () => {
     const rawCursor = `next/${"x".repeat(3_000)}`;
-    const cursor = `acp-cursor:v1:${PROFILE_ID}:${Buffer.from(rawCursor).toString("base64url")}`;
-    const providerSessionId = `acp:v1:${PROFILE_ID}:${Buffer.from("remote-safe").toString("base64url")}`;
+    const cursor = opaqueCursor(rawCursor);
+    const providerSessionId = opaqueSessionId("remote-safe");
     expect(cursor.length).toBeGreaterThan(2_000);
     expect(normalizeAcpSessionCursor(cursor, PROFILE_ID)).toBe(cursor);
     expect(() => normalizeAcpSessionCursor(cursor, "22222222-2222-4222-8222-222222222222"))
@@ -431,7 +453,7 @@ describe("sanitizeAcpOperationResult", () => {
 
     expect(operation.request).toEqual({ cursor });
     expect(operation.result).toEqual({
-      sessions: [{ id: providerSessionId, title: "Safe session [redacted]" }],
+      sessions: [{ id: providerSessionId, title: `Safe session ${rawCursor}`.slice(0, 500) }],
       nextCursor: cursor,
       truncated: true,
     });

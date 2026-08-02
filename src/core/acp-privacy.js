@@ -15,40 +15,27 @@ const MAX_ACP_RAW_SESSION_ID_CHARS = 16 * 1024;
 const ACP_SESSION_ID_KEYS = new Set(["sessionId", "session_id"]);
 const ACP_PROVIDER_SESSION_ID_KEYS = new Set(["providerSessionId", "provider_session_id"]);
 
-function decodedAcpProviderSessionId(value, profileId) {
+function canonicalAcpProviderSessionId(value, profileId) {
   if (typeof profileId !== "string" || profileId.length === 0) return null;
-  let normalized;
   try {
-    normalized = normalizeAcpProviderSessionId(value, profileId);
-  } catch {
-    return null;
-  }
-  const prefix = `acp:v1:${profileId}:`;
-  const encoded = normalized.slice(prefix.length);
-  try {
-    const bytes = Buffer.from(encoded, "base64url");
-    if (bytes.length === 0 || bytes.length > 4096 || bytes.toString("base64url") !== encoded) return null;
-    const sessionId = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    if (!sessionId || sessionId.trim() !== sessionId || sessionId.includes("\0")) return null;
-    return { providerSessionId: normalized, sessionId };
+    return normalizeAcpProviderSessionId(value, profileId);
   } catch {
     return null;
   }
 }
 
-function decodedAcpSessionCursor(value, profileId) {
+function canonicalAcpSessionCursor(value, profileId) {
   if (typeof profileId !== "string" || profileId.length === 0) return null;
-  const parsed = parseAcpSessionCursor(value, profileId);
-  return parsed ? { cursor: parsed.value, rawCursor: parsed.rawValue } : null;
+  return parseAcpSessionCursor(value, profileId)?.value ?? null;
 }
 
 /**
  * Accept only the canonical opaque ID emitted for the expected ACP profile.
- * normalizeAcpProviderSessionId enforces the public envelope; the base64url
- * round trip rejects decoder-tolerated aliases and empty payloads.
+ * normalizeAcpProviderSessionId enforces the public v2 envelope and sealed
+ * byte bounds without decoding or interpreting its ciphertext.
  */
 export function validateAcpProviderSessionId(value, profileId) {
-  return decodedAcpProviderSessionId(value, profileId)?.providerSessionId || null;
+  return canonicalAcpProviderSessionId(value, profileId);
 }
 
 /**
@@ -104,16 +91,12 @@ export function createAcpEventPrivacyBoundary({
         continue;
       }
       if (ACP_PROVIDER_SESSION_ID_KEYS.has(key)) {
-        const decoded = decodedAcpProviderSessionId(entry, profileId);
-        if (decoded) {
-          if (!collectRawSessionId(decoded.sessionId, collected)) return false;
-        } else if (!collectRawSessionId(entry, collected)) return false;
+        const providerSessionId = canonicalAcpProviderSessionId(entry, profileId);
+        if (!providerSessionId && !collectRawSessionId(entry, collected)) return false;
       }
       if (includeCursors && normalizeAcpPaginationCursorKey(key)) {
-        const decoded = decodedAcpSessionCursor(entry, profileId);
-        if (decoded) {
-          if (!collectRawSessionId(decoded.rawCursor, collected)) return false;
-        } else if (!collectRawSessionId(entry, collected)) return false;
+        const cursor = canonicalAcpSessionCursor(entry, profileId);
+        if (!cursor && !collectRawSessionId(entry, collected)) return false;
       }
       if (!scan(entry, state, collected, depth + 1)) return false;
     }
@@ -147,7 +130,7 @@ export function createAcpEventPrivacyBoundary({
       }
       if (includeCursors && normalizeAcpPaginationCursorKey(key)) {
         if (key !== selectedCursor?.key) continue;
-        const cursor = decodedAcpSessionCursor(entry, profileId)?.cursor;
+        const cursor = canonicalAcpSessionCursor(entry, profileId);
         if (cursor) output[key] = cursor;
         continue;
       }

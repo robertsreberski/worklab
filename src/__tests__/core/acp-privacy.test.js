@@ -6,9 +6,29 @@ import {
 } from "../../core/acp-privacy.js";
 
 const PROFILE_ID = "profile-1";
+const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 function opaqueSessionId(raw = "remote-session") {
-  return `acp:v1:${PROFILE_ID}:${Buffer.from(raw).toString("base64url")}`;
+  const sealed = Buffer.concat([
+    Buffer.alloc(12, 0x6e),
+    Buffer.from(raw),
+    Buffer.alloc(16, 0x74),
+  ]);
+  return `acp:v2:${PROFILE_ID}:${sealed.toString("base64url")}`;
+}
+
+function opaqueCursor(raw = "remote-cursor") {
+  const sealed = Buffer.concat([
+    Buffer.alloc(12, 0x6e),
+    Buffer.from(raw),
+    Buffer.alloc(16, 0x74),
+  ]);
+  return `acp-cursor:v2:${PROFILE_ID}:${sealed.toString("base64url")}`;
+}
+
+function nonCanonicalBase64url(value) {
+  const index = BASE64URL_ALPHABET.indexOf(value.at(-1));
+  return `${value.slice(0, -1)}${BASE64URL_ALPHABET[index + 1]}`;
 }
 
 describe("ACP event privacy boundary", () => {
@@ -18,7 +38,22 @@ describe("ACP event privacy boundary", () => {
     expect(validateAcpProviderSessionId(valid, PROFILE_ID)).toBe(valid);
     expect(validateAcpProviderSessionId(valid, "profile-2")).toBeNull();
     expect(validateAcpProviderSessionId("raw-session", PROFILE_ID)).toBeNull();
-    expect(validateAcpProviderSessionId(`acp:v1:${PROFILE_ID}:A`, PROFILE_ID)).toBeNull();
+    expect(validateAcpProviderSessionId(
+      `acp:v1:${PROFILE_ID}:${Buffer.from("legacy").toString("base64url")}`,
+      PROFILE_ID,
+    )).toBeNull();
+    expect(validateAcpProviderSessionId(
+      `acp:v2:${PROFILE_ID}:${Buffer.alloc(28).toString("base64url")}`,
+      PROFILE_ID,
+    )).toBeNull();
+    expect(validateAcpProviderSessionId(
+      `acp:v2:${PROFILE_ID}:${Buffer.alloc(4_125).toString("base64url")}`,
+      PROFILE_ID,
+    )).toBeNull();
+    expect(validateAcpProviderSessionId(
+      nonCanonicalBase64url(opaqueSessionId("x")),
+      PROFILE_ID,
+    )).toBeNull();
     expect(validateAcpProviderSessionId(null, PROFILE_ID)).toBeNull();
   });
 
@@ -57,32 +92,31 @@ describe("ACP event privacy boundary", () => {
     expect(JSON.stringify([first, second])).not.toMatch(/RAW_REMOTE_SESSION|RAW_PROVIDER_SESSION/u);
   });
 
-  it("decodes a valid opaque handle only to redact copied raw session values", () => {
-    const rawSessionId = "RAW_FROM_OPAQUE_HANDLE";
-    const providerSessionId = opaqueSessionId(rawSessionId);
+  it("preserves structurally valid v2 handles without decoding their sealed bytes", () => {
+    const sealedText = `${"n".repeat(12)}RAW_CIPHERTEXT_BYTES${"t".repeat(16)}`;
+    const providerSessionId = `acp:v2:${PROFILE_ID}:${Buffer.from(sealedText).toString("base64url")}`;
     const boundary = createAcpEventPrivacyBoundary({ profileId: PROFILE_ID });
 
     const sanitized = boundary.sanitizeEvent({
       type: "final",
-      text: `completed ${rawSessionId}`,
-      diagnostics: { message: rawSessionId },
+      text: `completed ${sealedText}`,
+      diagnostics: { message: sealedText },
       provider_session_id: providerSessionId,
     });
 
     expect(sanitized).toEqual({
       type: "final",
-      text: "completed [redacted]",
-      diagnostics: { message: "[redacted]" },
+      text: `completed ${sealedText}`,
+      diagnostics: { message: sealedText },
       provider_session_id: providerSessionId,
     });
-    expect(JSON.stringify(sanitized)).not.toContain(rawSessionId);
   });
 
   it("collects every cursor alias before preserving only the prioritized opaque cursor", () => {
     const rawCursor = "RAW_CURSOR_FROM_HANDLE";
     const rawPageCursor = "RAW_PAGE_CURSOR";
     const rawPageToken = "RAW_PAGE_TOKEN";
-    const cursor = `acp-cursor:v1:${PROFILE_ID}:${Buffer.from(rawCursor).toString("base64url")}`;
+    const cursor = opaqueCursor(rawCursor);
     const boundary = createAcpEventPrivacyBoundary({
       profileId: PROFILE_ID,
       includeCursors: true,
@@ -95,7 +129,7 @@ describe("ACP event privacy boundary", () => {
       note: `${rawCursor} ${rawPageCursor} ${rawPageToken}`,
     })).toEqual({
       "next-page-cursor": cursor,
-      note: "[redacted] [redacted] [redacted]",
+      note: `${rawCursor} [redacted] [redacted]`,
     });
   });
 

@@ -1,15 +1,20 @@
-export const ACP_SESSION_CURSOR_PREFIX = "acp-cursor:v1:";
+export const ACP_SESSION_CURSOR_PREFIX = "acp-cursor:v2:";
 export const MAX_ACP_CURSOR_TOKEN_BYTES = 4_096;
 export const MAX_ACP_CURSOR_PROFILE_ID_CHARS = 128;
 
-const MAX_BASE64URL_CURSOR_CHARS = Math.ceil((MAX_ACP_CURSOR_TOKEN_BYTES * 4) / 3);
+const ACP_TOKEN_NONCE_BYTES = 12;
+const ACP_TOKEN_AUTH_TAG_BYTES = 16;
+const MAX_SEALED_CURSOR_BYTES = ACP_TOKEN_NONCE_BYTES
+  + MAX_ACP_CURSOR_TOKEN_BYTES
+  + ACP_TOKEN_AUTH_TAG_BYTES;
+const MAX_BASE64URL_CURSOR_CHARS = Math.ceil((MAX_SEALED_CURSOR_BYTES * 4) / 3);
 
 export const MAX_ACP_SESSION_CURSOR_CHARS = ACP_SESSION_CURSOR_PREFIX.length
   + MAX_ACP_CURSOR_PROFILE_ID_CHARS
   + 1
   + MAX_BASE64URL_CURSOR_CHARS;
 
-const ACP_SESSION_CURSOR_RE = /^acp-cursor:v1:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([A-Za-z0-9_-]+)$/u;
+const ACP_SESSION_CURSOR_RE = /^acp-cursor:v2:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([A-Za-z0-9_-]+)$/u;
 
 export const ACP_PAGINATION_CURSOR_PRIORITY = Object.freeze([
   "nextcursor",
@@ -62,15 +67,11 @@ export function parseAcpSessionCursor(value, profileId = null) {
   const match = ACP_SESSION_CURSOR_RE.exec(value);
   if (!match || (profileId && match[1] !== profileId)) return null;
   try {
-    const bytes = Buffer.from(match[2], "base64url");
-    const rawValue = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    if (bytes.length === 0
-      || bytes.length > MAX_ACP_CURSOR_TOKEN_BYTES
-      || bytes.toString("base64url") !== match[2]
-      || !rawValue
-      || rawValue.trim() !== rawValue
-      || rawValue.includes("\0")) return null;
-    return { profileId: match[1], rawValue, value };
+    const sealed = Buffer.from(match[2], "base64url");
+    if (sealed.length <= ACP_TOKEN_NONCE_BYTES + ACP_TOKEN_AUTH_TAG_BYTES
+      || sealed.length > MAX_SEALED_CURSOR_BYTES
+      || sealed.toString("base64url") !== match[2]) return null;
+    return { profileId: match[1], value };
   } catch {
     return null;
   }

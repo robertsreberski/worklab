@@ -13,14 +13,24 @@ const MAX_TEXT_CHARS = 2000;
 const MAX_ITEMS = 200;
 const MAX_DEPTH = 8;
 const MAX_AUTH_METHOD_ID_CHARS = 500;
-const MAX_PROVIDER_SESSION_ID_CHARS = 5_600;
 const MAX_OPAQUE_TOKEN_BYTES = 4_096;
+const ACP_TOKEN_NONCE_BYTES = 12;
+const ACP_TOKEN_AUTH_TAG_BYTES = 16;
+const MAX_SEALED_OPAQUE_TOKEN_BYTES = ACP_TOKEN_NONCE_BYTES
+  + MAX_OPAQUE_TOKEN_BYTES
+  + ACP_TOKEN_AUTH_TAG_BYTES;
+const MAX_BASE64URL_OPAQUE_TOKEN_CHARS = Math.ceil((MAX_SEALED_OPAQUE_TOKEN_BYTES * 4) / 3);
+const ACP_PROVIDER_SESSION_ID_PREFIX = "acp:v2:";
+const MAX_PROVIDER_SESSION_ID_CHARS = ACP_PROVIDER_SESSION_ID_PREFIX.length
+  + 128
+  + 1
+  + MAX_BASE64URL_OPAQUE_TOKEN_CHARS;
 const MAX_PRIVACY_SCAN_DEPTH = 20;
 const MAX_PRIVACY_SCAN_NODES = 50_000;
 const MAX_RAW_SESSION_IDS = 512;
 const MAX_RAW_SESSION_ID_CHARS = 16 * 1024;
 const MAX_PRIVACY_SCAN_STRING_CHARS = 4 * 1024 * 1024;
-const PROVIDER_SESSION_ID_RE = /^acp:v1:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([A-Za-z0-9_-]+)$/u;
+const PROVIDER_SESSION_ID_RE = /^acp:v2:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([A-Za-z0-9_-]+)$/u;
 const RAW_SESSION_ID_KEYS = new Set([
   "sessionid",
   "rawsessionid",
@@ -69,19 +79,14 @@ function normalizedPrivacyKey(value) {
   return String(value || "").replace(/[_-]/gu, "").toLowerCase();
 }
 
-function decodedOpaqueToken(encoded, { maxBytes = MAX_OPAQUE_TOKEN_BYTES } = {}) {
+function structurallyValidSealedToken(encoded) {
   try {
-    const decoded = Buffer.from(encoded, "base64url");
-    const value = new TextDecoder("utf-8", { fatal: true }).decode(decoded);
-    if (decoded.length === 0
-      || decoded.length > maxBytes
-      || decoded.toString("base64url") !== encoded
-      || !value
-      || value.trim() !== value
-      || value.includes("\0")) return null;
-    return value;
+    const sealed = Buffer.from(encoded, "base64url");
+    return sealed.length > ACP_TOKEN_NONCE_BYTES + ACP_TOKEN_AUTH_TAG_BYTES
+      && sealed.length <= MAX_SEALED_OPAQUE_TOKEN_BYTES
+      && sealed.toString("base64url") === encoded;
   } catch {
-    return null;
+    return false;
   }
 }
 
@@ -89,8 +94,7 @@ function parsedProviderSessionId(value, profileId = null) {
   if (typeof value !== "string" || value.length > MAX_PROVIDER_SESSION_ID_CHARS) return null;
   const match = PROVIDER_SESSION_ID_RE.exec(value);
   if (!match || (profileId && match[1] !== profileId)) return null;
-  const rawValue = decodedOpaqueToken(match[2]);
-  return rawValue == null ? null : { profileId: match[1], rawValue, value };
+  return structurallyValidSealedToken(match[2]) ? { profileId: match[1], value } : null;
 }
 
 function parsedSessionCursor(value, profileId = null) {
@@ -136,7 +140,7 @@ function privacyScan(value, additionalRawSessionIds = [], { includeCursorSources
   };
   for (const candidate of additionalRawSessionIds) {
     const provider = parsedProviderSessionId(candidate);
-    collectSession(provider?.rawValue ?? candidate);
+    if (!provider) collectSession(candidate);
   }
 
   const scan = (entry, depth = 0) => {
@@ -153,10 +157,6 @@ function privacyScan(value, additionalRawSessionIds = [], { includeCursorSources
     if (typeof entry === "string") {
       state.stringChars += entry.length;
       if (state.stringChars > MAX_PRIVACY_SCAN_STRING_CHARS) state.complete = false;
-      const provider = parsedProviderSessionId(entry);
-      if (provider) collectSession(provider.rawValue);
-      const cursor = parsedSessionCursor(entry);
-      if (cursor) collectCursor(cursor.rawValue);
       return;
     }
     if (!entry || typeof entry !== "object") return;
@@ -173,15 +173,15 @@ function privacyScan(value, additionalRawSessionIds = [], { includeCursorSources
       const normalizedKey = normalizedPrivacyKey(key);
       if (RAW_SESSION_ID_KEYS.has(normalizedKey)) {
         const provider = parsedProviderSessionId(item);
-        collectSession(provider?.rawValue ?? item);
+        if (!provider) collectSession(item);
       }
       if (PROVIDER_SESSION_ID_KEYS.has(normalizedKey)) {
         const provider = parsedProviderSessionId(item);
-        collectSession(provider?.rawValue ?? item);
+        if (!provider) collectSession(item);
       }
       if (includeCursorSources && normalizeAcpPaginationCursorKey(key)) {
         const cursor = parsedSessionCursor(item);
-        collectCursor(cursor?.rawValue ?? item);
+        if (!cursor) collectCursor(item);
       }
       scan(item, depth + 1);
       if (!state.complete) return;
@@ -222,12 +222,6 @@ function hasPrivateScalar(privateValues, value) {
   return Array.isArray(privateValues) && privateValues.some((entry) => Object.is(entry, value));
 }
 
-function opaqueTokenContainsPrivateScalar(value, privateValues = []) {
-  const rawValue = parsedProviderSessionId(value)?.rawValue
-    ?? parsedSessionCursor(value)?.rawValue;
-  return rawValue != null && containsPrivateScalar(rawValue, privateValues);
-}
-
 function redactedText(value, rawSessionIds, max = MAX_TEXT_CHARS, privateValues = []) {
   if (typeof value !== "string") return null;
   let result = redactPrivateScalars(value, privateValues);
@@ -259,7 +253,7 @@ function sanitizedValue(value, {
   }
   if (typeof value === "string") {
     if (canonicalProviderSessionId(value) || canonicalSessionCursor(value)) {
-      return opaqueTokenContainsPrivateScalar(value, privateValues) ? "[redacted]" : value;
+      return value;
     }
     return /(?:^|_)(?:url|uri|href)$/iu.test(parentKey)
       ? sanitizedUrl(value, rawSessionIds, privateValues)
@@ -346,7 +340,6 @@ function sanitizeSession(value, {
   } catch {
     return null;
   }
-  if (opaqueTokenContainsPrivateScalar(session.id, privateValues)) return null;
   for (const [key, limit] of [["title", 500], ["status", 100]]) {
     if (session[key] == null) continue;
     const text = String(session[key]);
@@ -464,8 +457,7 @@ export function normalizeAcpSessionCursor(value, profileId = null) {
       safeMessage: "cursor is invalid",
     });
   }
-  if ((profileId || value.startsWith("acp-cursor:"))
-    && !parsedSessionCursor(value, profileId)) {
+  if (!parsedSessionCursor(value, profileId)) {
     throw Object.assign(new Error("cursor is invalid"), {
       code: "validation",
       status: 400,
@@ -525,8 +517,7 @@ export function sanitizeAcpOperationResult(kind, value, {
     const rawNextCursor = paginationCursorValue(source);
     let nextCursor = null;
     if (!containsRawSessionId(rawNextCursor, rawSessionIds)
-      && !containsPrivateScalar(rawNextCursor, privateValues)
-      && !opaqueTokenContainsPrivateScalar(rawNextCursor, privateValues)) {
+      && !containsPrivateScalar(rawNextCursor, privateValues)) {
       try {
         nextCursor = normalizeAcpSessionCursor(rawNextCursor, profileId);
       } catch { /* omit an unusable remote cursor without corrupting it */ }
@@ -549,7 +540,6 @@ export function sanitizeAcpOperationResult(kind, value, {
     if (result.id !== undefined) {
       try {
         result.id = normalizeAcpProviderSessionId(result.id, profileId);
-        if (opaqueTokenContainsPrivateScalar(result.id, privateValues)) delete result.id;
       } catch {
         delete result.id;
       }
@@ -624,8 +614,7 @@ function safeProtocolRequestId(value, rawSessionIds, {
     && clipped === original
     && clipped.length > 0
     && !containsRawSessionId(clipped, rawSessionIds)
-    && !containsPrivateScalar(clipped, privateValues)
-    && !opaqueTokenContainsPrivateScalar(clipped, privateValues)) {
+    && !containsPrivateScalar(clipped, privateValues)) {
     return clipped;
   }
   const digest = createHash("sha256").update(original).digest("base64url").slice(0, 32);
