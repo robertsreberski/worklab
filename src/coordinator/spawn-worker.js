@@ -556,9 +556,19 @@ export function spawnWorker({
     try { child.kill(signal); } catch { /* already gone */ }
   }
 
+  function signalWorkerProcess(signal = "SIGTERM") {
+    try { child.kill(signal); } catch { /* already gone */ }
+  }
+
   function terminateChild() {
     try { child.stdin?.end?.(); } catch { /* already closed */ }
-    signalWorkerProcessTree("SIGTERM");
+    // Give the worker a chance to translate the abort into provider-specific
+    // cancellation (ACP session/cancel, pending interaction cleanup, etc.). A
+    // process-group SIGTERM here would kill the provider bridge at the same
+    // instant and race that semantic cleanup. Descendants are still bounded by
+    // the process-group SIGKILL ceiling below, and finalize() group-cleans them
+    // as soon as the worker exits.
+    signalWorkerProcess("SIGTERM");
     if (!sigkillTimer) {
       sigkillTimer = setTimeout(() => {
         signalWorkerProcessTree("SIGKILL");
