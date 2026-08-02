@@ -50,6 +50,10 @@ const INTERACTION_KIND_ALIASES = Object.freeze({
 });
 
 const DEFAULT_ABORT_CLEANUP_TIMEOUT_MS = 5_000;
+const MAX_PRIVATE_RESPONSE_VALUES = 10_000;
+const MAX_PRIVATE_RESPONSE_DEPTH = 10;
+const MAX_PRIVATE_RESPONSE_NODES = 20_000;
+const MAX_PRIVATE_RESPONSE_STRING_CHARS = 4 * 1024 * 1024;
 
 function managerError(message, { code = "invalid_state", status = 409 } = {}) {
   return Object.assign(new Error(message), { code, status, safeMessage: message });
@@ -92,6 +96,90 @@ async function waitForSettlement(promise, timeoutMs) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function isPlainObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function createPrivateResponseTracker() {
+  const values = new Set();
+  let stringChars = 0;
+  let failedClosed = false;
+
+  function collect(value, collected, state, ancestors, depth = 0) {
+    if (depth > MAX_PRIVATE_RESPONSE_DEPTH) return false;
+    state.nodes += 1;
+    if (state.nodes > MAX_PRIVATE_RESPONSE_NODES) return false;
+    if (value == null) return true;
+    if (typeof value === "string") {
+      if (!value || values.has(value) || collected.has(value)) return true;
+      if (values.size + collected.size >= MAX_PRIVATE_RESPONSE_VALUES
+        || stringChars + state.stringChars + value.length > MAX_PRIVATE_RESPONSE_STRING_CHARS) {
+        return false;
+      }
+      collected.add(value);
+      state.stringChars += value.length;
+      return true;
+    }
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) return false;
+      if (values.has(value) || collected.has(value)) return true;
+      if (values.size + collected.size >= MAX_PRIVATE_RESPONSE_VALUES) return false;
+      collected.add(value);
+      return true;
+    }
+    if (typeof value === "boolean") {
+      if (values.has(value) || collected.has(value)) return true;
+      if (values.size + collected.size >= MAX_PRIVATE_RESPONSE_VALUES) return false;
+      collected.add(value);
+      return true;
+    }
+    if (Array.isArray(value)) {
+      if (ancestors.has(value)) return false;
+      ancestors.add(value);
+      const valid = value.every((entry) => collect(entry, collected, state, ancestors, depth + 1));
+      ancestors.delete(value);
+      return valid;
+    }
+    if (!isPlainObject(value) || ancestors.has(value)) return false;
+    ancestors.add(value);
+    const valid = Object.values(value)
+      .every((entry) => collect(entry, collected, state, ancestors, depth + 1));
+    ancestors.delete(value);
+    return valid;
+  }
+
+  function rememberResponse(response) {
+    if (failedClosed) return false;
+    const collected = new Set();
+    const state = { nodes: 0, stringChars: 0 };
+    const ancestors = new WeakSet();
+    const valid = collect(response?.content, collected, state, ancestors)
+      && collect(response?.values, collected, state, ancestors);
+    if (!valid) {
+      failedClosed = true;
+      return false;
+    }
+    for (const value of collected) values.add(value);
+    stringChars += state.stringChars;
+    return true;
+  }
+
+  function clear() {
+    values.clear();
+    stringChars = 0;
+    failedClosed = true;
+  }
+
+  return {
+    values,
+    rememberResponse,
+    clear,
+    get failedClosed() { return failedClosed; },
+  };
 }
 
 function permissionOptionId(response) {
@@ -263,6 +351,7 @@ export class AcpOperationManager {
       cursor: sessionCursor,
       controller: new AbortController(),
       pending: new Map(),
+      privateResponses: createPrivateResponseTracker(),
       deadline: null,
       done: null,
     };
@@ -303,6 +392,8 @@ export class AcpOperationManager {
 
       const sanitized = sanitizeAcpOperationResult(record.kind, result, {
         profileId: record.profile.id,
+        privateValues: record.privateResponses.values,
+        privacyFailedClosed: record.privateResponses.failedClosed,
       });
       const completedAt = this.now();
       if (completeAcpOperation(this.db, record.id, {
@@ -323,7 +414,11 @@ export class AcpOperationManager {
     } catch (error) {
       const cancelled = record.controller.signal.aborted
         && record.controller.signal.reason?.code !== "operation_timeout";
-      const sanitized = sanitizeAcpOperationError(record.kind, error, { cancelled });
+      const sanitized = sanitizeAcpOperationError(record.kind, error, {
+        cancelled,
+        privateValues: record.privateResponses.values,
+        privacyFailedClosed: record.privateResponses.failedClosed,
+      });
       const completedAt = this.now();
       if (cancelled) {
         cancelAcpOperation(this.db, record.id, {
@@ -363,6 +458,7 @@ export class AcpOperationManager {
           }, "ACP operation handler did not settle after cancellation");
         }
       }
+      record.privateResponses.clear();
       this.active.delete(record.id);
     }
     return this.get(record.id);
@@ -408,6 +504,8 @@ export class AcpOperationManager {
       source: request,
       protocolRequestId: candidateProtocolRequestId,
       requestSchema: requestSchemaSource,
+      privateValues: record.privateResponses.values,
+      privacyFailedClosed: record.privateResponses.failedClosed,
     });
     const { protocolRequestId, requestSchema } = safeRequest;
     const now = this.now();
@@ -459,6 +557,12 @@ export class AcpOperationManager {
     }
     const safeDisposition = acpInteractionDisposition(rowToAcpInteraction(row), response, disposition);
     assertOfferedPermissionResponse(row, response, safeDisposition);
+    if (!record.privateResponses.rememberResponse(response)) {
+      throw managerError("ACP interaction response is too deeply nested or complex", {
+        code: "validation",
+        status: 400,
+      });
+    }
     const finalized = this.db.transaction(() => {
       const claimed = claimAcpInteractionResponse(this.db, interactionId, {
         disposition: safeDisposition,

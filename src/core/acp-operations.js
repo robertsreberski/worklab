@@ -6,7 +6,14 @@ const MAX_ITEMS = 200;
 const MAX_DEPTH = 8;
 const MAX_AUTH_METHOD_ID_CHARS = 500;
 const MAX_PROVIDER_SESSION_ID_CHARS = 5_600;
-const MAX_SESSION_CURSOR_CHARS = 5_600;
+const MAX_OPAQUE_TOKEN_BYTES = 4_096;
+const MAX_ACP_PROFILE_ID_CHARS = 128;
+const SESSION_CURSOR_PREFIX = "acp-cursor:v1:";
+const MAX_BASE64URL_TOKEN_CHARS = Math.ceil((MAX_OPAQUE_TOKEN_BYTES * 4) / 3);
+const MAX_SESSION_CURSOR_CHARS = SESSION_CURSOR_PREFIX.length
+  + MAX_ACP_PROFILE_ID_CHARS
+  + 1
+  + MAX_BASE64URL_TOKEN_CHARS;
 const MAX_PRIVACY_SCAN_DEPTH = 20;
 const MAX_PRIVACY_SCAN_NODES = 50_000;
 const MAX_RAW_SESSION_IDS = 512;
@@ -20,6 +27,34 @@ const RAW_SESSION_ID_KEYS = new Set([
   "remotesessionid",
 ]);
 const PROVIDER_SESSION_ID_KEYS = new Set(["providersessionid"]);
+const PAGINATION_CURSOR_KEYS = new Set([
+  "cursor",
+  "nextcursor",
+  "pagecursor",
+  "nextpagecursor",
+  "paginationcursor",
+  "continuationcursor",
+  "endcursor",
+  "pagetoken",
+  "nextpagetoken",
+  "continuationtoken",
+  "nextcontinuationtoken",
+  "nexttoken",
+]);
+const PAGINATION_CURSOR_PRIORITY = [
+  "nextcursor",
+  "cursor",
+  "nextpagecursor",
+  "pagecursor",
+  "paginationcursor",
+  "continuationcursor",
+  "endcursor",
+  "nextpagetoken",
+  "pagetoken",
+  "nextcontinuationtoken",
+  "continuationtoken",
+  "nexttoken",
+];
 const OPERATION_KINDS = new Set([
   "probe",
   "authenticate",
@@ -62,7 +97,7 @@ function normalizedPrivacyKey(value) {
   return String(value || "").replace(/[_-]/gu, "").toLowerCase();
 }
 
-function decodedOpaqueToken(encoded, { maxBytes = 4_096 } = {}) {
+function decodedOpaqueToken(encoded, { maxBytes = MAX_OPAQUE_TOKEN_BYTES } = {}) {
   try {
     const decoded = Buffer.from(encoded, "base64url");
     const value = new TextDecoder("utf-8", { fatal: true }).decode(decoded);
@@ -102,7 +137,7 @@ function canonicalSessionCursor(value, profileId = null) {
   return parsedSessionCursor(value, profileId)?.value ?? null;
 }
 
-function privacyScan(value, additionalRawSessionIds = []) {
+function privacyScan(value, additionalRawSessionIds = [], { includeCursorSources = false } = {}) {
   const rawSessionIds = new Set();
   const rawCursorValues = new Set();
   const visited = new WeakSet();
@@ -122,7 +157,15 @@ function privacyScan(value, additionalRawSessionIds = []) {
     collection.add(candidate);
   };
   const collectSession = (candidate) => collect(rawSessionIds, candidate);
-  const collectCursor = (candidate) => collect(rawCursorValues, candidate);
+  const collectCursor = (candidate) => {
+    if (candidate == null || candidate === "") return;
+    if (typeof candidate !== "string"
+      || Buffer.byteLength(candidate, "utf8") > MAX_OPAQUE_TOKEN_BYTES) {
+      state.complete = false;
+      return;
+    }
+    collect(rawCursorValues, candidate);
+  };
   for (const candidate of additionalRawSessionIds) {
     const provider = parsedProviderSessionId(candidate);
     collectSession(provider?.rawValue ?? candidate);
@@ -168,6 +211,10 @@ function privacyScan(value, additionalRawSessionIds = []) {
         const provider = parsedProviderSessionId(item);
         collectSession(provider?.rawValue ?? item);
       }
+      if (includeCursorSources && PAGINATION_CURSOR_KEYS.has(normalizedKey)) {
+        const cursor = parsedSessionCursor(item);
+        collectCursor(cursor?.rawValue ?? item);
+      }
       scan(item, depth + 1);
       if (!state.complete) return;
     }
@@ -188,17 +235,42 @@ function containsRawSessionId(value, rawSessionIds) {
     && rawSessionIds.some((rawSessionId) => value.includes(rawSessionId));
 }
 
-function redactedText(value, rawSessionIds, max = MAX_TEXT_CHARS) {
+function redactPrivateScalars(value, privateValues = []) {
+  let result = String(value ?? "");
+  for (const privateValue of privateValues) {
+    if (!["string", "number", "boolean"].includes(typeof privateValue)) continue;
+    const token = String(privateValue);
+    if (token) result = result.split(token).join("[redacted]");
+  }
+  return result;
+}
+
+function containsPrivateScalar(value, privateValues = []) {
+  return typeof value === "string" && redactPrivateScalars(value, privateValues) !== value;
+}
+
+function hasPrivateScalar(privateValues, value) {
+  if (typeof privateValues?.has === "function") return privateValues.has(value);
+  return Array.isArray(privateValues) && privateValues.some((entry) => Object.is(entry, value));
+}
+
+function opaqueTokenContainsPrivateScalar(value, privateValues = []) {
+  const rawValue = parsedProviderSessionId(value)?.rawValue
+    ?? parsedSessionCursor(value)?.rawValue;
+  return rawValue != null && containsPrivateScalar(rawValue, privateValues);
+}
+
+function redactedText(value, rawSessionIds, max = MAX_TEXT_CHARS, privateValues = []) {
   if (typeof value !== "string") return null;
-  let result = value;
+  let result = redactPrivateScalars(value, privateValues);
   for (const rawSessionId of rawSessionIds) {
     result = result.split(rawSessionId).join("[redacted]");
   }
   return clippedText(result, max);
 }
 
-function sanitizedUrl(value, rawSessionIds) {
-  const text = redactedText(value, rawSessionIds);
+function sanitizedUrl(value, rawSessionIds, privateValues) {
+  const text = redactedText(value, rawSessionIds, MAX_TEXT_CHARS, privateValues);
   if (!text) return text;
   try {
     const url = new URL(text);
@@ -217,16 +289,23 @@ function sanitizedValue(value, {
   schema = false,
   parentKey = "",
   rawSessionIds = [],
+  privateValues = [],
   ancestors = new WeakSet(),
 } = {}) {
   if (depth > MAX_DEPTH) return "[truncated]";
-  if (value == null || typeof value === "boolean") return value;
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (value == null) return value;
+  if (typeof value === "boolean") return hasPrivateScalar(privateValues, value) ? "[redacted]" : value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    return hasPrivateScalar(privateValues, value) ? "[redacted]" : value;
+  }
   if (typeof value === "string") {
-    if (canonicalProviderSessionId(value) || canonicalSessionCursor(value)) return value;
+    if (canonicalProviderSessionId(value) || canonicalSessionCursor(value)) {
+      return opaqueTokenContainsPrivateScalar(value, privateValues) ? "[redacted]" : value;
+    }
     return /(?:^|_)(?:url|uri|href)$/iu.test(parentKey)
-      ? sanitizedUrl(value, rawSessionIds)
-      : redactedText(value, rawSessionIds);
+      ? sanitizedUrl(value, rawSessionIds, privateValues)
+      : redactedText(value, rawSessionIds, MAX_TEXT_CHARS, privateValues);
   }
   if (Array.isArray(value)) {
     if (ancestors.has(value)) return null;
@@ -236,6 +315,7 @@ function sanitizedValue(value, {
       schema,
       parentKey,
       rawSessionIds,
+      privateValues,
       ancestors,
     }));
     ancestors.delete(value);
@@ -252,6 +332,7 @@ function sanitizedValue(value, {
     if (PROVIDER_SESSION_ID_KEYS.has(normalizedKey)
       && !canonicalProviderSessionId(entry)) continue;
     if (containsRawSessionId(key, rawSessionIds)) continue;
+    if (containsPrivateScalar(key, privateValues)) continue;
     if (!propertyIdentifier && SENSITIVE_KEY_RE.test(key)) continue;
     if (schema && !propertyIdentifier && SCHEMA_VALUE_KEYS.has(key.toLowerCase())) continue;
     const sanitized = sanitizedValue(entry, {
@@ -259,6 +340,7 @@ function sanitizedValue(value, {
       schema,
       parentKey: key,
       rawSessionIds,
+      privateValues,
       ancestors,
     });
     if (sanitized !== undefined) output[key] = sanitized;
@@ -285,7 +367,26 @@ function picked(value, keys) {
   return output;
 }
 
-function sanitizeSession(value, { profileId = null, rawSessionIds = [] } = {}) {
+function paginationCursorValue(source) {
+  const candidates = new Map();
+  for (const [key, value] of Object.entries(source)) {
+    const normalizedKey = normalizedPrivacyKey(key);
+    if (PAGINATION_CURSOR_KEYS.has(normalizedKey) && !candidates.has(normalizedKey)) {
+      candidates.set(normalizedKey, value);
+    }
+  }
+  for (const key of PAGINATION_CURSOR_PRIORITY) {
+    const candidate = candidates.get(key);
+    if (candidate != null) return candidate;
+  }
+  return null;
+}
+
+function sanitizeSession(value, {
+  profileId = null,
+  rawSessionIds = [],
+  privateValues = [],
+} = {}) {
   const session = picked(value, {
     id: ["providerSessionId", "provider_session_id", "id"],
     title: ["title", "name", "label"],
@@ -298,6 +399,7 @@ function sanitizeSession(value, { profileId = null, rawSessionIds = [] } = {}) {
   } catch {
     return null;
   }
+  if (opaqueTokenContainsPrivateScalar(session.id, privateValues)) return null;
   for (const [key, limit] of [["title", 500], ["status", 100]]) {
     if (session[key] == null) continue;
     const text = String(session[key]);
@@ -305,12 +407,14 @@ function sanitizeSession(value, { profileId = null, rawSessionIds = [] } = {}) {
       delete session[key];
       continue;
     }
-    session[key] = redactedText(text, rawSessionIds, limit);
+    session[key] = redactedText(text, rawSessionIds, limit, privateValues);
   }
   for (const key of ["createdAt", "updatedAt"]) {
     if (session[key] == null) continue;
     const text = clippedText(String(session[key]), 100);
-    const parsed = text && !containsRawSessionId(text, rawSessionIds)
+    const parsed = text
+      && !containsRawSessionId(text, rawSessionIds)
+      && !containsPrivateScalar(text, privateValues)
       ? Date.parse(text)
       : Number.NaN;
     if (!Number.isFinite(parsed)) {
@@ -319,7 +423,7 @@ function sanitizeSession(value, { profileId = null, rawSessionIds = [] } = {}) {
     }
     session[key] = new Date(parsed).toISOString();
   }
-  return boundedObject(session, { rawSessionIds });
+  return boundedObject(session, { rawSessionIds, privateValues });
 }
 
 function boundedSessionListResult({ sessions, nextCursor, truncated }) {
@@ -339,7 +443,7 @@ function boundedSessionListResult({ sessions, nextCursor, truncated }) {
   return result;
 }
 
-function sanitizeAuthMethod(value) {
+function sanitizeAuthMethod(value, privateValues = []) {
   const method = picked(value, {
     id: "id",
     name: "name",
@@ -352,9 +456,9 @@ function sanitizeAuthMethod(value) {
     return null;
   }
   return {
-    id,
-    name: clippedText(String(method.name || id), 500)?.trim() || id,
-    type: clippedText(String(method.type || "agent"), 100)?.trim() || "agent",
+    id: redactedText(id, [], MAX_AUTH_METHOD_ID_CHARS, privateValues),
+    name: redactedText(String(method.name || id), [], 500, privateValues)?.trim() || id,
+    type: redactedText(String(method.type || "agent"), [], 100, privateValues)?.trim() || "agent",
   };
 }
 
@@ -432,7 +536,6 @@ function failedClosedOperationResult(kind, source, profileId) {
       profileId,
     );
     return {
-      ...(typeof source?.deleted === "boolean" ? { deleted: source.deleted } : {}),
       ...(id ? { id } : {}),
       truncated: true,
     };
@@ -443,10 +546,16 @@ function failedClosedOperationResult(kind, source, profileId) {
 export function sanitizeAcpOperationResult(kind, value, {
   profileId = null,
   rawSessionIds: additionalRawSessionIds = [],
+  privateValues = [],
+  privacyFailedClosed = false,
 } = {}) {
   const source = isPlainObject(value) ? value : {};
-  const privacy = privacyScan(source, additionalRawSessionIds);
-  if (!privacy.complete) return failedClosedOperationResult(kind, source, profileId);
+  const privacy = privacyScan(source, additionalRawSessionIds, {
+    includeCursorSources: kind === "list_sessions",
+  });
+  if (privacyFailedClosed || !privacy.complete) {
+    return failedClosedOperationResult(kind, privacyFailedClosed ? {} : source, profileId);
+  }
   const { rawSessionIds, redactions } = privacy;
   if (kind === "authenticate" || kind === "logout") {
     return boundedObject(picked(source, {
@@ -455,16 +564,22 @@ export function sanitizeAcpOperationResult(kind, value, {
       authMethodId: ["authMethodId", "methodId", "method", "authMethod", "auth_method"],
       warnings: "warnings",
       truncated: "truncated",
-    }), { rawSessionIds: redactions });
+    }), { rawSessionIds: redactions, privateValues });
   }
   if (kind === "list_sessions") {
     const candidates = Array.isArray(source.sessions) ? source.sessions.slice(0, MAX_ITEMS) : [];
     const sessions = candidates
-      .map((session) => sanitizeSession(session, { profileId, rawSessionIds: redactions }))
+      .map((session) => sanitizeSession(session, {
+        profileId,
+        rawSessionIds: redactions,
+        privateValues,
+      }))
       .filter(Boolean);
-    const rawNextCursor = source.nextCursor ?? source.next_cursor ?? null;
+    const rawNextCursor = paginationCursorValue(source);
     let nextCursor = null;
-    if (!containsRawSessionId(rawNextCursor, rawSessionIds)) {
+    if (!containsRawSessionId(rawNextCursor, rawSessionIds)
+      && !containsPrivateScalar(rawNextCursor, privateValues)
+      && !opaqueTokenContainsPrivateScalar(rawNextCursor, privateValues)) {
       try {
         nextCursor = normalizeAcpSessionCursor(rawNextCursor, profileId);
       } catch { /* omit an unusable remote cursor without corrupting it */ }
@@ -487,11 +602,12 @@ export function sanitizeAcpOperationResult(kind, value, {
     if (result.id !== undefined) {
       try {
         result.id = normalizeAcpProviderSessionId(result.id, profileId);
+        if (opaqueTokenContainsPrivateScalar(result.id, privateValues)) delete result.id;
       } catch {
         delete result.id;
       }
     }
-    return boundedObject(result, { rawSessionIds: redactions });
+    return boundedObject(result, { rawSessionIds: redactions, privateValues });
   }
   const probe = picked(source, {
     ok: "ok",
@@ -508,24 +624,31 @@ export function sanitizeAcpOperationResult(kind, value, {
   if (Array.isArray(source.authMethods)) {
     const seen = new Set();
     probe.authMethods = source.authMethods.slice(0, MAX_ITEMS).flatMap((value) => {
-      const method = sanitizeAuthMethod(value);
+      const method = sanitizeAuthMethod(value, privateValues);
       if (!method || seen.has(method.id)) return [];
       seen.add(method.id);
       return [method];
     });
   }
-  return boundedObject(probe, { rawSessionIds: redactions });
+  return boundedObject(probe, { rawSessionIds: redactions, privateValues });
 }
 
 export function sanitizeAcpOperationError(kind, error, {
   cancelled = false,
   rawSessionIds = [],
+  privateValues = [],
+  privacyFailedClosed = false,
 } = {}) {
-  const privacy = privacyScan(error, rawSessionIds);
-  const rawCode = clippedText(String(error?.code || (cancelled ? "cancelled" : "operation_failed")), 100);
-  const code = privacy.complete
+  const privacy = privacyScan(error, rawSessionIds, {
+    includeCursorSources: kind === "list_sessions",
+  });
+  const originalCode = String(error?.code || (cancelled ? "cancelled" : "operation_failed"));
+  const rawCode = clippedText(originalCode, 100);
+  const code = !privacyFailedClosed
+    && privacy.complete
     && /^[A-Za-z0-9_.-]+$/u.test(rawCode || "")
     && !containsRawSessionId(rawCode, privacy.redactions)
+    && !containsPrivateScalar(originalCode, privateValues)
     ? rawCode
     : "operation_failed";
   const operation = OPERATION_KINDS.has(kind) ? kind : "operation";
@@ -542,13 +665,20 @@ export function sanitizeAcpOperationError(kind, error, {
   };
 }
 
-function safeProtocolRequestId(value, rawSessionIds, { complete = true } = {}) {
+function safeProtocolRequestId(value, rawSessionIds, {
+  complete = true,
+  privateValues = [],
+  privacyFailedClosed = false,
+} = {}) {
   const original = typeof value === "string" ? value : String(value ?? "");
   const clipped = clippedText(original, 500)?.trim() || "";
   if (complete
+    && !privacyFailedClosed
     && clipped === original
     && clipped.length > 0
-    && !containsRawSessionId(clipped, rawSessionIds)) {
+    && !containsRawSessionId(clipped, rawSessionIds)
+    && !containsPrivateScalar(clipped, privateValues)
+    && !opaqueTokenContainsPrivateScalar(clipped, privateValues)) {
     return clipped;
   }
   const digest = createHash("sha256").update(original).digest("base64url").slice(0, 32);
@@ -560,12 +690,22 @@ export function sanitizeAcpInteractionRequest({
   protocolRequestId,
   requestSchema,
   rawSessionIds: additionalRawSessionIds = [],
+  privateValues = [],
+  privacyFailedClosed = false,
 } = {}) {
   const privacy = privacyScan(source ?? requestSchema, additionalRawSessionIds);
   return {
-    protocolRequestId: safeProtocolRequestId(protocolRequestId, privacy.redactions, privacy),
-    requestSchema: privacy.complete && isPlainObject(requestSchema)
-      ? boundedObject(requestSchema, { schema: true, rawSessionIds: privacy.redactions })
+    protocolRequestId: safeProtocolRequestId(protocolRequestId, privacy.redactions, {
+      ...privacy,
+      privateValues,
+      privacyFailedClosed,
+    }),
+    requestSchema: !privacyFailedClosed && privacy.complete && isPlainObject(requestSchema)
+      ? boundedObject(requestSchema, {
+        schema: true,
+        rawSessionIds: privacy.redactions,
+        privateValues,
+      })
       : { truncated: true },
   };
 }
@@ -576,6 +716,8 @@ export function sanitizeAcpInteractionSchema(value, options = {}) {
     protocolRequestId: "schema-only",
     requestSchema: value,
     rawSessionIds: options.rawSessionIds,
+    privateValues: options.privateValues,
+    privacyFailedClosed: options.privacyFailedClosed,
   }).requestSchema;
 }
 
@@ -627,7 +769,7 @@ export function rowToAcpOperation(row) {
     request,
     result,
     error,
-  });
+  }, [], { includeCursorSources: row.kind === "list_sessions" });
   const remoteSessionId = canonicalProviderSessionId(row.remote_session_id, row.profile_id);
   return {
     id: row.id,

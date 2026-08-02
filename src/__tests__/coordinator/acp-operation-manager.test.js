@@ -165,6 +165,211 @@ describe("AcpOperationManager", () => {
     expect(JSON.stringify(events)).not.toContain(rawSessionId);
   });
 
+  it("redacts private string, numeric, and boolean response echoes from results and later schemas", async () => {
+    const privateCode = "OTP-493827";
+    const privatePin = 493827;
+    const privateApproval = true;
+    let firstDelivered;
+    let secondDelivered;
+    const { db, profile, events, manager } = setup({
+      authenticate: async ({ onInteraction }) => {
+        firstDelivered = await onInteraction({
+          requestId: "private-scalars",
+          kind: "form",
+          schema: {
+            title: "Enter private values",
+            properties: {
+              code: { type: "string" },
+              pin: { type: "number" },
+              approved: { type: "boolean" },
+            },
+          },
+        });
+        secondDelivered = await onInteraction({
+          requestId: `followup:${firstDelivered.values.code}:OTP${firstDelivered.values.pin}END:approved=${firstDelivered.values.approved}-ish`,
+          kind: "form",
+          schema: {
+            title: `Confirm:${firstDelivered.values.code}:OTP${firstDelivered.values.pin}END:approved=${firstDelivered.values.approved}-ish`,
+          },
+        });
+        return {
+          authenticated: firstDelivered.values.approved,
+          status: `used:${firstDelivered.values.code}:OTP${firstDelivered.values.pin}END:approved=${firstDelivered.values.approved}-ish`,
+          warnings: [
+            firstDelivered.values.code,
+            `OTP${firstDelivered.values.pin}END`,
+            `approved=${firstDelivered.values.approved}-ish`,
+          ],
+        };
+      },
+    });
+    const operation = manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "private-form",
+    });
+    let first;
+    await vi.waitFor(() => {
+      first = db.prepare(`
+        SELECT * FROM acp_interactions WHERE operation_id = ? AND state = 'pending'
+      `).get(operation.id);
+      expect(first?.protocol_request_id).toBe("private-scalars");
+    });
+
+    manager.respond({
+      operationId: operation.id,
+      interactionId: first.id,
+      response: {
+        disposition: "accept",
+        values: {
+          code: privateCode,
+          pin: privatePin,
+          approved: privateApproval,
+        },
+      },
+    });
+
+    let second;
+    await vi.waitFor(() => {
+      second = db.prepare(`
+        SELECT * FROM acp_interactions
+        WHERE operation_id = ? AND state = 'pending' AND id != ?
+      `).get(operation.id, first.id);
+      expect(second).toBeTruthy();
+    });
+    expect(second.protocol_request_id).toMatch(/^acp-request:v1:/u);
+    expect(JSON.parse(second.request_schema_json)).toEqual({
+      title: "Confirm:[redacted]:OTP[redacted]END:approved=[redacted]-ish",
+    });
+    manager.respond({
+      operationId: operation.id,
+      interactionId: second.id,
+      response: { disposition: "decline" },
+    });
+
+    const completed = await waitForOperation(manager, operation.id, "succeeded");
+    expect(firstDelivered.values).toEqual({
+      code: privateCode,
+      pin: privatePin,
+      approved: privateApproval,
+    });
+    expect(secondDelivered).toEqual({ disposition: "decline" });
+    expect(completed.result).toEqual({
+      authenticated: "[redacted]",
+      status: "used:[redacted]:OTP[redacted]END:approved=[redacted]-ish",
+      warnings: ["[redacted]", "OTP[redacted]END", "approved=[redacted]-ish"],
+    });
+    const stored = db.prepare("SELECT result_json FROM acp_operations WHERE id = ?").get(operation.id);
+    expect(JSON.parse(stored.result_json)).toEqual(completed.result);
+    const succeeded = events.find(({ event }) => (
+      event.type === "acp_operation_updated"
+      && event.state === "succeeded"
+      && event.operation.id === operation.id
+    ));
+    expect(succeeded?.event.operation.result).toEqual(completed.result);
+    const exposed = JSON.stringify({
+      stored,
+      interactions: db.prepare("SELECT * FROM acp_interactions WHERE operation_id = ?").all(operation.id),
+      events,
+    });
+    expect(exposed).not.toContain(privateCode);
+    expect(exposed).not.toContain(String(privatePin));
+    expect(exposed).not.toContain(`OTP${privatePin}END`);
+    expect(exposed).not.toContain(`approved=${privateApproval}-ish`);
+  });
+
+  it("redacts private response echoes from terminal operation errors", async () => {
+    const privateCode = "OTP-ERROR-493827";
+    const privatePin = 493827;
+    const privateApproval = true;
+    const echoedCode = `runtime_PIN${privatePin}END_APPROVED${privateApproval}ISH`;
+    const { db, profile, events, manager } = setup({
+      authenticate: async ({ onInteraction }) => {
+        const response = await onInteraction({
+          requestId: "private-error",
+          kind: "form",
+          schema: { title: "Enter error values" },
+        });
+        throw Object.assign(new Error(`failed ${response.values.code} OTP${response.values.pin}END approved=${response.values.approved}-ish`), {
+          code: `runtime_PIN${response.values.pin}END_APPROVED${response.values.approved}ISH`,
+          publicMessage: `failed ${response.values.code} OTP${response.values.pin}END approved=${response.values.approved}-ish`,
+        });
+      },
+    });
+    const operation = manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "private-error",
+    });
+    let interaction;
+    await vi.waitFor(() => {
+      interaction = db.prepare("SELECT * FROM acp_interactions WHERE operation_id = ?")
+        .get(operation.id);
+      expect(interaction?.state).toBe("pending");
+    });
+    manager.respond({
+      operationId: operation.id,
+      interactionId: interaction.id,
+      response: {
+        disposition: "accept",
+        values: { code: privateCode, pin: privatePin, approved: privateApproval },
+      },
+    });
+
+    const failed = await waitForOperation(manager, operation.id, "failed");
+    expect(failed.error).toEqual({
+      code: "operation_failed",
+      message: "ACP authenticate operation failed.",
+    });
+    const stored = db.prepare("SELECT error_json FROM acp_operations WHERE id = ?").get(operation.id);
+    expect(JSON.parse(stored.error_json)).toEqual(failed.error);
+    expect(JSON.stringify({ stored, events })).not.toContain(privateCode);
+    expect(JSON.stringify({ stored, events })).not.toContain(String(privatePin));
+    expect(JSON.stringify({ stored, events })).not.toContain(echoedCode);
+  });
+
+  it("rejects over-complex private responses and keeps terminal output failed closed", async () => {
+    let delivered;
+    const { db, profile, manager } = setup({
+      authenticate: async ({ onInteraction }) => {
+        delivered = await onInteraction({
+          requestId: "too-deep-private-response",
+          kind: "form",
+          schema: { title: "Deep response" },
+        });
+        return { authenticated: true, status: "safe after cancellation" };
+      },
+    });
+    const operation = manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "deep-form",
+    });
+    let interaction;
+    await vi.waitFor(() => {
+      interaction = db.prepare("SELECT * FROM acp_interactions WHERE operation_id = ?")
+        .get(operation.id);
+      expect(interaction?.state).toBe("pending");
+    });
+    let tooDeep = "private-at-depth";
+    for (let depth = 0; depth < 12; depth += 1) tooDeep = { nested: tooDeep };
+
+    expect(() => manager.respond({
+      operationId: operation.id,
+      interactionId: interaction.id,
+      response: { disposition: "accept", values: tooDeep },
+    })).toThrowError("ACP interaction response is too deeply nested or complex");
+    expect(db.prepare("SELECT state FROM acp_interactions WHERE id = ?").get(interaction.id).state)
+      .toBe("pending");
+    expect(delivered).toBeUndefined();
+    expect(manager.active.get(operation.id)?.privateResponses.failedClosed).toBe(true);
+
+    manager.cancelInteraction({ operationId: operation.id, interactionId: interaction.id });
+    const completed = await waitForOperation(manager, operation.id, "succeeded");
+    expect(delivered).toEqual({ disposition: "cancel" });
+    expect(completed.result).toEqual({ truncated: true });
+  });
+
   it("rejects permission option ids that the ACP agent did not advertise", async () => {
     let delivered;
     const { db, profile, manager } = setup({
@@ -495,6 +700,43 @@ describe("AcpOperationManager", () => {
     expect(deleted.result).toEqual({ deleted: true, id: publicId });
     const persisted = JSON.stringify(db.prepare("SELECT * FROM acp_operations ORDER BY created_at").all());
     expect(persisted).not.toMatch(/session\/(?:one|two)|drop-list-secret|drop-delete-secret/u);
+  });
+
+  it("redacts raw continuation cursor copies from returned, persisted, and broadcast results", async () => {
+    const rawCursor = "RAW_CURSOR_COPIED_ACROSS_MANAGEMENT";
+    const rawSessionId = "remote-session-with-cursor-copy";
+    const { db, profile, events, manager } = setup({
+      listSessions: async ({ profile: activeProfile }) => ({
+        sessions: [{
+          providerSessionId: `acp:v1:${activeProfile.id}:${Buffer.from(rawSessionId).toString("base64url")}`,
+          title: `Continue ${rawCursor}`,
+          status: rawCursor,
+        }],
+        nextCursor: rawCursor,
+      }),
+    });
+
+    const operation = manager.start({ profileId: profile.id, kind: "list_sessions" });
+    const completed = await waitForOperation(manager, operation.id, "succeeded");
+    const providerSessionId = `acp:v1:${profile.id}:${Buffer.from(rawSessionId).toString("base64url")}`;
+    expect(completed.result).toEqual({
+      sessions: [{
+        id: providerSessionId,
+        title: "Continue [redacted]",
+      }],
+      truncated: true,
+    });
+
+    const stored = db.prepare("SELECT result_json FROM acp_operations WHERE id = ?")
+      .get(operation.id);
+    expect(JSON.parse(stored.result_json)).toEqual(completed.result);
+    const succeeded = events.find(({ event }) => (
+      event.type === "acp_operation_updated"
+      && event.state === "succeeded"
+      && event.operation.id === operation.id
+    ));
+    expect(succeeded?.event.operation.result).toEqual(completed.result);
+    expect(JSON.stringify({ completed, stored, events })).not.toContain(rawCursor);
   });
 
   it("marks locally capped and unusably paginated session results as truncated", async () => {
