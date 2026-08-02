@@ -389,6 +389,7 @@ describe("ACP API", () => {
             sessionId: rawSessionId,
             providerSessionId: `acp:v1:${activeProfile.id}:${Buffer.from(rawSessionId).toString("base64url")}`,
             title: page === 0 ? "Listed session 1" : rawSessionId,
+            updatedAt: rawSessionId,
           }],
           ...(cursor ? {} : { nextCursor: pageCursor }),
         };

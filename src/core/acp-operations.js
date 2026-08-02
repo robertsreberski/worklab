@@ -130,6 +130,18 @@ function sanitizeSession(value) {
       limit,
     );
   }
+  for (const key of ["createdAt", "updatedAt"]) {
+    if (session[key] == null) continue;
+    const text = clippedText(String(session[key]), 100);
+    const parsed = text && (!rawSessionId || !text.includes(rawSessionId))
+      ? Date.parse(text)
+      : Number.NaN;
+    if (!Number.isFinite(parsed)) {
+      delete session[key];
+      continue;
+    }
+    session[key] = new Date(parsed).toISOString();
+  }
   return boundedObject(session);
 }
 

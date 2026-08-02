@@ -35,4 +35,29 @@ describe("sanitizeAcpOperationResult", () => {
     expect(result.sessions[0].title).toContain("[redacted]");
     expect(json).not.toContain("raw-session/");
   });
+
+  it("does not retain a raw session id hidden in session metadata", () => {
+    const rawSessionId = "2026-08-02T18:30:00.000Z";
+    const providerSessionId = `acp:v1:${PROFILE_ID}:${Buffer.from(rawSessionId).toString("base64url")}`;
+    const result = sanitizeAcpOperationResult("list_sessions", {
+      sessions: [{
+        sessionId: rawSessionId,
+        providerSessionId,
+        title: `Continue ${rawSessionId}`,
+        status: `ready:${rawSessionId}`,
+        createdAt: rawSessionId,
+        updatedAt: rawSessionId,
+      }],
+    });
+
+    expect(result).toEqual({
+      sessions: [{
+        id: providerSessionId,
+        title: "Continue [redacted]",
+        status: "ready:[redacted]",
+      }],
+      truncated: false,
+    });
+    expect(JSON.stringify(result)).not.toContain(rawSessionId);
+  });
 });

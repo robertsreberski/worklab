@@ -436,6 +436,7 @@ describe("AcpOperationManager", () => {
             sessionId: rawSessionId,
             providerSessionId: `acp:v1:${activeProfile.id}:${Buffer.from(rawSessionId).toString("base64url")}`,
             title: `Listed session ${page + 1}`,
+            updatedAt: rawSessionId,
             token: "drop-list-secret",
           }],
           ...(cursor ? {} : { nextCursor: pageCursor }),
