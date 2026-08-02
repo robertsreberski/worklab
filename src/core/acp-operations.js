@@ -218,6 +218,7 @@ export function acpInteractionDisposition(interaction, response, explicit = null
     throw Object.assign(new Error(`invalid ${interaction?.kind || "ACP"} interaction disposition`), {
       code: "validation",
       status: 400,
+      safeMessage: `invalid ${interaction?.kind || "ACP"} interaction disposition`,
     });
   }
   return value;

@@ -23,7 +23,7 @@ const INTERACTION_STATES = new Set(["pending", "submitted", "cancelled", "expire
 const DEFAULT_DISCOVERY_TIMEOUT_MS = 30_000;
 
 function routeError(message, { code = "validation", status = 400 } = {}) {
-  return Object.assign(new Error(message), { code, status });
+  return Object.assign(new Error(message), { code, status, safeMessage: message });
 }
 
 function sendError(res, error, {
@@ -31,9 +31,12 @@ function sendError(res, error, {
   code = "validation",
   message = null,
 } = {}) {
-  const publicStatus = Number.isInteger(error?.status) ? error.status : status;
-  const publicCode = typeof error?.code === "string" ? error.code : code;
-  const publicMessage = message || error?.publicMessage || error?.safeMessage || error?.message || "Request failed";
+  const safeMessage = message || error?.publicMessage || error?.safeMessage || null;
+  const trusted = Boolean(safeMessage);
+  const publicStatus = trusted && Number.isInteger(error?.status) ? error.status : status;
+  const candidateCode = trusted && typeof error?.code === "string" ? error.code : code;
+  const publicCode = /^[A-Za-z0-9_.-]{1,100}$/u.test(candidateCode) ? candidateCode : code;
+  const publicMessage = safeMessage || "Request failed";
   return res.status(publicStatus).json({
     error: { code: publicCode, message: publicMessage },
   });
@@ -190,10 +193,16 @@ export function registerAcpRoutes(app, {
 
   app.post("/api/acp/profiles", async (req, res) => {
     const body = req.body || {};
-    const sourceId = body.sourceId ?? body.source_id;
+    const monoRequested = Object.hasOwn(body, "sourceId")
+      || Object.hasOwn(body, "source_id")
+      || body.driver === "mono";
     try {
       let mono = null;
-      if (body.driver === "mono" || sourceId != null) {
+      if (monoRequested) {
+        if (Object.keys(body).length !== 1 || !Object.hasOwn(body, "sourceId")) {
+          throw routeError("mono profile imports accept exactly one field: sourceId");
+        }
+        const sourceId = body.sourceId;
         if (typeof sourceId !== "string" || !sourceId.trim()) {
           throw routeError("sourceId is required for mono profiles");
         }
