@@ -8,6 +8,9 @@ const MAX_PRIVATE_VALUES = 4_096;
 const MAX_PRIVATE_VALUE_CHARS = 16 * 1024;
 const MAX_PRIVATE_SOURCE_CHARS = 16 * 1024 * 1024;
 const EXPLICIT_PRIVATE_VALUE_RE = /"((?:\\.|[^"\\])*)"\s*:\s*"((?:\\.|[^"\\])*)"/gu;
+const LEGACY_V1_PROVIDER_SESSION_RE = /^acp:v1:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([A-Za-z0-9_-]+)$/u;
+const LEGACY_V1_SESSION_CURSOR_RE = /^acp-cursor:v1:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([A-Za-z0-9_-]+)$/u;
+const MAX_LEGACY_V1_RAW_TOKEN_BYTES = 4_096;
 
 function parseJson(value) {
   try {
@@ -17,31 +20,50 @@ function parseJson(value) {
   }
 }
 
-function decodedProviderSessionSeed(value) {
+function parseLegacyV1Token(value, pattern) {
   if (typeof value !== "string") return null;
-  const match = /^acp:v1:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([A-Za-z0-9_-]+)$/u.exec(value);
-  if (!match || !validateAcpProviderSessionId(value, match[1])) return null;
+  const match = pattern.exec(value);
+  if (!match) return null;
   try {
     const bytes = Buffer.from(match[2], "base64url");
     const decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     return bytes.length > 0
+      && bytes.length <= MAX_LEGACY_V1_RAW_TOKEN_BYTES
       && bytes.toString("base64url") === match[2]
       && decoded
       && decoded.trim() === decoded
       && !decoded.includes("\0")
-      ? decoded
+      ? { profileId: match[1], rawValue: decoded, value }
       : null;
   } catch {
     return null;
   }
 }
 
+export function parseLegacyV1AcpProviderSessionId(value) {
+  return parseLegacyV1Token(value, LEGACY_V1_PROVIDER_SESSION_RE);
+}
+
+export function parseLegacyV1AcpSessionCursor(value) {
+  return parseLegacyV1Token(value, LEGACY_V1_SESSION_CURSOR_RE);
+}
+
+function canonicalV2ProviderSessionId(value) {
+  if (typeof value !== "string") return null;
+  const match = /^acp:v2:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):/u.exec(value);
+  return match ? validateAcpProviderSessionId(value, match[1]) : null;
+}
+
 export function addGlobalPrivateValue(values, candidate, { cursor = false, provider = false } = {}) {
   if (candidate == null || candidate === "" || typeof candidate !== "string") return;
   const value = cursor
-    ? (parseAcpSessionCursor(candidate)?.rawValue ?? candidate)
+    ? (parseAcpSessionCursor(candidate)
+      ? null
+      : (parseLegacyV1AcpSessionCursor(candidate)?.rawValue ?? candidate))
     : provider
-      ? (decodedProviderSessionSeed(candidate) ?? candidate)
+      ? (canonicalV2ProviderSessionId(candidate)
+        ? null
+        : (parseLegacyV1AcpProviderSessionId(candidate)?.rawValue ?? candidate))
       : candidate;
   if (!value || values.has(value)) return;
   if (value.length > MAX_PRIVATE_VALUE_CHARS) {

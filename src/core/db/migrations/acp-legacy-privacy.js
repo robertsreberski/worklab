@@ -23,6 +23,7 @@ import {
   collectPrivateValuesFromText,
   createPrivateValueScope,
   finalizePrivateValueScope,
+  parseLegacyV1AcpProviderSessionId,
 } from "./acp-legacy-private-values.js";
 
 const ACP_PRIVACY_COMPACTION_KEY = "acp_legacy_session_privacy_compacted_v1";
@@ -139,9 +140,11 @@ function explicitSessionSeeds(text) {
 
 function profileIdFromHandle(value) {
   if (typeof value !== "string") return null;
-  const match = /^acp:v1:([^:]+):/u.exec(value);
-  if (!match || !PROFILE_ID_RE.test(match[1])) return null;
-  return validateAcpProviderSessionId(value, match[1]) ? match[1] : null;
+  const v2Match = /^acp:v2:([^:]+):/u.exec(value);
+  if (v2Match && PROFILE_ID_RE.test(v2Match[1])) {
+    return validateAcpProviderSessionId(value, v2Match[1]) ? v2Match[1] : null;
+  }
+  return parseLegacyV1AcpProviderSessionId(value)?.profileId ?? null;
 }
 
 function profileIdForRun(row) {

@@ -6,11 +6,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
+import { addGlobalPrivateValue } from "../../core/db/migrations/acp-legacy-private-values.js";
 
 const PROFILE_ID = "00000000-0000-4000-8000-000000000001";
 
 function opaqueSessionId(raw) {
   return `acp:v1:${PROFILE_ID}:${Buffer.from(raw).toString("base64url")}`;
+}
+
+function opaqueV2Token(prefix, raw) {
+  const sealed = Buffer.concat([
+    Buffer.alloc(12, 0x6e),
+    Buffer.from(raw),
+    Buffer.alloc(16, 0x74),
+  ]).toString("base64url");
+  return `${prefix}${PROFILE_ID}:${sealed}`;
 }
 
 function insertAcpFixture(db, now = Date.now()) {
@@ -38,6 +48,23 @@ describe("legacy ACP session privacy migration", () => {
 
   afterEach(() => {
     for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  });
+
+  it("decodes only legacy v1 envelopes as private-value seeds", () => {
+    const rawSession = "LEGACY_RAW_SESSION_SEED";
+    const rawCursor = "LEGACY_RAW_CURSOR_SEED";
+    const values = new Set();
+
+    addGlobalPrivateValue(values, opaqueSessionId(rawSession), { provider: true });
+    addGlobalPrivateValue(
+      values,
+      `acp-cursor:v1:${PROFILE_ID}:${Buffer.from(rawCursor).toString("base64url")}`,
+      { cursor: true },
+    );
+    addGlobalPrivateValue(values, opaqueV2Token("acp:v2:", "V2_CIPHERTEXT_SESSION"), { provider: true });
+    addGlobalPrivateValue(values, opaqueV2Token("acp-cursor:v2:", "V2_CIPHERTEXT_CURSOR"), { cursor: true });
+
+    expect([...values]).toEqual([rawSession, rawCursor]);
   });
 
   it("marks a non-ACP upgrade without vacuuming the existing database", () => {
@@ -91,7 +118,7 @@ describe("legacy ACP session privacy migration", () => {
     db.close();
   });
 
-  it("scrubs historical ACP rows, copied values, and raw JSONL while preserving opaque and non-ACP sessions", () => {
+  it("scrubs historical ACP rows and v1 handles while preserving non-ACP sessions", () => {
     const root = mkdtempSync(join(tmpdir(), "worklab-acp-privacy-"));
     roots.push(root);
     const dataDir = join(root, "data");
@@ -390,7 +417,7 @@ describe("legacy ACP session privacy migration", () => {
     expect(JSON.parse(rawRun.transcript_tail_json)).toEqual([{ text: "[redacted] [redacted]" }]);
 
     const handleRun = db.prepare("SELECT provider_session_id, diagnostics_json FROM task_runs WHERE id = 'run-handle'").get();
-    expect(handleRun.provider_session_id).toBe(providerSessionId);
+    expect(handleRun.provider_session_id).toBeNull();
     expect(JSON.parse(handleRun.diagnostics_json)).toEqual({ copied: "[redacted]" });
     expect(db.prepare("SELECT provider_session_id FROM task_runs WHERE id = 'run-bound'").get().provider_session_id).toBeNull();
     expect(db.prepare("SELECT provider_session_id FROM task_runs WHERE id = 'run-non-acp'").get().provider_session_id).toBe(nonAcpSession);
@@ -398,7 +425,7 @@ describe("legacy ACP session privacy migration", () => {
     expect(JSON.parse(db.prepare("SELECT events FROM agent_logs WHERE id = 'log-raw'").get().events))
       .toEqual([{ type: "message", text: "[redacted]" }]);
     expect(JSON.parse(db.prepare("SELECT events FROM agent_logs WHERE id = 'log-handle'").get().events))
-      .toEqual([{ type: "message", text: "[redacted]", provider_session_id: providerSessionId }]);
+      .toEqual([{ type: "message", text: "[redacted]" }]);
     expect(JSON.parse(db.prepare("SELECT events FROM agent_logs WHERE id = 'log-unrelated-copy'").get().events))
       .toEqual([{ type: "message", text: "copied [redacted]" }]);
     expect(db.prepare("SELECT body FROM task_comments WHERE id = 'comment-acp'").get().body)
@@ -434,14 +461,14 @@ describe("legacy ACP session privacy migration", () => {
       SELECT remote_session_id, request_json, result_json, error_json
       FROM acp_operations WHERE id = 'operation-acp'
     `).get()).toEqual({
-      remote_session_id: operationProviderSessionId,
-      request_json: `{"providerSessionId":"${operationProviderSessionId}","note":"[redacted]"}`,
+      remote_session_id: null,
+      request_json: '{"note":"[redacted]"}',
       result_json: '{"copied":"[redacted]"}',
       error_json: '{"message":"[redacted]"}',
     });
     expect(db.prepare("SELECT protocol_request_id, request_schema_json, disposition FROM acp_interactions WHERE id = 'interaction-operation'").get())
       .toEqual({
-        protocol_request_id: "legacy-redacted:interaction-operation",
+        protocol_request_id: "operation-request-[redacted]",
         request_schema_json: '{"description":"[redacted]"}',
         disposition: "accepted [redacted]",
       });
@@ -456,17 +483,17 @@ describe("legacy ACP session privacy migration", () => {
       });
     expect(db.prepare("SELECT request_json, result_json FROM acp_operations WHERE id = 'operation-opaque-cursor'").get())
       .toEqual({
-        request_json: `{"cursor":"${opaqueCursor}","copied":"[redacted]"}`,
-        result_json: `{"nextCursor":"${opaqueCursor}","copied":"[redacted]"}`,
+        request_json: '{"copied":"[redacted]"}',
+        result_json: '{"copied":"[redacted]"}',
       });
     expect(db.prepare("SELECT request_json, result_json FROM acp_operations WHERE id = 'operation-cursor-aliases'").get())
       .toEqual({
         request_json: '{"copied":"[redacted]"}',
-        result_json: `{"next-page-cursor":"${opaqueCursor}","copied":"[redacted] [redacted]","key-[redacted]":"value"}`,
+        result_json: '{"copied":"[redacted] [redacted]","key-[redacted]":"value"}',
       });
 
     const sanitizedRaw = readFileSync(rawPath, "utf8");
-    expect(sanitizedRaw).toContain(providerSessionId);
+    expect(sanitizedRaw).not.toContain(providerSessionId);
     expect(JSON.parse(sanitizedRaw.trim().split("\n")[1])).toEqual({
       type: "privacy_redaction",
       reason: "legacy_acp_session_data",

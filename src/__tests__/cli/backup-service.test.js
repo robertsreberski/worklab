@@ -11,6 +11,15 @@ import { runMigrations } from "../../core/db/migrations/runner.js";
 import { SCHEMA_VERSION } from "../../core/db/schema/current.js";
 import { createAcpOperationManager } from "../../coordinator/acp-operation-manager.js";
 
+function opaqueV2Token(prefix, profileId, raw) {
+  const sealed = Buffer.concat([
+    Buffer.alloc(12, 0x6e),
+    Buffer.from(raw),
+    Buffer.alloc(16, 0x74),
+  ]).toString("base64url");
+  return `${prefix}${profileId}:${sealed}`;
+}
+
 describe("backup command", () => {
   const dirs = [];
   const oldDataDir = process.env.WORKLAB_DATA_DIR;
@@ -88,7 +97,7 @@ describe("backup command", () => {
       .toBe("must remain eligible for backup");
   });
 
-  it("scrubs legacy list-session cursors while preserving canonical profile-bound envelopes", async () => {
+  it("scrubs legacy cursors and invalidates v2 cursor envelopes omitted from the backup key", async () => {
     const dataDir = tmp("backup-acp-cursor-data");
     const outDir = tmp("backup-acp-cursor-out");
     const restoredDir = tmp("backup-acp-cursor-restored");
@@ -116,7 +125,7 @@ describe("backup command", () => {
       },
     });
     const canonicalRawCursor = "backup-canonical-raw-cursor-secret";
-    const canonicalCursor = `acp-cursor:v1:${profile.id}:${Buffer.from(canonicalRawCursor).toString("base64url")}`;
+    const canonicalCursor = opaqueV2Token("acp-cursor:v2:", profile.id, canonicalRawCursor);
     const legacyRawCursor = "backup-legacy-raw-cursor-secret-493827";
     const malformedRawCursor = "backup-malformed-raw-cursor-secret";
     const malformedCursor = `acp-cursor:v1:another-profile:${Buffer.from(malformedRawCursor).toString("base64url")}`;
@@ -136,8 +145,8 @@ describe("backup command", () => {
     insertOperation.run(
       "acpop-backup-canonical-cursor",
       profile.id,
-      JSON.stringify({ cursor: canonicalCursor, copied: canonicalRawCursor, keep: "canonical-request" }),
-      JSON.stringify({ sessions: [], nextCursor: canonicalCursor, copied: canonicalRawCursor }),
+      JSON.stringify({ cursor: canonicalCursor, copied: "canonical-request-copy", keep: "canonical-request" }),
+      JSON.stringify({ sessions: [], nextCursor: canonicalCursor, copied: "canonical-result-copy" }),
       now,
       now,
       now,
@@ -213,7 +222,7 @@ describe("backup command", () => {
       INSERT INTO task_comments (id, task_id, author_type, body, created_at)
       VALUES ('comment-backup-cursors', 'task-backup-cursors', 'system', ?, ?)
     `).run(
-      `Copied ${canonicalRawCursor}, ${legacyRawCursor}, ${aliasRawPageCursor}, ${aliasCanonicalRawCursor}, and ${aliasRawPageToken}`,
+      `Copied ${legacyRawCursor}, ${aliasRawPageCursor}, ${aliasCanonicalRawCursor}, and ${aliasRawPageToken}`,
       now,
     );
     sourceDb.close();
@@ -231,14 +240,12 @@ describe("backup command", () => {
         SELECT request_json, result_json FROM acp_operations WHERE id = 'acpop-backup-canonical-cursor'
       `).get();
       expect(JSON.parse(canonical.request_json)).toEqual({
-        cursor: canonicalCursor,
-        copied: "[redacted]",
+        copied: "canonical-request-copy",
         keep: "canonical-request",
       });
       expect(JSON.parse(canonical.result_json)).toEqual({
         sessions: [],
-        nextCursor: canonicalCursor,
-        copied: "[redacted]",
+        copied: "canonical-result-copy",
       });
 
       const legacy = restoredDb.prepare(`
@@ -270,7 +277,6 @@ describe("backup command", () => {
         sessions: [],
         copied: "[redacted] [redacted]",
         "key-[redacted]": "value",
-        nextCursor: aliasCanonicalCursor,
       });
 
       const oversized = restoredDb.prepare(`
@@ -282,13 +288,13 @@ describe("backup command", () => {
       });
       expect(restoredDb.prepare(`
         SELECT body FROM task_comments WHERE id = 'comment-backup-cursors'
-      `).get().body).toBe("Copied [redacted], [redacted], [redacted], [redacted], and [redacted]");
+      `).get().body).toBe("Copied [redacted], [redacted], [redacted], and [redacted]");
     } finally {
       restoredDb.close();
     }
 
     const restoredBytes = readFileSync(restoredDbPath);
-    expect(restoredBytes.includes(Buffer.from(canonicalCursor))).toBe(true);
+    expect(restoredBytes.includes(Buffer.from(canonicalCursor))).toBe(false);
     for (const privateValue of [
       canonicalRawCursor,
       legacyRawCursor,
@@ -690,6 +696,11 @@ describe("backup command", () => {
     const legacyProtocolRequestId = `request:${legacyRawSessionId}:rpc`;
     const derivedOnlyRawSessionId = "backup-derived-only-raw-acp-session-secret";
     const validProviderSessionId = `acp:v1:${profile.id}:${Buffer.from(derivedOnlyRawSessionId).toString("base64url")}`;
+    const v2ProviderSessionId = opaqueV2Token(
+      "acp:v2:",
+      profile.id,
+      "backup-v2-provider-session-ciphertext",
+    );
     const deepRawSessionId = "backup-deep-raw-acp-session-secret";
     const legacyOperationId = "acpop-backup-legacy-session";
     const legacyInteractionId = "interaction-backup-legacy-session";
@@ -779,7 +790,10 @@ describe("backup command", () => {
       legacyRawSessionId,
       JSON.stringify({ sessionId: legacyRawSessionId, copied: legacyRawSessionId }),
       JSON.stringify({
-        sessions: [{ id: legacyRawSessionId, providerSessionId: validProviderSessionId, title: legacyRawSessionId }],
+        sessions: [
+          { id: legacyRawSessionId, providerSessionId: validProviderSessionId, title: legacyRawSessionId },
+          { id: v2ProviderSessionId, title: "Preserved public v2 session history" },
+        ],
       }),
       JSON.stringify({ message: `failed for ${legacyRawSessionId}` }),
       Date.now(),
@@ -849,8 +863,8 @@ describe("backup command", () => {
       "task-backup-webhook",
       "backup-acp",
       Date.now(),
-      JSON.stringify({ provider_session_id: validProviderSessionId }),
-      validProviderSessionId,
+      JSON.stringify({ provider_session_id: v2ProviderSessionId }),
+      v2ProviderSessionId,
     );
     sourceDb.prepare(`
       INSERT INTO agent_logs (id, task_run_id, events, status, created_at)
@@ -1018,7 +1032,14 @@ describe("backup command", () => {
       `).get(legacyOperationId);
       expect(restoredOperation.remote_session_id).toBeNull();
       expect(JSON.stringify(restoredOperation)).not.toContain(legacyRawSessionId);
-      expect(restoredOperation.result_json).toContain(validProviderSessionId);
+      expect(JSON.parse(restoredOperation.result_json)).toEqual({
+        sessions: [
+          { title: "[redacted]" },
+          { title: "Preserved public v2 session history" },
+        ],
+      });
+      expect(restoredOperation.result_json).not.toContain(validProviderSessionId);
+      expect(restoredOperation.result_json).not.toContain(v2ProviderSessionId);
 
       const restoredInteraction = restoredDb.prepare(`
         SELECT protocol_request_id, request_schema_json FROM acp_interactions WHERE id = ?
@@ -1026,7 +1047,7 @@ describe("backup command", () => {
       expect(restoredInteraction.protocol_request_id).toBe(`backup:${legacyInteractionId}`);
       expect(JSON.stringify(restoredInteraction)).not.toContain(legacyRawSessionId);
       expect(JSON.stringify(restoredInteraction)).not.toContain(legacyProtocolRequestId);
-      expect(restoredInteraction.request_schema_json).toContain(validProviderSessionId);
+      expect(restoredInteraction.request_schema_json).not.toContain(validProviderSessionId);
       expect(restoredDb.prepare(`
         SELECT protocol_request_id FROM acp_interactions WHERE id = 'interaction-backup-safe-request'
       `).get().protocol_request_id).toBe("ordinary-request-id-42");
@@ -1038,21 +1059,21 @@ describe("backup command", () => {
       expect(restoredLegacyRun.provider_session_id).toBeNull();
       expect(JSON.stringify(restoredLegacyRun)).not.toContain(legacyRawSessionId);
       expect(JSON.stringify(restoredLegacyRun)).not.toContain(legacyProtocolRequestId);
-      expect(restoredLegacyRun.diagnostics_json).toContain(validProviderSessionId);
+      expect(restoredLegacyRun.diagnostics_json).not.toContain(validProviderSessionId);
       expect(JSON.parse(restoredLegacyRun.warnings_json)).toEqual({ copied: "[redacted]" });
       expect(restoredDb.prepare(`
         SELECT provider_session_id, diagnostics_json
         FROM task_runs WHERE id = 'run-backup-acp-encoded'
       `).get()).toEqual({
-        provider_session_id: validProviderSessionId,
-        diagnostics_json: JSON.stringify({ provider_session_id: validProviderSessionId }),
+        provider_session_id: null,
+        diagnostics_json: "{}",
       });
       const restoredEvents = restoredDb.prepare(`
         SELECT events FROM agent_logs WHERE id = 'log-backup-acp-legacy'
       `).get().events;
       expect(restoredEvents).not.toContain(legacyRawSessionId);
       expect(restoredEvents).not.toContain(legacyProtocolRequestId);
-      expect(restoredEvents).toContain(validProviderSessionId);
+      expect(restoredEvents).not.toContain(validProviderSessionId);
       expect(restoredDb.prepare(`
         SELECT body FROM task_comments WHERE id = 'comment-backup-acp-legacy'
       `).get().body).toBe("Copied [redacted] request:[redacted]:rpc [redacted]");
@@ -1134,6 +1155,8 @@ describe("backup command", () => {
       legacyProtocolRequestId,
       derivedOnlyRawSessionId,
       deepRawSessionId,
+      validProviderSessionId,
+      v2ProviderSessionId,
     ]) {
       expect(restoredBytes.includes(Buffer.from(secret))).toBe(false);
     }

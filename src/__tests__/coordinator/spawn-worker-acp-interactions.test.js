@@ -434,7 +434,11 @@ describe("spawnWorker ACP interactions", () => {
       const { taskId, runId } = seed(db);
       const rawSessionId = "RAW_REMOTE_SESSION_ALPHA";
       const malformedProviderId = "RAW_PROVIDER_SESSION_BETA";
-      const providerSessionId = `acp:v1:profile-1:${Buffer.from(rawSessionId).toString("base64url")}`;
+      const providerSessionId = `acp:v2:profile-1:${Buffer.concat([
+        Buffer.alloc(12, 0x6e),
+        Buffer.from(rawSessionId),
+        Buffer.alloc(16, 0x74),
+      ]).toString("base64url")}`;
       const script = {
         events: [
           {
