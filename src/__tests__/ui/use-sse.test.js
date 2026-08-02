@@ -100,4 +100,13 @@ describe("shared SSE subscriptions", () => {
       streamKey: "sse:global",
     });
   });
+
+  it("does not inject connection metadata into run event streams", () => {
+    globalThis.EventSource = FakeEventSource;
+    const callback = vi.fn();
+    subscribeSSE("run:run-1", callback);
+
+    FakeEventSource.instances[0].onopen?.();
+    expect(callback).not.toHaveBeenCalled();
+  });
 });

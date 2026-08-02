@@ -189,6 +189,9 @@ describe("ACP interaction UI helpers", () => {
     expect(component).toContain('rel="noopener noreferrer"');
     expect(component).toContain("api.acpInteractionUrlOpenPath(active.id)");
     expect(component).not.toContain("href={active.url}");
+    expect(component).toContain('key="open-url"');
+    expect(component).toContain('key="continue-agent"');
+    expect(component).toContain("openedUrlIdRef.current === id");
     expect(component).toContain('document.addEventListener("visibilitychange"');
     expect(component).toContain("Pending agent requests could not be loaded.");
     expect(component).not.toContain("localStorage");

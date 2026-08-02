@@ -155,6 +155,7 @@ export function createSharedEventSourceRuntime({
     const source = new env.EventSource(entry.url);
     source.onopen = () => {
       entry.reconnectAttempts = 0;
+      if (entry.key !== "sse:global") return;
       const payload = {
         type: "worklab_stream_connected",
         streamKey: entry.key,

@@ -183,6 +183,7 @@ export function AcpInteractionInbox() {
   const fallbackControlRef = useRef(null);
   const errorRef = useRef(null);
   const errorFocusModeRef = useRef("banner");
+  const openedUrlIdRef = useRef("");
 
   const activeIndex = Math.max(0, interactions.findIndex((interaction) => interaction.id === activeId));
   const active = interactions[activeIndex] || null;
@@ -272,6 +273,7 @@ export function AcpInteractionInbox() {
     setFieldErrors({});
     setError("");
     setOpenedUrlId("");
+    openedUrlIdRef.current = "";
   }, [active?.id, active?.kind]);
 
   useEffect(() => {
@@ -389,9 +391,16 @@ export function AcpInteractionInbox() {
     settle("decline", acpElicitationDecision("decline"));
   }
 
-  function markUrlOpened() {
-    setOpenedUrlId(active?.id || "");
+  function markUrlOpened(event) {
+    const id = active?.id || "";
+    if (!id || openedUrlIdRef.current === id) {
+      event.preventDefault();
+      return;
+    }
+    openedUrlIdRef.current = id;
+    setOpenedUrlId(id);
     setError("");
+    window.requestAnimationFrame(focusActiveControl);
   }
 
   if (unsupported) return null;
@@ -430,18 +439,20 @@ export function AcpInteractionInbox() {
         {active.kind === "form" && (
           <Button size="sm" variant="primary" type="submit" form={formId} disabled={!!busy || hasUnsafeRequiredFields} loading={busy === "form"}>Submit</Button>
         )}
-        {active.kind === "url" && !urlWasOpened && (
+        {active.kind === "url" && (
           <Button
-            buttonRef={active.url ? firstControlRef : undefined}
+            key="open-url"
+            buttonRef={!urlWasOpened && active.url ? firstControlRef : undefined}
             size="sm"
             variant="primary"
             type="submit"
             form={urlFormId}
-            disabled={!!busy || !active.url}
-          >Open link</Button>
+            disabled={!!busy || !active.url || urlWasOpened}
+          >{urlWasOpened ? "Link opened" : "Open link"}</Button>
         )}
         {active.kind === "url" && urlWasOpened && (
           <Button
+            key="continue-agent"
             buttonRef={firstControlRef}
             size="sm"
             variant="primary"
