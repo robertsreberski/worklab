@@ -42,6 +42,7 @@ describe("external agent UI helpers", () => {
       command: "/opt/bin/acp-agent",
       args: ["serve", "--stdio"],
       envKeys: ["AGENT_TOKEN"],
+      configPolicy: { neutral: "private-profile-value" },
       lastProbe: { status: "healthy", at: "2026-08-02T10:00:00Z" },
       capabilities: { sessions: true },
     };
@@ -60,6 +61,7 @@ describe("external agent UI helpers", () => {
     expect(draft).not.toHaveProperty("allowFilesystem");
     expect(draft).not.toHaveProperty("allowTerminal");
     expect(draft).not.toHaveProperty("allowMcp");
+    expect(draft).not.toHaveProperty("configPolicyText");
     expect(externalAgentVolatileState(profile)).toMatchObject({ health: "healthy", capabilities: { sessions: true } });
   });
 
@@ -97,7 +99,7 @@ describe("external agent UI helpers", () => {
       allowTerminal: true,
       allowNetwork: true,
       allowMcp: true,
-      configPolicyText: '{"mode":"constrained"}',
+      configPolicyText: '{"neutral":"private-policy-value"}',
       sessionPolicyText: "{}",
     });
 
@@ -109,10 +111,11 @@ describe("external agent UI helpers", () => {
       envKeys: ["AGENT_TOKEN", "PATH"],
       configurationOwner: "client",
       permissionsPolicy: { filesystem: false, terminal: false, network: true, mcp: false },
-      configPolicy: { mode: "constrained" },
+      configPolicy: {},
       sessionPolicy: {},
     });
     expect(JSON.stringify(payload)).not.toContain("TOKEN=");
+    expect(JSON.stringify(payload)).not.toContain("private-policy-value");
   });
 
   it("describes every unsupported ACP client capability as unavailable", () => {
@@ -126,9 +129,15 @@ describe("external agent UI helpers", () => {
     }
   });
 
-  it("rejects malformed advanced policy JSON", () => {
-    expect(() => externalAgentPayload({ displayName: "External", command: "/bin/agent", configPolicyText: "[]" }))
-      .toThrow("Configuration policy must be a JSON object");
+  it("ignores arbitrary configuration policy input and still validates session policy JSON", () => {
+    expect(externalAgentPayload({
+      displayName: "External",
+      command: "/bin/agent",
+      configPolicyText: '{"neutral":"private-policy-value"}',
+      sessionPolicyText: "{}",
+    }).configPolicy).toEqual({});
+    expect(() => externalAgentPayload({ displayName: "External", command: "/bin/agent", sessionPolicyText: "[]" }))
+      .toThrow("Session policy must be a JSON object");
   });
 
   it("rejects environment values instead of treating them as key names", () => {

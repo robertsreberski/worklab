@@ -448,7 +448,7 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
                     <Input aria-label="Command path" value={draft.command} placeholder="/usr/local/bin/acp-agent" invalid={!commandValid} onInput={(event) => update({ command: event.currentTarget.value })} />
                   </FormField>
                   <FormGrid columns={2}>
-                    <FormField label="Arguments" hint="One argument per line. Worklab never invokes a shell.">
+                    <FormField label="Arguments" hint="One argument per line. Worklab never invokes a shell. Credentials belong in Environment key names, never arguments.">
                       <Textarea aria-label="Arguments" rows={6} monospace value={draft.argsText} onInput={(event) => update({ argsText: event.currentTarget.value })} />
                     </FormField>
                     <FormField label="Environment key names" hint="Names only, one per line. Values come from Worklab's process environment and are never shown here." error={envKeysValid ? null : "Use environment key names only; values and '=' are not accepted."}>
@@ -509,14 +509,15 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
                     ))}
                     <FormField switchInside><Switch checked={draft.allowNetwork} onChange={(allowNetwork) => update({ allowNetwork })} label="Network requests" description="Allow external network-facing client operations." /></FormField>
                   </FormGrid>
-                  <FormGrid columns={2}>
-                  <FormField label="Configuration policy (JSON)" hint="Advanced safe constraints only; secret-bearing fields are rejected by the server.">
-                    <Textarea aria-label="Configuration policy" rows={6} monospace value={draft.configPolicyText} onInput={(event) => update({ configPolicyText: event.currentTarget.value })} />
+                  <Banner
+                    variant="info"
+                    title="Opaque configuration is reserved"
+                    detail="Worklab always submits an empty generic configuration policy. Reference credentials only by Environment key name; secret values are never accepted in this editor."
+                    dismissible={false}
+                  />
+                  <FormField label="Session policy (JSON)" hint="Advanced session lifecycle constraints.">
+                    <Textarea aria-label="Session policy" rows={6} monospace value={draft.sessionPolicyText} onInput={(event) => update({ sessionPolicyText: event.currentTarget.value })} />
                   </FormField>
-                    <FormField label="Session policy (JSON)" hint="Advanced session lifecycle constraints.">
-                      <Textarea aria-label="Session policy" rows={6} monospace value={draft.sessionPolicyText} onInput={(event) => update({ sessionPolicyText: event.currentTarget.value })} />
-                    </FormField>
-                  </FormGrid>
                   <FormField label="Probe timeout (ms)" hint="1,000–300,000 ms. Default 30,000." error={probeTimeoutValid ? null : "Enter a timeout from 1,000 to 300,000 ms."}>
                     <Input aria-label="Probe timeout" type="number" min={1000} max={300000} value={String(draft.probeTimeoutMs)} invalid={!probeTimeoutValid} onInput={(event) => update({ probeTimeoutMs: Number(event.currentTarget.value) || 0 })} />
                   </FormField>
