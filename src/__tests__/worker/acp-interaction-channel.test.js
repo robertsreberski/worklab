@@ -74,4 +74,17 @@ describe("createAcpInteractionChannel", () => {
     await expect(channel.request({ kind: "permission", profileId: "p", payload: { options: [] } }))
       .resolves.toEqual({ outcome: { outcome: "cancelled" } });
   });
+
+  it("cancels a pending interaction when its ACP request is aborted", async () => {
+    const controller = new AbortController();
+    const channel = createAcpInteractionChannel({ emit: () => {}, idFactory: () => "int-abort" });
+    channel._disableTimeouts();
+    const pending = channel.request(
+      { kind: "elicitation", profileId: "p", payload: { mode: "form" } },
+      { signal: controller.signal },
+    );
+    controller.abort();
+    await expect(pending).resolves.toEqual({ action: "cancel" });
+    expect(channel.pendingCount()).toBe(0);
+  });
 });

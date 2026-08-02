@@ -103,6 +103,7 @@ export function createAcpInteractionChannel({
     if (!entry) return false;
     pending.delete(interactionId);
     if (entry.timer) clearTimeout(entry.timer);
+    entry.signal?.removeEventListener("abort", entry.onAbort);
     entry.resolve(normalizeResponse(entry, message));
     return true;
   }
@@ -128,7 +129,14 @@ export function createAcpInteractionChannel({
         }, timeoutMs);
         timer.unref?.();
       }
-      pending.set(interactionId, { kind, resolve, timer, offeredOptionIds });
+      const signal = context?.signal;
+      const onAbort = () => cancel(interactionId);
+      pending.set(interactionId, { kind, resolve, timer, offeredOptionIds, signal, onAbort });
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
       try {
         emit({
           type: "acp_interaction_requested",
@@ -156,6 +164,7 @@ export function createAcpInteractionChannel({
     if (!entry) return false;
     pending.delete(interactionId);
     if (entry.timer) clearTimeout(entry.timer);
+    entry.signal?.removeEventListener("abort", entry.onAbort);
     entry.resolve(cancelledResponse(entry.kind));
     return true;
   }
@@ -173,4 +182,3 @@ export function createAcpInteractionChannel({
     _disableTimeouts() { timeoutsEnabled = false; },
   };
 }
-
