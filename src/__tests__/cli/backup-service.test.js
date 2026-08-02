@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { backup } from "../../cli/backup.js";
@@ -32,13 +32,25 @@ describe("backup command", () => {
     return dir;
   }
 
-  it("creates a local tarball and excludes runtime logs", async () => {
+  it("creates a private archive without credential stores or runtime logs", async () => {
     const dataDir = tmp("backup-data");
     const outDir = tmp("backup-out");
     mkdirSync(join(dataDir, "knowledge"), { recursive: true });
     mkdirSync(join(dataDir, "logs"), { recursive: true });
+    mkdirSync(join(dataDir, "config"), { recursive: true });
     writeFileSync(join(dataDir, "knowledge", "note.md"), "hello");
+    writeFileSync(join(dataDir, "config", "layout.json"), "non-secret-config");
     writeFileSync(join(dataDir, "logs", "worklab.out.log"), "runtime");
+    const secretFiles = new Map([
+      [".env", "backup-env-file-secret"],
+      [".provider-encryption-key", "backup-provider-key-secret"],
+      ["auth.json", "backup-legacy-auth-secret"],
+      ["mcp-token", "backup-mcp-token-secret"],
+      ["pi-auth.json", "backup-pi-auth-secret"],
+      ["push-vapid.json", "backup-vapid-secret"],
+      ["config/mcp.json", "backup-mcp-config-secret"],
+    ]);
+    for (const [path, secret] of secretFiles) writeFileSync(join(dataDir, path), secret);
     process.env.WORKLAB_DATA_DIR = dataDir;
 
     const lines = [];
@@ -48,8 +60,17 @@ describe("backup command", () => {
     const archive = lines.find((line) => line.startsWith("backup: ")).replace("backup: ", "");
     expect(existsSync(archive)).toBe(true);
     const listing = execFileSync("tar", ["-tzf", archive], { encoding: "utf8" });
+    const contents = execFileSync("tar", ["-xOzf", archive], { encoding: "utf8" });
     expect(listing).toContain("./knowledge/note.md");
+    expect(listing).toContain("./config/layout.json");
+    expect(contents).toContain("non-secret-config");
     expect(listing).not.toContain("logs/worklab.out.log");
+    for (const [path, secret] of secretFiles) {
+      expect(listing).not.toContain(path);
+      expect(contents).not.toContain(secret);
+    }
+    expect(statSync(outDir).mode & 0o777).toBe(0o700);
+    expect(statSync(archive).mode & 0o777).toBe(0o600);
     expect(lines.find((line) => line.startsWith("restore: "))).toContain(dataDir);
   });
 
@@ -117,6 +138,33 @@ describe("backup command", () => {
       expect(manager.isActive(operation.id)).toBe(false);
     });
     expect(delivered.values.password).toBe("backup-form-answer-secret");
+    sourceDb.prepare(`
+      INSERT INTO custom_providers
+        (id, name, provider_type, base_url, api_key_encrypted, trust_public_url,
+         enabled, status_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 0, 1, '{}', ?, ?)
+    `).run(
+      "provider-backup",
+      "Backup provider",
+      "openai_compatible",
+      "http://127.0.0.1:11434/v1",
+      "backup-provider-credential-secret",
+      Date.now(),
+      Date.now(),
+    );
+    sourceDb.prepare(`
+      INSERT INTO push_subscriptions
+        (id, endpoint, keys_json, expiration_time, user_agent, client_kind,
+         created_at, updated_at, last_seen_at)
+      VALUES (?, ?, ?, NULL, '', 'pwa', ?, ?, ?)
+    `).run(
+      "push-backup",
+      "https://push.example/backup-push-endpoint-secret",
+      '{"p256dh":"backup-push-key-secret","auth":"backup-push-auth-secret"}',
+      Date.now(),
+      Date.now(),
+      Date.now(),
+    );
     sourceDb.close();
 
     const lines = [];
@@ -150,6 +198,15 @@ describe("backup command", () => {
         disposition: "accept",
         request_schema_json: "{\"title\":\"Sign in\",\"properties\":{\"password\":{\"type\":\"string\"}}}",
       });
+      expect(restoredDb.prepare(`
+        SELECT name, base_url, api_key_encrypted
+        FROM custom_providers WHERE id = 'provider-backup'
+      `).get()).toEqual({
+        name: "Backup provider",
+        base_url: "http://127.0.0.1:11434/v1",
+        api_key_encrypted: null,
+      });
+      expect(restoredDb.prepare("SELECT COUNT(*) AS count FROM push_subscriptions").get().count).toBe(0);
     } finally {
       restoredDb.close();
     }
@@ -160,6 +217,10 @@ describe("backup command", () => {
       "backup-schema-secret",
       "backup-form-answer-secret",
       "backup-result-secret",
+      "backup-provider-credential-secret",
+      "backup-push-endpoint-secret",
+      "backup-push-key-secret",
+      "backup-push-auth-secret",
     ]) {
       expect(restoredBytes.includes(Buffer.from(secret))).toBe(false);
     }
