@@ -11,16 +11,16 @@ function normalizeRoleForAvatar(role) {
   return undefined;
 }
 
-function eligibilityEntry(source, name) {
+function eligibilityEntry(source, name, agent) {
   if (source instanceof Map) return source.get(name);
-  if (typeof source === "function") return source(name);
+  if (typeof source === "function") return source(agent);
   return source?.[name];
 }
 
 export function agentAssignmentEligibility(agent, eligibility = null, disabledReasons = null) {
   const name = agent?.name;
-  const supplied = eligibilityEntry(eligibility, name);
-  const suppliedReason = eligibilityEntry(disabledReasons, name);
+  const supplied = eligibilityEntry(eligibility, name, agent);
+  const suppliedReason = eligibilityEntry(disabledReasons, name, agent);
   const directEligible = agent?.assignment_eligible ?? agent?.assignmentEligible;
   const directReason = agent?.assignment_disabled_reason ?? agent?.assignmentDisabledReason;
   const entry = supplied ?? (directEligible === undefined && !directReason ? null : { eligible: directEligible, reason: directReason });
