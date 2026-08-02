@@ -11,6 +11,8 @@ import {
   externalAgentMutationPayload,
   externalAgentPayload,
   externalAgentVolatileState,
+  monoSourceCompatibilityHint,
+  monoSourceImportable,
   normalizeMonoDiscovery,
   UNSUPPORTED_ACP_CLIENT_CAPABILITIES,
 } from "../../ui/src/lib/externalAgents.js";
@@ -185,6 +187,11 @@ describe("external agent UI helpers", () => {
         label: "Personal Agent",
         health: "running",
         ready: true,
+        compatible: true,
+        bridgeVersion: 1,
+        protocolVersion: 1,
+        installedVersion: "0.18.0",
+        warnings: [],
         apiKey: "secret",
         baseUrl: "http://127.0.0.1:5555",
         configPath: "/private/mono-agent.config.json",
@@ -202,6 +209,11 @@ describe("external agent UI helpers", () => {
         health: "running",
         ready: true,
         imported: false,
+        compatible: true,
+        bridgeVersion: 1,
+        protocolVersion: 1,
+        installedVersion: "0.18.0",
+        warnings: [],
         capabilities: { sessions: true, clientMcp: false, filesystem: false, terminal: false },
         constraints: { promptContent: ["text", "resource_link"], attachments: false },
       }],
@@ -210,6 +222,43 @@ describe("external agent UI helpers", () => {
     expect(displayed).not.toContain("secret");
     expect(displayed).not.toContain("127.0.0.1");
     expect(displayed).not.toContain("configPath");
+  });
+
+  it("keeps legacy mono sources visible but blocks import until their bridge is compatible", () => {
+    const normalized = normalizeMonoDiscovery({
+      schema: "mono-agent.acp-discovery.v1",
+      sources: [{
+        sourceId: "legacy-agent",
+        label: "Legacy Agent",
+        health: "running",
+        ready: true,
+        compatible: false,
+        bridgeVersion: 0,
+        protocolVersion: 0,
+        installedVersion: "0.17.9",
+        warnings: ["Legacy ACP bridge detected.\u0000", "Restart after upgrading."],
+        apiKey: "private-token",
+        config: { secret: "private-config" },
+      }],
+    });
+    const source = normalized.sources[0];
+
+    expect(source).toMatchObject({
+      sourceId: "legacy-agent",
+      health: "running",
+      ready: true,
+      compatible: false,
+      bridgeVersion: 0,
+      protocolVersion: 0,
+      installedVersion: "0.17.9",
+      warnings: ["Legacy ACP bridge detected.", "Restart after upgrading."],
+    });
+    expect(monoSourceImportable(source)).toBe(false);
+    expect(monoSourceImportable({ ...source, compatible: true })).toBe(true);
+    expect(monoSourceCompatibilityHint(source)).toBe(
+      "Reported ACP bridge 0 / protocol 0. Upgrade mono-agent and restart this source, then retry.",
+    );
+    expect(JSON.stringify(normalized)).not.toMatch(/private-token|private-config|apiKey|config/u);
   });
 
   it("recognizes optional ACP endpoints that are not available yet", () => {
