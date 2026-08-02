@@ -146,7 +146,8 @@ export function expirePendingAcpInteractionsForOperation(db, operationId, {
   return db.prepare(`
     UPDATE acp_interactions
     SET state = 'expired', disposition = ?, updated_at = ?, resolved_at = ?
-    WHERE operation_id = ? AND state = 'pending'
+    WHERE operation_id = ?
+      AND (state = 'pending' OR (state = 'submitted' AND resolved_at IS NULL))
   `).run(disposition, resolvedAt, resolvedAt, operationId);
 }
 
@@ -157,6 +158,7 @@ export function expirePendingAcpInteractionsForRun(db, taskRunId, {
   return db.prepare(`
     UPDATE acp_interactions
     SET state = 'expired', disposition = ?, updated_at = ?, resolved_at = ?
-    WHERE task_run_id = ? AND state = 'pending'
+    WHERE task_run_id = ?
+      AND (state = 'pending' OR (state = 'submitted' AND resolved_at IS NULL))
   `).run(disposition, resolvedAt, resolvedAt, taskRunId);
 }

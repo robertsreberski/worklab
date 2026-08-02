@@ -13,7 +13,10 @@ import { kbList, kbRead } from "../../core/kb.js";
 import { slugify } from "../../core/slugs.js";
 import { syncRunWorktreeFromSource } from "../../core/worktrees.js";
 import { createAcpProfile } from "../../core/acp-profiles.js";
-import { insertAcpInteractionRequest } from "../../core/db/queries/acp-interactions.js";
+import {
+  claimAcpInteractionResponse,
+  insertAcpInteractionRequest,
+} from "../../core/db/queries/acp-interactions.js";
 
 function stubBroker() {
   const broadcasts = [];
@@ -2183,6 +2186,20 @@ describe("task-watcher", () => {
       createdAt: now - 500,
       updatedAt: now - 500,
     });
+    insertAcpInteractionRequest(db, {
+      id: "interaction-stale-run-submitted",
+      profileId: profile.id,
+      taskRunId: "stale1",
+      protocolRequestId: "permission-2",
+      kind: "permission",
+      requestSchemaJson: "{}",
+      createdAt: now - 400,
+      updatedAt: now - 400,
+    });
+    claimAcpInteractionResponse(db, "interaction-stale-run-submitted", {
+      disposition: "selected",
+      updatedAt: now - 300,
+    });
 
     const warn = vi.fn();
     createTaskWatcher({
@@ -2203,16 +2220,26 @@ describe("task-watcher", () => {
     expect(task.stage_reason).toBe("abandoned");
     expect(task.error_text).toBe("Previous run did not finish");
     expect(db.prepare(`
-      SELECT state, disposition, resolved_at
+      SELECT id, state, disposition, resolved_at
       FROM acp_interactions
-      WHERE id = 'interaction-stale-run'
-    `).get()).toMatchObject({
-      state: "expired",
-      disposition: "run_ended",
-      resolved_at: expect.any(Number),
-    });
+      WHERE task_run_id = 'stale1'
+      ORDER BY id
+    `).all()).toEqual([
+      {
+        id: "interaction-stale-run",
+        state: "expired",
+        disposition: "run_ended",
+        resolved_at: expect.any(Number),
+      },
+      {
+        id: "interaction-stale-run-submitted",
+        state: "expired",
+        disposition: "run_ended",
+        resolved_at: expect.any(Number),
+      },
+    ]);
     expect(warn).toHaveBeenCalledWith(expect.objectContaining({
-      expired_interactions: 1,
+      expired_interactions: 2,
     }), "reconciled stale running runs at boot");
   });
 
