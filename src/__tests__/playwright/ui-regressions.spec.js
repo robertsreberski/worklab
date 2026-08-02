@@ -537,6 +537,99 @@ test.beforeAll(async () => {
           }],
         },
       },
+      {
+        type: "assistant",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "spawn-seeded-reviewer",
+            name: "Agent",
+            input: { prompt: "Review the seeded change" },
+          }],
+        },
+      },
+      {
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "spawn-seeded-reviewer",
+            content: "Reviewer launched in background.",
+            is_error: false,
+          }],
+        },
+      },
+      {
+        type: "subagent_activity",
+        phase: "agent_started",
+        id: "agent:spawn-seeded-reviewer",
+        subagent: {
+          id: "spawn-seeded-reviewer",
+          nativeId: "thread-seeded-reviewer",
+          name: "reviewer",
+          callIndex: 0,
+          agentPath: "/root/reviewer",
+        },
+      },
+      {
+        type: "subagent_activity",
+        phase: "started",
+        id: "agent:spawn-seeded-reviewer:read-1",
+        name: "reviewer▸Read",
+        arguments: { file_path: "src/ui/TaskDetail.jsx" },
+        subagent: {
+          id: "spawn-seeded-reviewer",
+          nativeId: "thread-seeded-reviewer",
+          name: "reviewer",
+          callIndex: 0,
+          agentPath: "/root/reviewer",
+        },
+      },
+      {
+        type: "subagent_activity",
+        phase: "completed",
+        id: "agent:spawn-seeded-reviewer:read-1",
+        name: "reviewer▸Read",
+        isError: true,
+        executionMs: 17,
+        content: "Seeded child tool failure stays nested and wraps safely.",
+        subagent: {
+          id: "spawn-seeded-reviewer",
+          nativeId: "thread-seeded-reviewer",
+          name: "reviewer",
+          callIndex: 0,
+          agentPath: "/root/reviewer",
+        },
+      },
+      {
+        type: "subagent_activity",
+        phase: "message",
+        id: "agent:spawn-seeded-reviewer:message-1",
+        kind: "text",
+        content: `Nested reviewer output ${childLongToken}`,
+        subagent: {
+          id: "spawn-seeded-reviewer",
+          nativeId: "thread-seeded-reviewer",
+          name: "reviewer",
+          callIndex: 0,
+          agentPath: "/root/reviewer",
+        },
+      },
+      {
+        type: "subagent_activity",
+        phase: "agent_completed",
+        id: "agent:spawn-seeded-reviewer",
+        isError: true,
+        content: "Reviewer found a blocking issue.",
+        executionMs: 42,
+        subagent: {
+          id: "spawn-seeded-reviewer",
+          nativeId: "thread-seeded-reviewer",
+          name: "reviewer",
+          callIndex: 0,
+          agentPath: "/root/reviewer",
+        },
+      },
     ]),
     now - 12_000,
   );
@@ -1732,6 +1825,35 @@ test("task detail deep-linked run opens highlighted history", async ({ page }) =
   await expect(run).toBeVisible();
   await expect(run.locator(".run-card-events")).toBeVisible();
   await expect(run).toContainText("Completed seeded run");
+});
+
+test("native subagent activity stays folded, expandable, failed, and mobile-safe", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/tasks/${taskId}?run=run-complete-existing`);
+  const run = page.locator(".run-card.highlighted").first();
+  await expect(run.locator(".run-card-events")).toBeVisible();
+  const group = run.locator(".agentlog-subagent-group");
+  const header = group.locator(".agentlog-phase-header");
+
+  await expect(group).toBeVisible();
+  await expect(group).toHaveClass(/agentlog-subagent-group-error/);
+  await expect(header).toContainText("Agent → reviewer");
+  await expect(header).toContainText("failed");
+  await expect(header).toHaveAttribute("aria-expanded", "false");
+  await expect(group.locator(".agentlog-phase-rows")).toHaveCount(0);
+
+  await header.click();
+  await expect(header).toHaveAttribute("aria-expanded", "true");
+  await expect(group.locator(".agentlog-subagent-row", { hasText: "/root/reviewer · reviewer▸Read — failed" })).toBeVisible();
+  await expect(group.locator(".agentlog-subagent-output", { hasText: childLongToken })).toBeVisible();
+  await expect(group.locator(".agentlog-subagent-row", { hasText: "Reviewer found a blocking issue." })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page, "native subagent activity");
+  await expectNoCriticalHorizontalClipping(
+    page,
+    ".agentlog-subagent-group, .agentlog-subagent-row-content, .agentlog-subagent-output",
+    "native subagent activity",
+  );
 });
 
 test("activity open link scrolls to targeted task run", async ({ page }) => {
