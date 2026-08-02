@@ -5,12 +5,20 @@ import { ensureMcpToken, tokenMatches } from "../core/index.js";
 const WILDCARD_HOSTS = new Set(["0.0.0.0", "::", "[::]"]);
 const ACTIVE_READ_PATHS = new Set([
   "/acp/discovery/mono",
+  "/assistant",
+  "/assistant/messages",
   "/models/available",
   "/models/opencode",
+  "/notifications/status",
   "/search",
   "/search/embedding-test",
   "/settings/runtime",
   "/update",
+]);
+const ACTIVE_READ_PATH_PATTERNS = Object.freeze([
+  /^\/goals(?:\/[^/]+)?$/u,
+  /^\/projects\/[^/]+$/u,
+  /^\/teams\/[^/]+(?:\/goals)?$/u,
 ]);
 const CORS_METHODS = "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS";
 const CORS_HEADERS = "Authorization, Content-Type, Last-Event-ID, X-Attachment-Filename, X-Skill-Filename";
@@ -113,13 +121,25 @@ function sameUiBoundary(req, { origins, hosts }) {
   return source.origin === target.origin;
 }
 
-function decodedRequestPath(req) {
+function normalizedRequestPath(req) {
   const path = req.path.length > 1 ? req.path.replace(/\/+$/u, "") : req.path;
+  return path.toLowerCase();
+}
+
+function decodedRequestPath(req) {
+  const path = normalizedRequestPath(req);
   try {
     return decodeURIComponent(path);
   } catch {
     return "";
   }
+}
+
+function activeReadPath(decodedPath, rawPath) {
+  return ACTIVE_READ_PATHS.has(decodedPath)
+    // Match dynamic route segments before decoding so an encoded slash stays
+    // inside the same Express parameter instead of bypassing the path shape.
+    || ACTIVE_READ_PATH_PATTERNS.some((pattern) => pattern.test(rawPath));
 }
 
 /**
@@ -142,9 +162,10 @@ export function createApiMutationBoundary({
     const corsOrigin = configuredCorsOrigin(req, { origins, hosts });
     if (corsOrigin) setConfiguredCorsHeaders(res, corsOrigin);
 
-    const requestPath = decodedRequestPath(req).toLowerCase();
+    const rawRequestPath = normalizedRequestPath(req);
+    const requestPath = decodedRequestPath(req);
     const activeRead = new Set(["GET", "HEAD"]).has(req.method)
-      && ACTIVE_READ_PATHS.has(requestPath);
+      && activeReadPath(requestPath, rawRequestPath);
     if (req.method === "OPTIONS") {
       if (!req.get("origin")) {
         next();

@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,23 +13,34 @@ import { readMcpToken } from "../../core/service-token.js";
 const cleanup = [];
 const ACTIVE_READ_PATHS = [
   "/api/acp/discovery/mono",
+  "/api/assistant",
+  "/api/assistant/messages",
+  "/api/goals",
+  "/api/goals/goal-1",
   "/api/models/available",
   "/api/models/opencode?refresh=1",
+  "/api/notifications/status",
+  "/api/projects/project-1",
   "/api/search?q=boundary",
   "/api/search/embedding-test",
   "/api/settings/runtime",
+  "/api/teams/team-1",
+  "/api/teams/team-1/goals",
   "/api/update?refresh=true",
 ];
 
-afterEach(() => {
-  for (const directory of cleanup.splice(0)) {
-    rmSync(directory, { recursive: true, force: true });
+afterEach(async () => {
+  for (const { dataDir, server } of cleanup.splice(0)) {
+    server.closeAllConnections();
+    await new Promise((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+    rmSync(dataDir, { recursive: true, force: true });
   }
 });
 
 function makeBoundaryServer() {
   const dataDir = mkdtempSync(join(tmpdir(), "worklab-api-boundary-"));
-  cleanup.push(dataDir);
   const app = express();
   app.use("/api", createApiMutationBoundary({
     dataDir,
@@ -36,8 +48,12 @@ function makeBoundaryServer() {
     env: {},
   }));
   app.use("/api", (_req, res) => res.status(204).end());
+  const server = createHttpServer(app);
+  server.listen(0);
+  server.unref();
+  cleanup.push({ dataDir, server });
   return {
-    agent: supertest(app),
+    agent: supertest(server),
     token: readMcpToken(dataDir),
   };
 }
@@ -69,10 +85,11 @@ describe("API mutation boundary active reads", () => {
     const { agent, token } = makeBoundaryServer();
 
     for (const path of ACTIVE_READ_PATHS) {
-      await sameUiRequest(agent.get(path)).expect(204);
-      await agent.get(path)
-        .set("authorization", `Bearer ${token}`)
-        .expect(204);
+      const uiResponse = await sameUiRequest(agent.get(path));
+      expect(uiResponse.status, `same-UI request for ${path}`).toBe(204);
+      const serviceResponse = await agent.get(path)
+        .set("authorization", `Bearer ${token}`);
+      expect(serviceResponse.status, `service-token request for ${path}`).toBe(204);
     }
   });
 
@@ -81,9 +98,13 @@ describe("API mutation boundary active reads", () => {
 
     for (const path of [
       "/api/agents",
+      "/api/assistant/runs/run-1",
       "/api/events/stream",
       "/api/models/embeddings",
+      "/api/projects",
       "/api/search/status",
+      "/api/teams",
+      "/api/teams/team-1/cycles",
     ]) {
       const response = await evilRequest(agent.get(path)).expect(204);
       expect(response.headers).not.toHaveProperty("access-control-allow-origin");
