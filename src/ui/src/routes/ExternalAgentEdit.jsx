@@ -330,10 +330,10 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
             <FormSection kicker="Identity" title="Profile">
               <FormGrid columns={3} class="agent-profile-grid">
                 <FormField label="Display name" required>
-                  <Input value={draft.displayName} onInput={(event) => update({ displayName: event.currentTarget.value })} />
+                  <Input aria-label="Display name" value={draft.displayName} onInput={(event) => update({ displayName: event.currentTarget.value })} />
                 </FormField>
                 <FormField label="Description">
-                  <Input value={draft.description} onInput={(event) => update({ description: event.currentTarget.value })} />
+                  <Input aria-label="Description" value={draft.description} onInput={(event) => update({ description: event.currentTarget.value })} />
                 </FormField>
                 <FormField switchInside class="agent-availability-field">
                   <Switch checked={draft.enabled} onChange={(enabled) => update({ enabled })} label="Available for assignment" description="Disabled agents remain configured but cannot be assigned." />
@@ -353,18 +353,18 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
               ) : (
                 <>
                   <FormField label="Command path" required error={commandValid ? null : "Use an absolute executable path."}>
-                    <Input value={draft.command} placeholder="/usr/local/bin/acp-agent" invalid={!commandValid} onInput={(event) => update({ command: event.currentTarget.value })} />
+                    <Input aria-label="Command path" value={draft.command} placeholder="/usr/local/bin/acp-agent" invalid={!commandValid} onInput={(event) => update({ command: event.currentTarget.value })} />
                   </FormField>
                   <FormGrid columns={2}>
                     <FormField label="Arguments" hint="One argument per line. Worklab never invokes a shell.">
-                      <Textarea rows={6} monospace value={draft.argsText} onInput={(event) => update({ argsText: event.currentTarget.value })} />
+                      <Textarea aria-label="Arguments" rows={6} monospace value={draft.argsText} onInput={(event) => update({ argsText: event.currentTarget.value })} />
                     </FormField>
                     <FormField label="Environment key names" hint="Names only, one per line. Values come from Worklab's process environment and are never shown here." error={envKeysValid ? null : "Use environment key names only; values and '=' are not accepted."}>
-                      <Textarea rows={6} monospace value={draft.envKeysText} placeholder="AGENT_TOKEN\nPATH" aria-invalid={!envKeysValid} onInput={(event) => update({ envKeysText: event.currentTarget.value })} />
+                      <Textarea aria-label="Environment key names" rows={6} monospace value={draft.envKeysText} placeholder="AGENT_TOKEN\nPATH" aria-invalid={!envKeysValid} onInput={(event) => update({ envKeysText: event.currentTarget.value })} />
                     </FormField>
                   </FormGrid>
                   <FormField label="Launch directory" hint="Optional absolute cwd used when starting the process." error={cwdValid ? null : "Use an absolute directory path."}>
-                    <Input value={draft.cwd} placeholder="/workspace" invalid={!cwdValid} onInput={(event) => update({ cwd: event.currentTarget.value })} />
+                    <Input aria-label="Launch directory" value={draft.cwd} placeholder="/workspace" invalid={!cwdValid} onInput={(event) => update({ cwd: event.currentTarget.value })} />
                   </FormField>
                 </>
               )}
@@ -374,20 +374,20 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
             <FormSection kicker="Ownership" title="Control boundaries" description="Each boundary has exactly one authority. Agent-owned controls are not duplicated in Worklab.">
               <FormGrid columns={3}>
                 <FormField label="Configuration">
-                  <Select variant="native" value={draft.configurationOwner} options={OWNER_OPTIONS} disabled={isMono} onChange={(configurationOwner) => update({ configurationOwner })} />
+                  <Select ariaLabel="Configuration owner" variant="native" value={draft.configurationOwner} options={OWNER_OPTIONS} disabled={isMono} onChange={(configurationOwner) => update({ configurationOwner })} />
                 </FormField>
                 <FormField label="Workspace">
-                  <Select variant="native" value={draft.workspaceOwner} options={OWNER_OPTIONS} disabled={isMono} onChange={(workspaceOwner) => update({ workspaceOwner })} />
+                  <Select ariaLabel="Workspace owner" variant="native" value={draft.workspaceOwner} options={OWNER_OPTIONS} disabled={isMono} onChange={(workspaceOwner) => update({ workspaceOwner })} />
                 </FormField>
                 <FormField label="MCP servers">
-                  <Select variant="native" value={draft.mcpOwner} options={OWNER_OPTIONS} disabled={isMono} onChange={(mcpOwner) => update({ mcpOwner })} />
+                  <Select ariaLabel="MCP owner" variant="native" value={draft.mcpOwner} options={OWNER_OPTIONS} disabled={isMono} onChange={(mcpOwner) => update({ mcpOwner })} />
                 </FormField>
               </FormGrid>
               {workspaceManaged ? (
                 <Banner variant="info" title="Workspace is agent-owned" detail="The canonical workspace is supplied by the external agent and is intentionally read-only in Worklab." dismissible={false} />
               ) : (
                 <FormField label="Canonical workspace" hint="Optional absolute root used to validate task workspaces and ACP session cwd." error={workspaceValid ? null : "Use an absolute directory path."}>
-                  <Input value={draft.canonicalWorkspace} placeholder="/workspace" invalid={!workspaceValid} onInput={(event) => update({ canonicalWorkspace: event.currentTarget.value })} />
+                  <Input aria-label="Canonical workspace" value={draft.canonicalWorkspace} placeholder="/workspace" invalid={!workspaceValid} onInput={(event) => update({ canonicalWorkspace: event.currentTarget.value })} />
                 </FormField>
               )}
             </FormSection>
@@ -406,14 +406,14 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
                   </FormGrid>
                   <FormGrid columns={2}>
                   <FormField label="Configuration policy (JSON)" hint="Advanced safe constraints only; secret-bearing fields are rejected by the server.">
-                    <Textarea rows={6} monospace value={draft.configPolicyText} onInput={(event) => update({ configPolicyText: event.currentTarget.value })} />
+                    <Textarea aria-label="Configuration policy" rows={6} monospace value={draft.configPolicyText} onInput={(event) => update({ configPolicyText: event.currentTarget.value })} />
                   </FormField>
                     <FormField label="Session policy (JSON)" hint="Advanced session lifecycle constraints.">
-                      <Textarea rows={6} monospace value={draft.sessionPolicyText} onInput={(event) => update({ sessionPolicyText: event.currentTarget.value })} />
+                      <Textarea aria-label="Session policy" rows={6} monospace value={draft.sessionPolicyText} onInput={(event) => update({ sessionPolicyText: event.currentTarget.value })} />
                     </FormField>
                   </FormGrid>
                   <FormField label="Probe timeout (ms)" hint="1,000–300,000 ms. Default 30,000." error={probeTimeoutValid ? null : "Enter a timeout from 1,000 to 300,000 ms."}>
-                    <Input type="number" min={1000} max={300000} value={String(draft.probeTimeoutMs)} invalid={!probeTimeoutValid} onInput={(event) => update({ probeTimeoutMs: Number(event.currentTarget.value) || 0 })} />
+                    <Input aria-label="Probe timeout" type="number" min={1000} max={300000} value={String(draft.probeTimeoutMs)} invalid={!probeTimeoutValid} onInput={(event) => update({ probeTimeoutMs: Number(event.currentTarget.value) || 0 })} />
                   </FormField>
                 </>
               )}
