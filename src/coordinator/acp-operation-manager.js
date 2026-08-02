@@ -17,6 +17,7 @@ import {
   failAcpOperation,
   getAcpOperationById,
   insertAcpOperation,
+  listActiveAcpOperations,
   markAcpOperationRunning,
   markAcpOperationWaiting,
 } from "../core/db/queries/acp-operations.js";
@@ -121,6 +122,45 @@ export class AcpOperationManager {
     this.logger = logger;
     this.now = now;
     this.active = new Map();
+    this.#reconcileOrphanedOperations();
+  }
+
+  #reconcileOrphanedOperations() {
+    const completedAt = this.now();
+    const reconcile = this.db.transaction(() => {
+      let operations = 0;
+      let expiredInteractions = 0;
+      const orphaned = listActiveAcpOperations(this.db)
+        .filter((operation) => !this.active.has(operation.id));
+      for (const operation of orphaned) {
+        const errorJson = JSON.stringify(sanitizeAcpOperationError(
+          operation.kind,
+          managerError("Worklab restarted before the ACP operation completed.", {
+            code: "coordinator_restarted",
+            status: 500,
+          }),
+        ));
+        const terminalized = failAcpOperation(this.db, operation.id, {
+          errorJson,
+          completedAt,
+        });
+        if (terminalized.changes !== 1) continue;
+        operations += 1;
+        expiredInteractions += expirePendingAcpInteractionsForOperation(this.db, operation.id, {
+          disposition: "operation_ended",
+          resolvedAt: completedAt,
+        }).changes;
+      }
+      return { operations, expiredInteractions };
+    });
+    const result = reconcile();
+    if (result.operations > 0) {
+      this.logger?.warn?.({
+        operations: result.operations,
+        expired_interactions: result.expiredInteractions,
+      }, "reconciled orphaned ACP operations at boot");
+    }
+    return result;
   }
 
   supports(kind) {

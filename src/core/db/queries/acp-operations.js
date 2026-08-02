@@ -51,6 +51,14 @@ export function listAcpOperationsForProfile(db, profileId, limit = 50) {
   `).all(profileId, limit);
 }
 
+export function listActiveAcpOperations(db) {
+  return db.prepare(`
+    SELECT * FROM acp_operations
+    WHERE state IN ('queued', 'running', 'waiting_for_interaction')
+    ORDER BY created_at ASC, rowid ASC
+  `).all();
+}
+
 function transitionOperation(db, id, fromStates, state, fields = {}) {
   if (!OPERATION_STATES.has(state)) throw new Error(`invalid ACP operation state: ${state}`);
   const allowed = fromStates.filter((candidate) => OPERATION_STATES.has(candidate));
