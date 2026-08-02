@@ -83,6 +83,8 @@ describe("createAcpInteractionChannel", () => {
               default: sentinel,
               authorization: sentinel,
             },
+            answer: { type: "string", default: sentinel },
+            content: { type: "string", examples: [sentinel] },
           },
         },
       },
@@ -92,6 +94,8 @@ describe("createAcpInteractionChannel", () => {
     expect(JSON.stringify(emitted)).not.toContain(sentinel);
     expect(emitted.request.url).toBe("https://example.test/login?token=%5Bredacted%5D");
     expect(emitted.request.requestedSchema.properties.password).toEqual({ type: "string" });
+    expect(emitted.request.requestedSchema.properties.answer).toEqual({ type: "string" });
+    expect(emitted.request.requestedSchema.properties.content).toEqual({ type: "string" });
   });
 
   it("cancels URL elicitations and all pending requests", async () => {

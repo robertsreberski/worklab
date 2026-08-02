@@ -22,8 +22,7 @@ const TERMINAL_REASONS = new Set([
   "worker_terminated",
   "not_pending",
 ]);
-const MAX_PRIVATE_VALUES = 200;
-const MAX_PRIVATE_VALUE_CHARS = 16_384;
+const MAX_PRIVATE_VALUES = 10_000;
 
 function boundedIdentifier(value, max = 1024) {
   if (value == null) return "";
@@ -125,7 +124,7 @@ export function createAcpInteractionControls({
   function rememberPrivateValues(value, depth = 0) {
     if (depth > 10 || privateValues.size >= MAX_PRIVATE_VALUES || value == null) return;
     if (typeof value === "string") {
-      if (value) privateValues.add(value.slice(0, MAX_PRIVATE_VALUE_CHARS));
+      if (value) privateValues.add(value);
       return;
     }
     if (Array.isArray(value)) {
@@ -157,14 +156,20 @@ export function createAcpInteractionControls({
     ]));
   }
 
-  function finishDelivery(delivery, result) {
-    if (!delivery || delivery.finished) return;
-    delivery.finished = true;
+  function cleanupDelivery(delivery) {
+    if (!delivery) return;
     if (delivery.timer) clearTimeout(delivery.timer);
     if (activeByInteraction.get(delivery.interactionId) === delivery.deliveryId) {
       activeByInteraction.delete(delivery.interactionId);
     }
-    if (result?.code !== "ack_timeout") deliveries.delete(delivery.deliveryId);
+    deliveries.delete(delivery.deliveryId);
+  }
+
+  function finishDelivery(delivery, result, { uncertain = false } = {}) {
+    if (!delivery || delivery.finished) return;
+    delivery.finished = true;
+    if (delivery.timer) clearTimeout(delivery.timer);
+    if (!uncertain) cleanupDelivery(delivery);
     delivery.resolve(result);
   }
 
@@ -190,7 +195,7 @@ export function createAcpInteractionControls({
           ok: false,
           code: "ack_timeout",
           message: "worker did not acknowledge the ACP interaction",
-        });
+        }, { uncertain: true });
       }, ackTimeoutMs);
       delivery.timer.unref?.();
     }
@@ -201,7 +206,6 @@ export function createAcpInteractionControls({
 
   function discardDelivery(delivery) {
     if (!delivery) return;
-    deliveries.delete(delivery.deliveryId);
     finishDelivery(delivery, {
       ok: false,
       code: "delivery_failed",
@@ -253,6 +257,7 @@ export function createAcpInteractionControls({
       });
     }
     if (delivery) {
+      cleanupDelivery(delivery);
       finishDelivery(delivery, accepted
         ? { ok: true, row }
         : {
@@ -320,11 +325,15 @@ export function createAcpInteractionControls({
 
   function close() {
     for (const delivery of deliveries.values()) {
-      finishDelivery(delivery, {
-        ok: false,
-        code: "run_not_active",
-        message: "run is no longer active",
-      });
+      if (delivery.finished) {
+        cleanupDelivery(delivery);
+      } else {
+        finishDelivery(delivery, {
+          ok: false,
+          code: "run_not_active",
+          message: "run is no longer active",
+        });
+      }
     }
     deliveries.clear();
     activeByInteraction.clear();

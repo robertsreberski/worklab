@@ -74,7 +74,7 @@ function sanitizedValue(value, {
   for (const [key, entry] of Object.entries(value).slice(0, MAX_ITEMS)) {
     const propertyIdentifier = parentKey === "properties";
     if (!propertyIdentifier && SENSITIVE_KEY_RE.test(key)) continue;
-    if (schema && SCHEMA_VALUE_KEYS.has(key.toLowerCase())) continue;
+    if (schema && !propertyIdentifier && SCHEMA_VALUE_KEYS.has(key.toLowerCase())) continue;
     const sanitized = sanitizedValue(entry, { depth: depth + 1, schema, parentKey: key });
     if (sanitized !== undefined) output[key] = sanitized;
   }

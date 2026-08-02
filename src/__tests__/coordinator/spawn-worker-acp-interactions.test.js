@@ -304,4 +304,64 @@ describe("spawnWorker ACP interactions", () => {
       db.close();
     }
   });
+
+  it("blocks retry while an acknowledgement is uncertain and accepts the late ack once", async () => {
+    const db = makeTestDb();
+    try {
+      const { runId } = seed(db);
+      insertAcpInteractionRequest(db, {
+        id: "interaction-uncertain",
+        profileId: "profile-1",
+        taskRunId: runId,
+        protocolRequestId: "rpc-uncertain",
+        kind: "form",
+        requestSchemaJson: "{}",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const controlsSeen = [];
+      const controls = createAcpInteractionControls({
+        db,
+        runId,
+        writeControlMessage: async (message) => controlsSeen.push(message),
+        emitEvent: () => {},
+        idFactory: () => "delivery-uncertain",
+        ackTimeoutMs: 5,
+      });
+
+      await expect(controls.respond({
+        interactionId: "interaction-uncertain",
+        disposition: "accept",
+        response: { action: "accept", content: { answer: "first-private" } },
+      })).resolves.toMatchObject({ ok: false, code: "ack_timeout" });
+      expect(db.prepare("SELECT state FROM acp_interactions WHERE id = ?")
+        .get("interaction-uncertain").state).toBe("pending");
+
+      await expect(controls.respond({
+        interactionId: "interaction-uncertain",
+        disposition: "accept",
+        response: { action: "accept", content: { answer: "retry-private" } },
+      })).resolves.toMatchObject({ ok: false, code: "delivery_in_progress" });
+      expect(controlsSeen).toHaveLength(1);
+
+      controls.handleWorkerEvent({
+        type: "acp_interaction_acknowledged",
+        interaction_id: "interaction-uncertain",
+        delivery_id: "delivery-uncertain",
+        outcome: "submitted",
+      });
+      expect(db.prepare("SELECT state, disposition FROM acp_interactions WHERE id = ?")
+        .get("interaction-uncertain"))
+        .toEqual({ state: "submitted", disposition: "accept" });
+      await expect(controls.respond({
+        interactionId: "interaction-uncertain",
+        disposition: "accept",
+        response: { action: "accept" },
+      })).resolves.toMatchObject({ ok: false, code: "no_pending_interaction" });
+      expect(controlsSeen).toHaveLength(1);
+      controls.close();
+    } finally {
+      db.close();
+    }
+  });
 });
