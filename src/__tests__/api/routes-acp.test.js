@@ -146,6 +146,41 @@ describe("ACP API", () => {
     expect(resolveMonoSource).not.toHaveBeenCalled();
   });
 
+  it("keeps mono session/config fields descriptor-owned on PATCH", async () => {
+    const cwd = workspace();
+    const resolveMonoSource = vi.fn(async () => ({
+      descriptor: monoDescriptor(cwd),
+      command: process.execPath,
+      args: [],
+      envKeys: [],
+    }));
+    const { agent } = makeTestServer({ acpControls: { resolveMonoSource } });
+    const profile = (await agent.post("/api/acp/profiles")
+      .send({ sourceId: "mono-primary" })
+      .expect(201)).body.profile;
+
+    for (const body of [
+      { sessionPolicy: {} },
+      { session_policy: {} },
+      { probeTimeoutMs: 30_000 },
+      { probe_timeout_ms: 30_000 },
+    ]) {
+      const response = await agent.patch(`/api/acp/profiles/${profile.id}`).send(body).expect(400);
+      expect(response.body.error.message).toMatch(/fixed by the mono source descriptor/i);
+    }
+
+    const metadata = await agent.patch(`/api/acp/profiles/${profile.id}`).send({
+      displayName: "Local Label",
+      description: "Local description",
+      enabled: false,
+    }).expect(200);
+    expect(metadata.body.profile.agent).toMatchObject({
+      displayName: "Local Label",
+      description: "Local description",
+      enabled: false,
+    });
+  });
+
   it("does not expose errors returned by injected discovery controls", async () => {
     const { agent } = makeTestServer({
       acpControls: {
@@ -187,6 +222,22 @@ describe("ACP API", () => {
     expect(rejected.status).toBe(400);
     expect(rejected.body.error.code).toBe("validation");
     expect(JSON.stringify(rejected.body)).not.toContain("must-not-persist");
+  });
+
+  it("rejects unsupported ACP client capability policies on create and PATCH", async () => {
+    const cwd = workspace();
+    const { agent } = makeTestServer();
+    const createResponse = await createGeneric(agent, cwd, {
+      permissionsPolicy: { filesystem: true, terminal: false, network: false, mcp: false },
+    });
+    expect(createResponse.status).toBe(400);
+    expect(createResponse.body.error).toMatchObject({ code: "capability_unsupported" });
+
+    const profile = (await createGeneric(agent, cwd)).body.profile;
+    const patchResponse = await agent.patch(`/api/acp/profiles/${profile.id}`).send({
+      permissionsPolicy: { filesystem: false, terminal: true, network: false, mcp: false },
+    }).expect(400);
+    expect(patchResponse.body.error).toMatchObject({ code: "capability_unsupported" });
   });
 
   it("starts control operations with 202 and exposes sanitized operation state", async () => {

@@ -60,10 +60,12 @@ describe("Worklab ACP runtime profiles", () => {
 
     const unsupportedDb = makeTestDb();
     try {
-      createGeneric(unsupportedDb, {
-        envKeys: [],
-        permissionsPolicy: { filesystem: true, terminal: false, network: false, mcp: false },
-      });
+      createGeneric(unsupportedDb, { envKeys: [] });
+      unsupportedDb.prepare(`
+        UPDATE acp_profiles
+        SET permissions_policy_json = '{"filesystem":true,"terminal":false,"network":false,"mcp":false}'
+        WHERE id = ?
+      `).run(PROFILE_ID);
       await expect(createWorklabAcpProfileResolver({ db: unsupportedDb, env: {} })(PROFILE_ID))
         .rejects.toMatchObject({ code: "capability_unsupported" });
     } finally {

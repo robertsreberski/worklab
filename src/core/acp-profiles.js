@@ -45,6 +45,32 @@ const DEFAULT_PERMISSIONS_POLICY = Object.freeze({
   network: false,
   mcp: false,
 });
+const UNSUPPORTED_CLIENT_CAPABILITIES = Object.freeze(["filesystem", "terminal", "mcp"]);
+const MONO_DESCRIPTOR_OWNED_INPUT_KEYS = Object.freeze([
+  "command",
+  "args",
+  "cwd",
+  "envKeys",
+  "env_keys",
+  "monoSource",
+  "mono_source",
+  "configurationOwner",
+  "configuration_owner",
+  "workspaceOwner",
+  "workspace_owner",
+  "mcpOwner",
+  "mcp_owner",
+  "canonicalWorkspace",
+  "canonical_workspace",
+  "permissionsPolicy",
+  "permissions_policy",
+  "configPolicy",
+  "config_policy",
+  "sessionPolicy",
+  "session_policy",
+  "probeTimeoutMs",
+  "probe_timeout_ms",
+]);
 
 function acpError(message, { code = "validation", status = 400, details } = {}) {
   return Object.assign(new Error(message), {
@@ -133,6 +159,25 @@ function normalizePermissionsPolicy(value, fallback = DEFAULT_PERMISSIONS_POLICY
     policy[key] = next;
   }
   return policy;
+}
+
+function assertSupportedPermissionsPolicy(policy) {
+  const unsupported = UNSUPPORTED_CLIENT_CAPABILITIES.filter((capability) => policy[capability]);
+  if (unsupported.length) {
+    throw acpError(
+      `Worklab does not support ACP client ${unsupported.join(", ")} capabilities`,
+      { code: "capability_unsupported" },
+    );
+  }
+  return policy;
+}
+
+function assertNoMonoDescriptorOverrides(input) {
+  for (const key of MONO_DESCRIPTOR_OWNED_INPUT_KEYS) {
+    if (Object.hasOwn(input || {}, key)) {
+      throw acpError(`${key} is fixed by the mono source descriptor`);
+    }
+  }
 }
 
 function normalizeOwner(value, name, fallback = "client") {
@@ -351,12 +396,9 @@ function normalizeGenericProfile(input, current = null) {
     "canonicalWorkspace",
     { required: workspaceOwner === "agent" },
   );
-  const permissionsPolicy = normalizePermissionsPolicy(
+  const permissionsPolicy = assertSupportedPermissionsPolicy(normalizePermissionsPolicy(
     inputValue(input, "permissionsPolicy", "permissions_policy", current?.permissionsPolicy),
-  );
-  if (mcpOwner === "agent" && permissionsPolicy.mcp) {
-    throw acpError("permissionsPolicy.mcp must be false when mcpOwner is agent");
-  }
+  ));
   const configPolicy = normalizeJsonObject(
     inputValue(input, "configPolicy", "config_policy", current?.configPolicy),
     "configPolicy",
@@ -389,6 +431,7 @@ function normalizeGenericProfile(input, current = null) {
 }
 
 function normalizeMonoProfile(input, mono, current = null) {
+  assertNoMonoDescriptorOverrides(input);
   const descriptor = normalizeMonoSourceDescriptor(mono?.descriptor || current?.monoSource);
   const sourceId = boundedString(
     inputValue(input, "sourceId", "source_id", descriptor.sourceId),
@@ -421,13 +464,8 @@ function normalizeMonoProfile(input, mono, current = null) {
     canonicalWorkspace: descriptor.workspace.path,
     permissionsPolicy: { ...DEFAULT_PERMISSIONS_POLICY },
     configPolicy: { ...descriptor.constraints },
-    sessionPolicy: normalizeJsonObject(
-      inputValue(input, "sessionPolicy", "session_policy", current?.sessionPolicy),
-      "sessionPolicy",
-    ),
-    probeTimeoutMs: normalizeProbeTimeout(
-      inputValue(input, "probeTimeoutMs", "probe_timeout_ms", current?.probeTimeoutMs),
-    ),
+    sessionPolicy: normalizeJsonObject(current?.sessionPolicy, "sessionPolicy"),
+    probeTimeoutMs: normalizeProbeTimeout(current?.probeTimeoutMs),
   };
 }
 
@@ -584,14 +622,6 @@ export function updateAcpProfileRecord({ db, id, input = {}, now = Date.now() })
       : camel === "driver" ? current.driver
         : current.monoSourceId;
     if (value !== undefined && value !== expected) throw acpError(`${camel} is immutable`);
-  }
-  if (current.driver === "mono") {
-    for (const key of ["command", "args", "cwd", "envKeys", "env_keys", "monoSource", "mono_source",
-      "configurationOwner", "configuration_owner", "workspaceOwner", "workspace_owner",
-      "mcpOwner", "mcp_owner", "canonicalWorkspace", "canonical_workspace", "permissionsPolicy",
-      "permissions_policy", "configPolicy", "config_policy"]) {
-      if (Object.hasOwn(input, key)) throw acpError(`${key} is fixed by the mono source descriptor`);
-    }
   }
   const profile = current.driver === "mono"
     ? normalizeMonoProfile(input, null, current)

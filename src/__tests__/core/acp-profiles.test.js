@@ -63,7 +63,7 @@ describe("ACP profile persistence", () => {
         args: ["bridge.mjs", "--stdio"],
         cwd,
         envKeys: ["Z_TOKEN_NAME", "A_ENDPOINT", "Z_TOKEN_NAME"],
-        permissionsPolicy: { filesystem: true, terminal: false, network: false, mcp: false },
+        permissionsPolicy: { filesystem: false, terminal: false, network: true, mcp: false },
       },
     });
 
@@ -78,7 +78,7 @@ describe("ACP profile persistence", () => {
       configurationOwner: "client",
       workspaceOwner: "client",
       mcpOwner: "client",
-      permissionsPolicy: { filesystem: true, terminal: false, network: false, mcp: false },
+      permissionsPolicy: { filesystem: false, terminal: false, network: true, mcp: false },
       probeTimeoutMs: 30_000,
       agent: {
         agentName: "external-coder",
@@ -115,6 +115,20 @@ describe("ACP profile persistence", () => {
     })).toThrow(/secret material/i);
     expect(() => createAcpProfile({ db, input: { ...base, probeTimeoutMs: 999 } }))
       .toThrow(/1000.*300000/i);
+    for (const capability of ["filesystem", "terminal", "mcp"]) {
+      expect(() => createAcpProfile({
+        db,
+        input: {
+          ...base,
+          permissionsPolicy: {
+            filesystem: capability === "filesystem",
+            terminal: capability === "terminal",
+            network: false,
+            mcp: capability === "mcp",
+          },
+        },
+      })).toThrow(new RegExp(`does not support ACP client ${capability}`, "i"));
+    }
     expect(db.prepare("SELECT COUNT(*) AS count FROM agents").get().count).toBe(0);
     expect(db.prepare("SELECT COUNT(*) AS count FROM acp_profiles").get().count).toBe(0);
   });
@@ -136,6 +150,17 @@ describe("ACP profile persistence", () => {
     });
     expect(discovery.sources[0]).toEqual(descriptor);
     expect(JSON.stringify(discovery)).not.toMatch(/must-not-survive|operatorUrl|apiKey|configPath/u);
+
+    for (const input of [
+      { sourceId: "personal-agent", sessionPolicy: {} },
+      { sourceId: "personal-agent", probeTimeoutMs: 30_000 },
+    ]) {
+      expect(() => createAcpProfile({
+        db,
+        input,
+        mono: { descriptor: discovery.sources[0], command: process.execPath, args: ["bridge", "acp"] },
+      })).toThrow(/fixed by the mono source descriptor/i);
+    }
 
     const profile = createAcpProfile({
       db,
@@ -162,6 +187,30 @@ describe("ACP profile persistence", () => {
       id: profile.id,
       input: { permissionsPolicy: { filesystem: true, terminal: false, network: false, mcp: false } },
     })).toThrow(/fixed by the mono source descriptor/i);
+    for (const input of [
+      { sessionPolicy: {} },
+      { session_policy: {} },
+      { probeTimeoutMs: 30_000 },
+      { probe_timeout_ms: 30_000 },
+    ]) {
+      expect(() => updateAcpProfileRecord({ db, id: profile.id, input }))
+        .toThrow(/fixed by the mono source descriptor/i);
+    }
+
+    const localMetadata = updateAcpProfileRecord({
+      db,
+      id: profile.id,
+      input: {
+        displayName: "My Personal Agent",
+        description: "Local Worklab label",
+        enabled: false,
+      },
+    });
+    expect(localMetadata.agent).toMatchObject({
+      displayName: "My Personal Agent",
+      description: "Local Worklab label",
+      enabled: false,
+    });
   });
 
   it("updates identity and generic policy without breaking the profile binding", () => {
@@ -192,6 +241,29 @@ describe("ACP profile persistence", () => {
       agent: { displayName: "New Name", enabled: false, sdk: "acp", executionMode: "acp" },
     });
     expect(updated.agent.model).toBe(`acp:${profile.id}`);
+  });
+
+  it("rejects unsupported client capabilities when patching a generic profile", () => {
+    const db = makeTestDb();
+    const cwd = tempDir();
+    const profile = createAcpProfile({
+      db,
+      input: { agentName: "external", displayName: "External", command: process.execPath, cwd },
+    });
+    for (const capability of ["filesystem", "terminal", "mcp"]) {
+      expect(() => updateAcpProfileRecord({
+        db,
+        id: profile.id,
+        input: {
+          permissionsPolicy: {
+            filesystem: capability === "filesystem",
+            terminal: capability === "terminal",
+            network: false,
+            mcp: capability === "mcp",
+          },
+        },
+      })).toThrow(new RegExp(`does not support ACP client ${capability}`, "i"));
+    }
   });
 
   it("deletes the dedicated ACP agent only while it is unreferenced", () => {
