@@ -26,7 +26,9 @@ import { registerSlackRoutes } from "./routes/slack.js";
 import { registerAssistantRoutes } from "./routes/assistant.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
 import { registerUpdateRoutes } from "./routes/update.js";
+import { registerAcpRoutes } from "./routes/acp.js";
 import { registerAdminMcpRoutes } from "../mcp/admin/server.js";
+import { createAcpOperationManager } from "../coordinator/acp-operation-manager.js";
 
 const DEFAULT_SLOW_API_MS = 250;
 
@@ -102,9 +104,15 @@ function serviceStatusPayload(serviceStatus) {
   }
 }
 
-export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls, updateControls, slack, assistant: assistantOptions, notifications, serviceStatus }) {
+export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls, updateControls, slack, assistant: assistantOptions, notifications, serviceStatus, acpControls, acpOperationManager }) {
   const app = express();
   const broker = createSseBroker();
+  const acpOperations = acpOperationManager || createAcpOperationManager({
+    db,
+    broker,
+    controls: acpControls,
+    logger,
+  });
 
   app.use(cors());
   registerAutomationWebhookRoutes(app, { db, broker, automationManager });
@@ -156,6 +164,13 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   registerAutomationRoutes(app, { db, broker, automationManager });
   registerSlackRoutes(app, { db, config, slack });
   registerNotificationRoutes(app, { db, dataDir, notifications });
+  registerAcpRoutes(app, {
+    db,
+    broker,
+    watcher,
+    acpControls,
+    acpOperationManager: acpOperations,
+  });
   const assistant = registerAssistantRoutes(app, { db, broker, logger, config, ...(assistantOptions || {}) });
   if (config) registerAdminMcpRoutes(app, { config, logger });
 
@@ -168,5 +183,5 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
     res.status(500).json({ error: { code: "internal", message: err.message } });
   });
 
-  return { app, broker, assistant };
+  return { app, broker, assistant, acpOperationManager: acpOperations };
 }
