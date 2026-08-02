@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateRunArtifacts,
   artifactsForRunRow,
+  extractRunArtifacts,
   formatHunkRanges,
   formatTaskArtifactsForPrompt,
   loadTaskArtifacts,
@@ -27,6 +28,46 @@ function fileResult(path, stats = {}) {
 }
 
 describe("core run artifacts", () => {
+  // agent-runtime 0.15.0 normalizes codex file changes into a flat
+  // `file_change` event rather than a synthetic file_edit tool_use/tool_result
+  // pair. Both shapes must still produce artifacts.
+  it("extracts artifacts from codex item.completed file-change events", () => {
+    const artifacts = extractRunArtifacts([{
+      type: "cli_event",
+      raw: {
+        type: "item.completed",
+        item: {
+          id: "item_file",
+          type: "file_change",
+          status: "completed",
+          changes: [{ path: "src/codex.js", kind: "update", line_stats: { added_lines: 4, removed_lines: 1 } }],
+        },
+      },
+    }]);
+
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]).toMatchObject({
+      display_path: "src/codex.js",
+      kind: "update",
+      status: "completed",
+      added_lines: 4,
+      removed_lines: 1,
+    });
+  });
+
+  it("extracts artifacts from the file_edit tool result shape", () => {
+    const artifacts = extractRunArtifacts([
+      fileResult("src/tool.js", { added_lines: 2, removed_lines: 0 }),
+    ]);
+
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]).toMatchObject({
+      display_path: "src/tool.js",
+      status: "completed",
+      added_lines: 2,
+    });
+  });
+
   it("aggregates task artifacts across run outcomes", () => {
     const artifacts = aggregateRunArtifacts([
       {

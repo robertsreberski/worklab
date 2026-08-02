@@ -15,7 +15,7 @@ Active agent runtime references use only these prefixes:
 Current Pi provider examples:
 
 - `pi:openai:gpt-5.5`
-- `pi:openai-codex:gpt-5.5` (Pi SDK, not CLI)
+- `pi:openai-codex:gpt-5.5` (Pi bridge, not CLI)
 - `pi:google:gemini-2.5-pro`
 - `pi:<customProviderId>:<modelName>`
 
@@ -82,7 +82,9 @@ warnings, diagnostics, failure kind, and error details.
 ## Current Bridges
 
 The Pi bridge handles all `pi:*` refs. Built-in Pi providers are resolved through
-`@earendil-works/pi-ai`; Worklab custom providers are resolved from the provider
+the runtime's Pi façade on `@mono-agent/agent-runtime/ai` — Worklab never imports
+`@earendil-works/pi-ai` directly, so pi-ai's version pin and mutable registry stay
+inside the runtime. Worklab custom providers are resolved from the provider
 database and converted to Pi-compatible OpenAI-style model descriptors before
 execution.
 
@@ -92,7 +94,7 @@ usage, diagnostics, and post-success SDK error handling.
 
 The Codex bridge handles `codex:*` refs through the local Codex CLI app-server
 when the agent uses `execution_mode='cli'`. The Pi `openai-codex` provider
-remains SDK-only and is routed through `pi-sdk`.
+remains SDK-only and is routed through the pi-native bridge.
 
 ## Adding A Runtime
 

@@ -1466,6 +1466,51 @@ describe("task-watcher", () => {
     expect(comment.body).toContain("Do not repeat broad repository scans");
   });
 
+  // agent-runtime 0.15.0 reclassified context-window overflows from
+  // `usage_limit` to `context_limit`. Both must take the same compact
+  // continuation, otherwise an overflow stops auto-recovering entirely.
+  it("starts a compact continuation after a context-limit failure", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    const broker = stubBroker();
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: resolvers.length, done, cancel: vi.fn() };
+    });
+    const watcher = createTaskWatcher({ db, broker, spawn, workerBinary: "/fake" });
+    const { runId } = await watcher.handleRunRequested(taskId);
+    db.prepare(`
+      UPDATE task_runs
+      SET status = 'error', process_status = 'failed', failure_kind = 'context_limit'
+      WHERE id = ?
+    `).run(runId);
+
+    resolvers[0]({
+      exitCode: 1,
+      status: "error",
+      processStatus: "failed",
+      failureKind: "context_limit",
+      error: "Your input exceeds the context window of this model.",
+      diagnostics: { context_risk: "high" },
+      events: [],
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn.mock.calls[1][0].diagnosticsSeed).toMatchObject({
+      continuation_of_run_id: runId,
+      continuation_reason: "usage_limit",
+    });
+    const task = db.prepare("SELECT stage, last_failure_kind FROM tasks WHERE id = ?").get(taskId);
+    expect(task).toMatchObject({ stage: "execute", last_failure_kind: "context_limit" });
+    const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Automatic continuation%'").get(taskId);
+    expect(comment.body).toContain("hit the model context limit");
+  });
+
   it("treats missing final output after completion signals as finalisation recovery", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");

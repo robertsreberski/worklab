@@ -515,6 +515,20 @@ function mergeArtifact(map, change, payloadStatus, isError = false, meta = {}) {
 }
 
 function fileEditPayloadFromBlock(block) {
+  // agent-runtime 0.15.0 normalizes codex file changes into a flat
+  // `file_change` event instead of the synthetic file_edit tool_use/tool_result
+  // pair. The Claude and pi bridges still emit a real file_edit tool, so both
+  // shapes have to be recognized.
+  if (block?.type === "file_change") {
+    return {
+      payload: {
+        changes: block.changes,
+        status: block.status,
+        ...(block.summary ? { summary: block.summary } : {}),
+      },
+      isError: Boolean(block.is_error),
+    };
+  }
   if (block?.type === "tool_use" && block.name === "file_edit") {
     return { payload: block.input, isError: false };
   }

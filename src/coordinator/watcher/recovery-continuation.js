@@ -194,7 +194,10 @@ export function createRecoveryContinuation({
   }
 
   function recoveryReason({ failureKind, res, run, settings }) {
-    if (failureKind === "usage_limit") {
+    // agent-runtime 0.15.0 split context-window overflows out of `usage_limit`
+    // into `context_limit`. Both take the same compaction retry: a longer delay
+    // and a "hit the model context limit" system comment.
+    if (failureKind === "usage_limit" || failureKind === "context_limit") {
       return { reason: "usage_limit", providerInfo: null };
     }
     if (finalisationMissingFinalOutputFailure({ failureKind, res, run })) {

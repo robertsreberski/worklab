@@ -6,9 +6,11 @@
 // requires edge layers to consume domain helpers via the public core barrel
 // (src/core/index.js). The carve-outs are documented inline below.
 //
+// The provider layer and agent kernel now live in the external
+// @mono-agent/agent-runtime npm package, so they carry their own boundary
+// rules; only Worklab's own layers are covered here.
+//
 // Layout the rules target:
-//   packages/agent-runtime/src/ai/       provider layer; no DB, no Worklab domain
-//   packages/agent-runtime/src/agent/    agent kernel; may use ai/ only
 //   src/core/      domain; no edge-layer imports; DB only inside src/core/db/**
 //   src/api/       HTTP edge; no direct DB
 //   src/mcp/       MCP edge; no direct DB; no api/integrations/cli imports
@@ -56,19 +58,17 @@ const FORBID_REMOVED_SHIMS = {
   message: "Compatibility shims were removed; import the canonical ai/agent/core/db/mcp module.",
 };
 
-const FORBID_DOMAIN_LAYERS = {
-  group: [
-    "**/core/**",
-    "**/coordinator/**",
-    "**/coordinator.js",
-    "**/api/**",
-    "**/mcp/**",
-    "**/integrations/**",
-    "**/cli/**",
-    "**/worker.js",
-    "**/worker/**",
-  ],
-  message: "Provider/kernel layers must not depend on Worklab domain or edge layers.",
+// agent-runtime owns the Pi dependency (mono-agent#544). Production code goes
+// through the runtime façade on @mono-agent/agent-runtime/ai —
+// listPiBuiltinModels, getPiBuiltinModel, reasoningLevelsForPiModel,
+// resolvePiOAuthApiKey, loginPiOAuth — which keeps pi-ai's mutable registry and
+// its exact 0.83.0 pin inside the runtime. pi-ai remains a devDependency only
+// for the faux-provider fixtures in src/__tests__/e2e/multi-sdk.test.js, so the
+// test blocks below deliberately do not carry this rule.
+const FORBID_PI_AI = {
+  group: ["@earendil-works/*"],
+  message:
+    "Import Pi catalog/OAuth helpers from @mono-agent/agent-runtime/ai; pi-ai is a test-only dependency.",
 };
 
 const FORBID_EDGE_FROM_CORE = {
@@ -165,29 +165,11 @@ export default [
     },
   },
 
-  // packages/agent-runtime — provider layer + agent kernel.
-  // Phase 1 of the runtime extraction lifted these out of src/ai and src/agent;
-  // the same module-boundary invariants still apply.
-  {
-    files: ["packages/agent-runtime/src/ai/**/*.js"],
-    rules: restricted(FORBID_DB, FORBID_DOMAIN_LAYERS, FORBID_REMOVED_SHIMS),
-  },
-  {
-    files: ["packages/agent-runtime/src/agent/**/*.js"],
-    rules: restricted(FORBID_DB, FORBID_DOMAIN_LAYERS, FORBID_REMOVED_SHIMS),
-  },
-  // The package's own tests are exempt from boundary rules but not from
-  // the deleted-shim guard.
-  {
-    files: ["packages/agent-runtime/src/__tests__/**/*.js"],
-    rules: { "no-restricted-imports": "off" },
-  },
-
   // src/core/ — domain (DB allowed inside src/core/db/**)
   {
     files: ["src/core/**/*.js"],
     ignores: ["src/core/db/**"],
-    rules: restricted(FORBID_DB, FORBID_EDGE_FROM_CORE, FORBID_REMOVED_SHIMS),
+    rules: restricted(FORBID_DB, FORBID_EDGE_FROM_CORE, FORBID_REMOVED_SHIMS, FORBID_PI_AI),
   },
 
   // src/api/ — HTTP edge. Edge consumers go through core/index.js; the
@@ -195,7 +177,7 @@ export default [
   {
     files: ["src/api/**/*.js"],
     rules: {
-      ...restricted(FORBID_DB, FORBID_DEEP_CORE, FORBID_CLI_LAYER, FORBID_REMOVED_SHIMS),
+      ...restricted(FORBID_DB, FORBID_DEEP_CORE, FORBID_CLI_LAYER, FORBID_REMOVED_SHIMS, FORBID_PI_AI),
       ...FORBID_API_DB_PREPARE,
     },
   },
@@ -203,7 +185,7 @@ export default [
   // src/mcp/ — MCP edge
   {
     files: ["src/mcp/**/*.js"],
-    rules: restricted(FORBID_DB, FORBID_DEEP_CORE, FORBID_REMOVED_SHIMS, {
+    rules: restricted(FORBID_DB, FORBID_DEEP_CORE, FORBID_REMOVED_SHIMS, FORBID_PI_AI, {
       group: ["**/api/**", "**/integrations/**", "**/cli/**"],
       message: "MCP servers depend on core/agent/ai only.",
     }),
@@ -212,13 +194,13 @@ export default [
   // src/integrations/ — external integrations
   {
     files: ["src/integrations/**/*.js"],
-    rules: restricted(FORBID_DB, FORBID_DEEP_CORE, FORBID_API_LAYER, FORBID_REMOVED_SHIMS),
+    rules: restricted(FORBID_DB, FORBID_DEEP_CORE, FORBID_API_LAYER, FORBID_REMOVED_SHIMS, FORBID_PI_AI),
   },
 
   // src/cli/ — binary subcommands.
   {
     files: ["src/cli/**/*.js"],
-    rules: restricted(FORBID_DEEP_CORE, FORBID_REMOVED_SHIMS, {
+    rules: restricted(FORBID_DEEP_CORE, FORBID_REMOVED_SHIMS, FORBID_PI_AI, {
       group: ["**/api/**", "**/integrations/**", "**/mcp/**"],
       message: "CLI uses core and coordinator only.",
     }),
@@ -235,7 +217,19 @@ export default [
       "src/coordinator/search-indexer.js",
       "src/worker.js",
     ],
-    rules: restricted(FORBID_DEEP_CORE, FORBID_REMOVED_SHIMS),
+    rules: restricted(FORBID_DEEP_CORE, FORBID_REMOVED_SHIMS, FORBID_PI_AI),
+  },
+
+  // The coordinator/worker internals carved out of FORBID_DEEP_CORE above keep
+  // their deep core access, but the pi-ai ban applies to every production file.
+  {
+    files: ["src/coordinator/**/*.js", "src/worker/**/*.js"],
+    ignores: [
+      "src/coordinator/automation-manager.js",
+      "src/coordinator/consolidation-cron.js",
+      "src/coordinator/search-indexer.js",
+    ],
+    rules: restricted(FORBID_PI_AI),
   },
 
   // Tests, UI bundle source, generated/legacy: no boundary checks

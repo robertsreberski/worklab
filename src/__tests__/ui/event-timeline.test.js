@@ -275,6 +275,55 @@ describe("worklab event timeline normalization", () => {
     ]);
   });
 
+  it("keeps Codex file edits while filtering adjacent system and thinking metadata", () => {
+    const changes = [{ path: "/workspace/src/index.js", kind: "update" }];
+    const events = normalizeWorklabEvents([
+      { type: "sdk_event", event: { type: "cli_event", raw: { type: "system", subtype: "status", status: "requesting" } } },
+      { type: "sdk_event", event: { type: "cli_event", raw: { type: "system", subtype: "thinking_tokens", estimated_tokens: 144 } } },
+      { type: "sdk_event", event: { type: "assistant", message: { content: [{ type: "thinking", thinking: "", signature: "sig-1" }] } } },
+      {
+        type: "sdk_event",
+        event: {
+          type: "cli_event",
+          raw: { type: "item.started", item: { id: "item_file", type: "file_change", changes, status: "in_progress" } },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "cli_event",
+          raw: { type: "item.completed", item: { id: "item_file", type: "file_change", changes, status: "completed" } },
+        },
+      },
+    ]);
+
+    expect(events).toEqual([
+      { type: "assistant", message: { content: [{ type: "thinking", text: "", redacted: true, estimated_tokens: 144 }] } },
+      {
+        type: "assistant",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "item_file",
+            name: "file_edit",
+            input: { changes, status: "in_progress" },
+          }],
+        },
+      },
+      {
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "item_file",
+            content: { changes, status: "completed" },
+            is_error: false,
+          }],
+        },
+      },
+    ]);
+  });
+
   it("normalizes direct Codex app-server command item events as tool calls", () => {
     const events = normalizeWorklabEvents([
       {

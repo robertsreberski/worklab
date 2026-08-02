@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { resolve } from "node:path";
 
 const mockRun = vi.fn();
 const mockCreateRuntime = vi.fn(() => ({ run: mockRun }));
@@ -123,5 +124,41 @@ describe("generateResponse Codex runtime options", () => {
     expect(mockRun).toHaveBeenNthCalledWith(2, "sys", expect.objectContaining({
       piCodexTransport: "sse",
     }));
+  });
+
+  it("threads the skills root without opting into new retry, environment, or subagent surfaces", async () => {
+    mockRun.mockResolvedValue({ text: "ok" });
+    const skillsRoot = resolve("/tmp/worklab-data/skills");
+    const skills = [{
+      name: "reader",
+      trigger: "when repository context is needed",
+      enabled: true,
+      assetsPath: resolve(skillsRoot, "reader"),
+    }];
+
+    await generateResponse("sys", {
+      model: resolveModel("pi:openai:gpt-5.5"),
+      messages: [{ role: "user", content: "hi" }],
+      skills,
+      fallbackChain: [{ sdk: "claude", model: "claude-sonnet-4-6" }],
+    });
+
+    const routerOptions = mockCreateRouterRuntime.mock.calls[0][0];
+    expect(routerOptions).not.toHaveProperty("retry");
+    expect(routerOptions.chain).toEqual([
+      { sdk: "pi", provider: "openai", model: "gpt-5.5" },
+      { sdk: "claude", model: "claude-sonnet-4-6" },
+    ]);
+    expect(routerOptions.chain.every((entry) => !Object.hasOwn(entry, "attempts"))).toBe(true);
+
+    const runOptions = mockRun.mock.calls[0][1];
+    expect(runOptions).toMatchObject({
+      skills,
+      skillsRoot,
+      skillDirs: [skillsRoot],
+    });
+    expect(runOptions).not.toHaveProperty("toolEnvironment");
+    expect(runOptions).not.toHaveProperty("subagents");
+    expect(runOptions).not.toHaveProperty("nativeSubagents");
   });
 });

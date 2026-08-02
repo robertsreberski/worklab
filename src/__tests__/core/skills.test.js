@@ -7,7 +7,6 @@ import {
   buildSkillPathNote,
   buildSkillFileTree,
   buildSkillIndex,
-  formatSkillBodyWithPathNote,
   getSkillAccessDirs,
   importSkillZip,
   inferSkillsRoot,
@@ -131,18 +130,13 @@ body-b`);
     expect(idx).toContain("relative to the Worklab skills root");
   });
 
-  it("formats loaded skill bodies with path notes", () => {
+  it("builds path notes for a skills root and a skill directory", () => {
     const d = mk();
-    const text = formatSkillBodyWithPathNote({
-      body: "Use scripts/tool.py",
-      assetsPath: join(d, "reader"),
-      skillsRoot: d,
-    });
 
     expect(buildSkillPathNote({ skillsRoot: d })).toContain(`Worklab skills root: ${resolve(d)}`);
-    expect(text).toContain(`Worklab skills root: ${resolve(d)}`);
-    expect(text).toContain(`Skill directory: ${resolve(d, "reader")}`);
-    expect(text).toContain("Use scripts/tool.py");
+    expect(buildSkillPathNote({ assetsPath: join(d, "reader") }))
+      .toContain(`Skill directory: ${resolve(d, "reader")}`);
+    expect(buildSkillPathNote({})).toContain("Resolve `scripts/...`");
   });
 });
 

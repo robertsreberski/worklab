@@ -99,14 +99,6 @@ export function buildSkillPathNote({ assetsPath, skillsRoot } = {}) {
   return lines.join("\n");
 }
 
-export function formatSkillBodyWithPathNote({ body, assetsPath, skillsRoot, maxChars = 12000 } = {}) {
-  const text = [
-    buildSkillPathNote({ assetsPath, skillsRoot }),
-    String(body || "").trim(),
-  ].filter(Boolean).join("\n\n");
-  return maxChars ? text.slice(0, maxChars) : text;
-}
-
 export function buildSkillIndex(skills) {
   const enabled = skills.filter((s) => s.enabled);
   const lines = ["## Available skills", ""];

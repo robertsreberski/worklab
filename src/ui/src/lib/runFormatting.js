@@ -83,7 +83,8 @@ const PROVIDER_SUBKIND_TEXT = {
 
 const FAILURE_KIND_TEXT = {
   provider_unavailable_exhausted: "Provider repeatedly terminated; auto-recovery exhausted.",
-  usage_limit: "Provider usage or context limit hit.",
+  usage_limit: "Provider usage limit hit.",
+  context_limit: "Model context window exceeded.",
   stall: "Run stalled with no events.",
   timeout: "Run exceeded the configured time limit.",
   invalid_result: "Agent did not return a valid worklab_result.",
