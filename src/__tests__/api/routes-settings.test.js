@@ -42,10 +42,15 @@ describe("settings", () => {
     expect(res.body.settings.assistant_max_turns).toBe(32);
     expect(res.body.settings.agent_budget_soft_turns).toBe(150);
     expect(res.body.settings.agent_budget_hard_turns).toBe(300);
-    expect(res.body.settings.agent_compaction_trigger_ratio).toBe(0.85);
-    expect(res.body.settings.agent_compaction_min_savings_tokens).toBe(20000);
-    expect(res.body.settings.agent_tool_payload_compaction_trigger_chars).toBe(80000);
-    expect(res.body.settings.agent_tool_prune_trigger_tokens).toBe(40000);
+    // null = adaptive; agent-runtime scales these to the model context window.
+    expect(res.body.settings.agent_compaction_trigger_ratio).toBeNull();
+    expect(res.body.settings.agent_compaction_keep_recent_tokens).toBeNull();
+    expect(res.body.settings.agent_compaction_summary_max_tokens).toBeNull();
+    expect(res.body.settings.agent_compaction_min_savings_tokens).toBeNull();
+    // Removed in the 0.15.1 adoption: the runtime deleted the policy fields
+    // these fed, so the keys no longer exist at all.
+    expect(res.body.settings).not.toHaveProperty("agent_tool_payload_compaction_trigger_chars");
+    expect(res.body.settings).not.toHaveProperty("agent_tool_prune_trigger_tokens");
     expect(res.body.settings.agent_tool_text_limit_chars).toBe(64000);
     expect(res.body.settings.agent_bash_output_limit_chars).toBe(64000);
     expect(res.body.settings.agent_mcp_text_limit_chars).toBe(48000);
@@ -75,6 +80,23 @@ describe("settings", () => {
     await agent.patch("/api/settings").send({ default_embedding_model: "" }).expect(200);
     const res = await agent.get("/api/settings").expect(200);
     expect(res.body.settings.default_embedding_model).toBe("");
+  });
+
+  it("PATCH pins a compaction override and clears it back to adaptive", async () => {
+    const { agent } = makeTestServer();
+    await agent.patch("/api/settings").send({ agent_compaction_trigger_ratio: 0.5 }).expect(200);
+    let res = await agent.get("/api/settings").expect(200);
+    expect(res.body.settings.agent_compaction_trigger_ratio).toBe(0.5);
+
+    await agent.patch("/api/settings").send({ agent_compaction_trigger_ratio: null }).expect(200);
+    res = await agent.get("/api/settings").expect(200);
+    expect(res.body.settings.agent_compaction_trigger_ratio).toBeNull();
+  });
+
+  it("PATCH still rejects out-of-range compaction overrides", async () => {
+    const { agent } = makeTestServer();
+    await agent.patch("/api/settings").send({ agent_compaction_trigger_ratio: 0.05 }).expect(400);
+    await agent.patch("/api/settings").send({ agent_compaction_keep_recent_tokens: 10 }).expect(400);
   });
 
   it("PATCH writes and GET reads back", async () => {

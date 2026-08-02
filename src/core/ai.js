@@ -1,4 +1,4 @@
-import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { reasoningLevelsForPiModel } from "@mono-agent/agent-runtime/ai";
 import {
   canonicalizeLegacyModelReference,
   normalizeRuntimeModelReference,
@@ -12,8 +12,10 @@ import { customPricingResolverFor } from "./custom-pricing.js";
 import { getPiModel, getPiModels } from "./pi-model-catalog.js";
 import { resolvePiApiKey } from "./pi-oauth.js";
 import { compactionRecorderFor } from "./run-compactions.js";
+import { runtimePoliciesFromSettings } from "./runtime-policies.js";
+import { projectToolPolicy } from "./tool-policy-projection.js";
 import { withWorklabRuntimeBrand } from "./runtime-brand.js";
-import { getSkillAccessDirs } from "./skills.js";
+import { getSkillAccessDirs, inferSkillsRoot } from "./skills.js";
 import { createToolOutputSink } from "./tool-artifacts.js";
 import { readSettings } from "./settings.js";
 import {
@@ -189,7 +191,9 @@ function piReasoningLevels(model) {
   if (!model?.reasoning) return undefined;
   let levels = [];
   try {
-    levels = getSupportedThinkingLevels(model);
+    // The runtime's façade is pi's getSupportedThinkingLevels() with `off`
+    // spelled `none`; Worklab only inspects the result for `xhigh`.
+    levels = reasoningLevelsForPiModel(model);
   } catch {
     levels = [];
   }
@@ -570,9 +574,17 @@ function optionOrEnv(optionValue, envValue) {
 // silently swallow events.
 export async function generateResponse(systemPrompt, options) {
   const resolved = options.model?.sdk ? options.model : parseModelReference(options.model);
+  const skills = Array.isArray(options.skills) ? options.skills : [];
   const skillDirs = Array.isArray(options.skillDirs)
     ? options.skillDirs
-    : getSkillAccessDirs(options.skills || []);
+    : getSkillAccessDirs(skills);
+  // agent-runtime 0.16+ treats skills as a route capability and requires the
+  // directory containing `<name>/SKILL.md` to build ReadSkill. Worklab loads
+  // every run's disclosed skills from one data-dir root, so thread that root
+  // explicitly instead of relying on the runtime's legacy dataDir fallback.
+  const skillsRoot = skills.length > 0
+    ? optionalOption(options.skillsRoot) ?? optionalOption(inferSkillsRoot(skills))
+    : undefined;
   const settings = options.settings || loadSettingsSafely(options.db);
   let customContext = null;
   if (resolved.sdk === "pi") {
@@ -621,11 +633,49 @@ export async function generateResponse(systemPrompt, options) {
   const callerOnEvent = typeof options.onEvent === "function" ? options.onEvent : null;
   const onEvent = callerOnEvent || (() => {});
 
+  // Typed policy objects supersede the deprecated `settings` bag as the
+  // runtime's tool-limit / compaction source. Precedence is per-group: a
+  // present typed object wins wholesale and its group's legacy settings keys
+  // are never consulted, so no `deprecated_settings_option` warning fires.
+  // `settings` stays on the bag because other Worklab code reads it off
+  // `options`.
+  const { toolLimits, compaction } = runtimePoliciesFromSettings(settings);
+
+  // Direct Codex/OpenCode reject anything but the exact allow-all contract, so
+  // an "allow every builtin" policy has to be spelled `["*"]` for them. This is
+  // the single choke point where the resolved runtime is known, which is why it
+  // lives here rather than in run-input.js.
+  const toolPolicy = projectToolPolicy(resolved, {
+    allowedTools: options.allowedTools,
+    disallowedTools: options.disallowedTools,
+    // Set by applyPlanningToolPolicy. The read-only planning policy is the one
+    // restriction a non-projecting runtime can honour, via its native plan mode.
+    planning: options.toolPolicy?.planning === true,
+    permissionMode: options.permissionMode,
+  });
+  if (toolPolicy.droppedNetworkTools.length) {
+    // Provider-native read-only mode pins networkAccess:false, so tools the
+    // planning policy granted stop working. Surface it rather than letting the
+    // agent discover it as a mid-run tool failure.
+    onEvent({
+      type: "runtime_warning",
+      warning_kind: "tool_policy_downgraded",
+      message: `${resolved.sdk} enforces read-only planning natively, which disables network access: `
+        + `${toolPolicy.droppedNetworkTools.join(", ")} are unavailable for this run.`,
+    });
+  }
+
   const baseOptions = {
     ...options,
     model: resolved,
     skillDirs,
+    ...(skillsRoot === undefined ? {} : { skillsRoot }),
     settings,
+    toolLimits,
+    compaction,
+    allowedTools: toolPolicy.allowedTools,
+    disallowedTools: toolPolicy.disallowedTools,
+    ...(toolPolicy.permissionMode !== undefined ? { permissionMode: toolPolicy.permissionMode } : {}),
     runId: options.runId || process.env.WORKLAB_RUN_ID || null,
     providerSessionId: options.providerSessionId || process.env.WORKLAB_PROVIDER_SESSION_ID || null,
     runArtifactDir,

@@ -4,7 +4,7 @@ These instructions apply to the whole repository.
 
 ## Project Shape
 
-Worklab is a Node 20+ local agent orchestration app. Runtime code is split by
+Worklab is a Node 22.19+ local agent orchestration app. Runtime code is split by
 boundary:
 
 - `src/core`: configuration, persistence helpers, providers, credentials, task

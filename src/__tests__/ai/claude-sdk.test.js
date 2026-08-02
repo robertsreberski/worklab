@@ -3,12 +3,17 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// agent-runtime 0.15.1 exposes RuntimeRunOptions.claudeAgentQuery as the
+// supported test seam. Mocking "@anthropic-ai/claude-agent-sdk" by package name
+// only worked while npm happened to hoist a single copy — the runtime now ships
+// its own Anthropic SDK tree on purpose, and a nested copy silently defeated the
+// mock and let this suite issue real API calls.
 const mockQuery = vi.fn();
-vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
-  query: (...args) => mockQuery(...args),
-}));
 
-const { generateClaudeResponse } = await import("@mono-agent/agent-runtime/ai/providers/claude-sdk.js");
+const { generateClaudeResponse: runClaude } = await import("@mono-agent/agent-runtime/ai/providers/claude-sdk.js");
+
+const generateClaudeResponse = (system, options = {}) =>
+  runClaude(system, { claudeAgentQuery: mockQuery, ...options });
 const { createLiveInputQueue, formatLiveInputGuidance } = await import("../../core/live-input.js");
 const { createToolOutputSink } = await import("../../core/tool-artifacts.js");
 
@@ -18,6 +23,9 @@ function mockStream(events) {
       for (const e of events) yield e;
     },
     return: vi.fn(async () => ({ done: true })),
+    // agent-runtime 0.15.0 cancels through the Agent SDK's own close() rather
+    // than the iterator's return().
+    close: vi.fn(() => {}),
   };
 }
 
@@ -711,7 +719,10 @@ describe("generateClaudeResponse", () => {
     expect(r.runtimeWarnings).toEqual([]);
   });
 
-  it("maps effort: low → thinking disabled", async () => {
+  // agent-runtime 0.15.0 stopped inferring a `thinking` option from the
+  // requested effort: effort is forwarded as-is and the provider decides
+  // whether to think. Worklab must not depend on the old inference.
+  it("forwards effort without inferring a thinking option", async () => {
     mockQuery.mockReturnValue(mockStream([{ type: "result", usage: {}, duration_ms: 0, num_turns: 0 }]));
     await generateClaudeResponse("sys", {
       messages: [{ role: "user", content: "x" }],
@@ -720,10 +731,11 @@ describe("generateClaudeResponse", () => {
       onEvent: () => {},
     });
     const call = mockQuery.mock.calls[0][0];
-    expect(call.options.thinking).toEqual({ type: "disabled" });
+    expect(call.options.thinking).toBeUndefined();
+    expect(call.options.effort).toBe("low");
   });
 
-  it("maps effort: high → thinking adaptive + effort option", async () => {
+  it("forwards a high effort level unchanged", async () => {
     mockQuery.mockReturnValue(mockStream([{ type: "result", usage: {}, duration_ms: 0, num_turns: 0 }]));
     await generateClaudeResponse("sys", {
       messages: [{ role: "user", content: "x" }],
@@ -732,7 +744,7 @@ describe("generateClaudeResponse", () => {
       onEvent: () => {},
     });
     const call = mockQuery.mock.calls[0][0];
-    expect(call.options.thinking).toEqual({ type: "adaptive" });
+    expect(call.options.thinking).toBeUndefined();
     expect(call.options.effort).toBe("high");
   });
 
@@ -758,7 +770,13 @@ describe("generateClaudeResponse", () => {
     expect(options.mcpServers.worklab.command).toBe("/bin/sh");
   });
 
-  it("emits canonical file_edit events for successful Edit hooks", async () => {
+  // agent-runtime 0.15.0 removed the Claude file-edit hooks: the SDK bridge no
+  // longer synthesises file_edit tool_use/tool_result events for Write/Edit.
+  // Worklab's artifact list is unaffected because spawn-worker collects
+  // workspace-delta and git-diff artifacts for every provider; only per-tool
+  // attribution is lost. This pins that the hooks still run cleanly and that
+  // nothing downstream waits for a file_edit event that will never arrive.
+  it("runs Claude tool hooks without emitting synthetic file_edit events", async () => {
     const dir = mkdtempSync(join(tmpdir(), "worklab-claude-edit-"));
     const filePath = join(dir, "target.txt");
     writeFileSync(filePath, "one\ntwo\n");
@@ -787,121 +805,7 @@ describe("generateClaudeResponse", () => {
       });
 
       expect(result.error).toBeNull();
-      expect(events).toContainEqual({
-        type: "assistant",
-        message: {
-          content: [{
-            type: "tool_use",
-            id: "file_edit:toolu_edit",
-            name: "file_edit",
-            input: { changes: [{ path: filePath, kind: "update" }], status: "in_progress" },
-          }],
-        },
-      });
-      expect(events).toContainEqual({
-        type: "user",
-        message: {
-          content: [{
-            type: "tool_result",
-            tool_use_id: "file_edit:toolu_edit",
-            content: {
-              changes: [{
-                path: filePath,
-                kind: "update",
-                line_stats: {
-                  before_lines: 2,
-                  after_lines: 3,
-                  added_lines: 1,
-                  removed_lines: 0,
-                  changed_lines: 1,
-                  hunks: [{ start: 3, end: 3 }],
-                },
-              }],
-              status: "completed",
-              summary: { files: 1, added_lines: 1, removed_lines: 0, changed_lines: 1, unavailable_count: 0 },
-            },
-            is_error: false,
-          }],
-        },
-      });
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("marks Claude Write hooks to new files as file_edit additions", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "worklab-claude-write-"));
-    const filePath = join(dir, "created.md");
-    mockQueryWithHookedStream(async (options) => {
-      await runSdkHooks(options, "PreToolUse", hookInput("PreToolUse", dir, "Write", {
-        file_path: filePath,
-        content: "alpha\nbeta\n",
-      }), "toolu_edit");
-      writeFileSync(filePath, "alpha\nbeta\n");
-      await runSdkHooks(options, "PostToolUse", hookInput("PostToolUse", dir, "Write", {
-        file_path: filePath,
-        content: "alpha\nbeta\n",
-      }, { tool_response: { ok: true } }), "toolu_edit");
-    });
-
-    try {
-      const events = [];
-      await generateClaudeResponse("sys", {
-        messages: [{ role: "user", content: "write file" }],
-        model: { sdk: "claude", model: "claude-sonnet-4-6" },
-        effort: "medium",
-        cwd: dir,
-        onEvent: (event) => events.push(event),
-      });
-
-      const resultEvent = events.find((event) => event?.message?.content?.[0]?.tool_use_id === "file_edit:toolu_edit");
-      expect(resultEvent.message.content[0].content.changes[0]).toMatchObject({
-        path: filePath,
-        kind: "add",
-        line_stats: { before_lines: 0, after_lines: 2, added_lines: 2, removed_lines: 0 },
-      });
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("emits failed file_edit results for Claude edit hook failures", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "worklab-claude-edit-fail-"));
-    const filePath = join(dir, "target.txt");
-    writeFileSync(filePath, "old\n");
-    mockQueryWithHookedStream(async (options) => {
-      await runSdkHooks(options, "PreToolUse", hookInput("PreToolUse", dir, "Edit", {
-        file_path: filePath,
-        old_string: "missing",
-        new_string: "new",
-      }), "toolu_edit");
-      await runSdkHooks(options, "PostToolUseFailure", hookInput("PostToolUseFailure", dir, "Edit", {
-        file_path: filePath,
-        old_string: "missing",
-        new_string: "new",
-      }, { error: "old_string not found" }), "toolu_edit");
-    });
-
-    try {
-      const events = [];
-      await generateClaudeResponse("sys", {
-        messages: [{ role: "user", content: "bad edit" }],
-        model: { sdk: "claude", model: "claude-sonnet-4-6" },
-        effort: "medium",
-        cwd: dir,
-        onEvent: (event) => events.push(event),
-      });
-
-      const resultEvent = events.find((event) => event?.message?.content?.[0]?.tool_use_id === "file_edit:toolu_edit");
-      expect(resultEvent.message.content[0]).toMatchObject({
-        type: "tool_result",
-        is_error: true,
-        content: {
-          status: "failed",
-          error: "old_string not found",
-          changes: [{ path: filePath, kind: "update" }],
-        },
-      });
+      expect(events.some((event) => event?.message?.content?.some?.((block) => block?.name === "file_edit"))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1127,6 +1031,6 @@ describe("generateClaudeResponse", () => {
     ac.abort();
     const r = await promise;
     expect(r.cancelled).toBe(true);
-    expect(stream.return).toHaveBeenCalled();
+    expect(stream.close).toHaveBeenCalled();
   });
 });

@@ -19,6 +19,7 @@ export const FAILURE_KINDS = [
   "spawn",
   "timeout",
   "stall",
+  "context_limit",
   "usage_limit",
   "invalid_result",
   "invalid_delegation",

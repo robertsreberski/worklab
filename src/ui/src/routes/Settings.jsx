@@ -82,6 +82,7 @@ import {
   mcpHealthMeta,
   mcpHealthRowKey,
 } from "./settings/mcpHealth.js";
+import { CompactionControl } from "./settings/CompactionControl.jsx";
 
 export function Settings({ tab = "general", rest = [] }) {
   const activeTab = SETTINGS_TAB_ORDER.includes(tab) ? tab : "general";
@@ -866,28 +867,9 @@ function SettingsGeneral() {
                       </FormField>
                     </ControlGroup>
 
-                    <ControlGroup title="Context compaction" description="Transcript compaction trigger and retained context size.">
-                      <FormField label="Trigger ratio">
-                        <NumberStepper min={0.2} max={0.95} step={0.01} value={settings.agent_compaction_trigger_ratio ?? 0.85} ariaLabel="Compaction trigger ratio" onChange={(value) => setSettings({ ...settings, agent_compaction_trigger_ratio: value })} />
-                      </FormField>
-                      <FormField label="Keep tokens">
-                        <NumberStepper min={4000} max={200000} step={1000} value={settings.agent_compaction_keep_recent_tokens ?? 24000} ariaLabel="Keep recent tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_keep_recent_tokens: value })} />
-                      </FormField>
-                      <FormField label="Summary tokens">
-                        <NumberStepper min={1000} max={64000} step={1000} value={settings.agent_compaction_summary_max_tokens ?? 16000} ariaLabel="Compaction summary tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_summary_max_tokens: value })} />
-                      </FormField>
-                      <FormField label="Min savings">
-                        <NumberStepper min={0} max={500000} step={1000} value={settings.agent_compaction_min_savings_tokens ?? 20000} ariaLabel="Minimum compaction savings tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_min_savings_tokens: value })} />
-                      </FormField>
-                    </ControlGroup>
+                    <CompactionControl settings={settings} onChange={setSettings} />
 
                     <ControlGroup title="Tool output limits" description="Caps for large tool payloads before pruning, compaction, or artifact fallback.">
-                      <FormField label="Compact chars">
-                        <NumberStepper min={0} max={10485760} step={10000} value={settings.agent_tool_payload_compaction_trigger_chars ?? 0} ariaLabel="Tool payload compaction character trigger" onChange={(value) => setSettings({ ...settings, agent_tool_payload_compaction_trigger_chars: value })} />
-                      </FormField>
-                      <FormField label="Prune tokens">
-                        <NumberStepper min={0} max={500000} step={1000} value={settings.agent_tool_prune_trigger_tokens ?? 40000} ariaLabel="Tool result prune token trigger" onChange={(value) => setSettings({ ...settings, agent_tool_prune_trigger_tokens: value })} />
-                      </FormField>
                       <FormField label="Tool chars">
                         <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_tool_text_limit_chars ?? 16000} ariaLabel="Tool text character limit" onChange={(value) => setSettings({ ...settings, agent_tool_text_limit_chars: value })} />
                       </FormField>

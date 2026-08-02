@@ -17,6 +17,7 @@ import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
 import { generateResponse, resolveModel } from "../../core/ai.js";
 import { createProvider, setModelEnabled, upsertModel } from "../../core/providers.js";
+import { readSettings } from "../../core/settings.js";
 
 let db;
 let dataDir;
@@ -134,6 +135,26 @@ describe("generateResponse pi-backed dispatch", () => {
     }))).toBe(true);
   });
 
+  // Worklab passes the typed toolLimits/compaction policy objects, so
+  // agent-runtime must never fall back to the deprecated `settings` bag.
+  it("passes typed run policies instead of the deprecated settings bag", async () => {
+    const events = [];
+    const result = await generateResponse("sys", {
+      model: resolveModel("pi:openai:gpt-5.5"),
+      effort: "low",
+      messages: [{ role: "user", content: "hi" }],
+      settings: readSettings(db),
+      ...setupFauxRuntime([textMessage("ok")]),
+      onEvent: (event) => events.push(event),
+    });
+
+    const deprecations = [
+      ...(result.runtimeWarnings || []),
+      ...events.filter((event) => event.type === "runtime_warning"),
+    ].filter((warning) => warning.warning_kind === "deprecated_settings_option");
+    expect(deprecations).toEqual([]);
+  });
+
   it("returns an error field when the pi stream ends with an error", async () => {
     const result = await generateResponse("sys", {
       model: resolveModel("pi:openai:gpt-5.5"),
@@ -168,7 +189,7 @@ describe("generateResponse pi-backed dispatch", () => {
     expect(result.sdk).toBe("pi");
     expect(result.error).toBe("Your input exceeds the context window of this model. Please adjust your input and try again.");
     expect(result.error).not.toContain("invalid_request_error");
-    expect(result.failureKind).toBe("usage_limit");
+    expect(result.failureKind).toBe("context_limit");
   });
 
   it("captures provider thinking snapshots when no thinking deltas were emitted", async () => {

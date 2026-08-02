@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createRouterRuntime } from "@mono-agent/agent-runtime";
 import { generatePiNativeResponse as generatePiResponse } from "@mono-agent/agent-runtime/ai";
 import { resolveModel } from "../../core/ai.js";
 import { createLiveInputQueue, formatLiveInputGuidance } from "../../core/live-input.js";
@@ -43,8 +44,34 @@ describe("Pi runtime dependency surface", () => {
     });
 
     expect(result.cancelled).toBe(false);
-    expect(result.error).toMatch(/No API key for provider: openai-codex/);
+    // Pi 0.83 changed the human message; the runtime must keep the stable
+    // provider_auth classification Worklab and its fallback router consume.
+    expect(result.error).toMatch(/(?:No API key for provider|Provider is not configured): openai-codex/);
     expect(result.failureKind).toBe("provider_auth");
+  });
+
+  it("advances a two-route chain when the first Pi provider is not configured", async () => {
+    const first = resolveModel("pi:openai-codex:gpt-5.5");
+    const second = resolveModel("pi:openai:gpt-5.5");
+    const runtime = createRouterRuntime({
+      host: { resolvePiApiKey: () => null },
+      chain: [first, second],
+    });
+
+    const result = await runtime.run("sys", {
+      model: first,
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      allowedTools: [],
+      skills: [],
+      mcpServers: {},
+    });
+
+    expect(result.failureKind).toBe("provider_unavailable_exhausted");
+    expect(result.failoverHistory).toEqual([
+      expect.objectContaining({ model: first, failureKind: "provider_auth" }),
+      expect.objectContaining({ model: second, failureKind: "provider_auth" }),
+    ]);
   });
 });
 

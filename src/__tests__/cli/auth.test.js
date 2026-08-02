@@ -28,18 +28,29 @@ describe("worklab auth", () => {
     writeFileSync(authJson, JSON.stringify({ anthropic: { type: "oauth", accessToken: "old" } }), "utf8");
     const lines = [];
 
+    let seenProviderId = null;
+    let seenCallbacks = null;
+
     const result = await authCli(["pi", "openai-codex", "--data-dir", dataDir], {
       env: { ...originalEnv },
       stdout: (line) => lines.push(line),
-      getOAuthProviderImpl: (providerId) => ({
-        id: providerId,
-        login: vi.fn(async (callbacks) => {
-          callbacks.onProgress("waiting for browser");
-          callbacks.onAuth({ url: "https://example.test/login", instructions: "follow the prompt" });
-          return { refreshToken: "refresh-secret", expiresAt: 123 };
-        }),
+      loginPiOAuthImpl: vi.fn(async (providerId, callbacks) => {
+        seenProviderId = providerId;
+        seenCallbacks = callbacks;
+        callbacks.onProgress("waiting for browser");
+        callbacks.onAuth({ url: "https://example.test/login", instructions: "follow the prompt" });
+        callbacks.onDeviceCode({ userCode: "ABCD-1234", verificationUri: "https://example.test/device" });
+        return { refreshToken: "refresh-secret", expiresAt: 123 };
       }),
     });
+
+    expect(seenProviderId).toBe("openai-codex");
+    // The runtime façade throws a TypeError before starting provider login
+    // unless all four of these are functions, so assert the contract rather
+    // than only the happy path.
+    for (const name of ["onAuth", "onDeviceCode", "onPrompt", "onSelect"]) {
+      expect(typeof seenCallbacks[name]).toBe("function");
+    }
 
     const written = JSON.parse(readFileSync(join(dataDir, "pi-auth.json"), "utf8"));
     expect(written).toEqual({
@@ -64,7 +75,7 @@ describe("worklab auth", () => {
     const result = await authCli(["pi", "openai-codex", "--data-dir", dataDir, "--dry-run"], {
       env: { ...originalEnv },
       stdout: (line) => lines.push(line),
-      getOAuthProviderImpl: () => ({ login }),
+      loginPiOAuthImpl: login,
     });
 
     expect(login).not.toHaveBeenCalled();

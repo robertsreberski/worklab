@@ -163,6 +163,11 @@ describe("run formatting helpers", () => {
     expect(result).toContain("exhausted");
   });
 
+  it("distinguishes a context-window overflow from a provider usage limit", () => {
+    expect(describeFailure({ failure_kind: "context_limit" })).toBe("Model context window exceeded.");
+    expect(describeFailure({ failure_kind: "usage_limit" })).toBe("Provider usage limit hit.");
+  });
+
   it("returns null when the failure kind is unknown and the run is not failed", () => {
     expect(describeFailure({ failure_kind: "weird" })).toBeNull();
   });

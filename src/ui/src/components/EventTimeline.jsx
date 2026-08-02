@@ -176,6 +176,36 @@ const HIDDEN_CLI_EVENT_TYPES = new Set([
   "rate_limit_event",
 ]);
 
+// agent-runtime 0.15.0 emits codex file changes as a flat `file_change` event
+// rather than the synthetic file_edit tool_use/tool_result pair the timeline
+// renders. Re-wrap it so ToolToken keeps its single file_edit rendering path.
+function codexItemEvent(raw) {
+  const item = normalizeCodexItemEvent(raw);
+  if (item?.type !== "file_change") return item;
+  const payload = {
+    changes: item.changes,
+    status: item.status,
+    ...(item.summary ? { summary: item.summary } : {}),
+  };
+  if (item.status !== "completed") {
+    return {
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id: item.id, name: "file_edit", input: payload }] },
+    };
+  }
+  return {
+    type: "user",
+    message: {
+      content: [{
+        type: "tool_result",
+        tool_use_id: item.id,
+        content: item.error || payload,
+        is_error: Boolean(item.is_error),
+      }],
+    },
+  };
+}
+
 // Provider housekeeping subtypes. The worker drops these before they are
 // persisted (src/worker/event-coalescer.js); this filter keeps already-recorded
 // runs readable. Matched only against `type: "system"` so an unrelated provider
@@ -240,7 +270,7 @@ function collapseThinkingProgress(rows) {
 function normalizeCliEvent(ev) {
   const raw = ev?.raw;
   if (!raw) return ev;
-  const codexItem = normalizeCodexItemEvent(raw);
+  const codexItem = codexItemEvent(raw);
   if (codexItem) return codexItem;
   if (HIDDEN_CLI_EVENT_TYPES.has(raw.type) || HIDDEN_CLI_EVENT_TYPES.has(raw.subtype)) return null;
   if (isHiddenSystemEvent(raw)) return null;
@@ -278,7 +308,7 @@ function normalizeWorklabEvent(ev, { compactFinal = false } = {}) {
   if (ev.type === "structured_output") {
     return normalizeStructuredOutputEvent(ev);
   }
-  const codexItem = normalizeCodexItemEvent(ev);
+  const codexItem = codexItemEvent(ev);
   if (codexItem) return codexItem;
   if (ev.type === "cli_event") return normalizeCliEvent(ev);
   if (ev.type === "final") {
