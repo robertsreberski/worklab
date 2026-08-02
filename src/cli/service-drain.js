@@ -100,6 +100,7 @@ async function stopV2Coordinator({
   fetchImpl,
   controlSettleMs,
   controlRetryMs,
+  controlRequestTimeoutMs,
 }) {
   if (!coordinatorControlBaseUrl(config)) {
     return { ...initial, status: "control_unavailable", reason: "non_loopback_control_url" };
@@ -110,7 +111,11 @@ async function stopV2Coordinator({
     current = inspectCoordinatorStateOnce({ dataDir: config.dataDir });
     if (current.status !== "ownership_busy") return current;
     if (current.claimFormat === "v2") {
-      const health = await readCoordinatorHealth({ config, fetchImpl });
+      const health = await readCoordinatorHealth({
+        config,
+        fetchImpl,
+        timeoutMs: controlRequestTimeoutMs,
+      });
       const rechecked = inspectCoordinatorStateOnce({ dataDir: config.dataDir });
       if (coordinatorHealthMatchesClaim(health.health, current)
         && rechecked.status === "ownership_busy"
@@ -119,6 +124,7 @@ async function stopV2Coordinator({
           config,
           incarnation: current.incarnation,
           fetchImpl,
+          timeoutMs: controlRequestTimeoutMs,
         });
         if (requested.status === "accepted") {
           return waitForV2Release({
@@ -148,6 +154,7 @@ export async function gracefulStopCoordinator({
   fetchImpl = globalThis.fetch,
   controlSettleMs = DEFAULT_CONTROL_SETTLE_MS,
   controlRetryMs = DEFAULT_CONTROL_RETRY_MS,
+  controlRequestTimeoutMs = 1_000,
 } = {}) {
   if (!config?.dataDir) return { status: "not_running", pid: null, pidFile: null };
   const current = inspectCoordinatorStateOnce({ dataDir: config.dataDir });
@@ -160,6 +167,7 @@ export async function gracefulStopCoordinator({
       fetchImpl,
       controlSettleMs: Math.max(0, Number(controlSettleMs) || 0),
       controlRetryMs: Math.max(1, Number(controlRetryMs) || DEFAULT_CONTROL_RETRY_MS),
+      controlRequestTimeoutMs: Math.max(1, Number(controlRequestTimeoutMs) || 1_000),
     });
   }
   if (current.status !== "running") return current;

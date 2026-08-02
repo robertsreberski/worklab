@@ -202,4 +202,33 @@ describe("service drain helper", () => {
     expect(fetchImpl.mock.calls[0][1]).toMatchObject({ method: "GET" });
     expect(kill).not.toHaveBeenCalled();
   });
+
+  it("bounds a health response that sends headers but never finishes its JSON body", async () => {
+    const dataDir = tempDataDir();
+    writeFileSync(join(dataDir, ".coordinator.pid"), "34567\nv2:hanging-health-incarnation");
+    holdLock(dataDir);
+    const fetchImpl = vi.fn(async (_url, options = {}) => {
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"ok":true'));
+          options.signal.addEventListener("abort", () => controller.error(options.signal.reason), { once: true });
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+
+    const startedAt = Date.now();
+    const result = await gracefulStopCoordinator({
+      config: { dataDir, host: "127.0.0.1", port: 7878 },
+      fetchImpl,
+      controlSettleMs: 0,
+      controlRequestTimeoutMs: 20,
+    });
+
+    expect(result).toMatchObject({ status: "control_unavailable", reason: "identity_unconfirmed" });
+    expect(Date.now() - startedAt).toBeLessThan(500);
+  });
 });

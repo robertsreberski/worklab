@@ -7,6 +7,7 @@ import {
 } from "../core/process/index.js";
 
 const DEFAULT_CONTROL_REQUEST_TIMEOUT_MS = 1_000;
+const MAX_HEALTH_RESPONSE_BYTES = 16 * 1024;
 
 function normalizedHostname(hostname) {
   const value = String(hostname || "").toLowerCase();
@@ -27,18 +28,51 @@ export function coordinatorControlBaseUrl(config) {
   return url;
 }
 
-async function boundedFetch(fetchImpl, url, options, timeoutMs) {
+async function boundedFetch(fetchImpl, url, options, timeoutMs, consume) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
   timeout.unref?.();
   try {
-    return await fetchImpl(url, {
+    const response = await fetchImpl(url, {
       ...options,
       redirect: "error",
       signal: controller.signal,
     });
+    return consume ? await consume(response) : response;
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function readBoundedJson(response) {
+  if (!response.ok) return { status: "control_unavailable", health: null };
+  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+  if (!contentType.startsWith("application/json")) {
+    return { status: "control_unavailable", health: null };
+  }
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_HEALTH_RESPONSE_BYTES) {
+    await response.body?.cancel();
+    return { status: "control_unavailable", health: null };
+  }
+  const reader = response.body?.getReader();
+  if (!reader) return { status: "control_unavailable", health: null };
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_HEALTH_RESPONSE_BYTES) {
+      await reader.cancel();
+      return { status: "control_unavailable", health: null };
+    }
+    chunks.push(Buffer.from(value));
+  }
+  try {
+    return { status: "ok", health: JSON.parse(Buffer.concat(chunks, total).toString("utf8")) };
+  } catch {
+    return { status: "control_unavailable", health: null };
   }
 }
 
@@ -77,11 +111,9 @@ export async function readCoordinatorHealth({
   const baseUrl = coordinatorControlBaseUrl(config);
   if (!baseUrl) return { status: "control_unavailable", health: null };
   try {
-    const response = await boundedFetch(fetchImpl, new URL("/api/health", baseUrl), {
+    return await boundedFetch(fetchImpl, new URL("/api/health", baseUrl), {
       method: "GET",
-    }, timeoutMs);
-    if (!response.ok) return { status: "control_unavailable", health: null };
-    return { status: "ok", health: await response.json() };
+    }, timeoutMs, readBoundedJson);
   } catch {
     return { status: "control_unavailable", health: null };
   }
