@@ -8,6 +8,7 @@ import { launchdPlist, serviceParams, systemdUnit } from "../../cli/install-serv
 import { createAcpProfile } from "../../core/acp-profiles.js";
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
+import { SCHEMA_VERSION } from "../../core/db/schema/current.js";
 import { createAcpOperationManager } from "../../coordinator/acp-operation-manager.js";
 
 describe("backup command", () => {
@@ -74,6 +75,19 @@ describe("backup command", () => {
     expect(lines.find((line) => line.startsWith("restore: "))).toContain(dataDir);
   });
 
+  it("rejects backup output anywhere inside the active data directory", async () => {
+    const dataDir = tmp("backup-nested-output-data");
+    mkdirSync(join(dataDir, "knowledge"), { recursive: true });
+    writeFileSync(join(dataDir, "knowledge", "note.md"), "must remain eligible for backup");
+    process.env.WORKLAB_DATA_DIR = dataDir;
+
+    const nestedOut = join(dataDir, "knowledge", "backups");
+    await expect(backup(["--out", nestedOut])).rejects.toThrow(/outside the Worklab data directory/);
+    expect(existsSync(nestedOut)).toBe(false);
+    expect(readFileSync(join(dataDir, "knowledge", "note.md"), "utf8"))
+      .toBe("must remain eligible for backup");
+  });
+
   it("restores ACP profiles, operations, and sanitized interactions without secret values", async () => {
     const dataDir = tmp("backup-acp-data");
     const outDir = tmp("backup-acp-out");
@@ -94,6 +108,15 @@ describe("backup command", () => {
         envKeys: ["ACP_BACKUP_TOKEN"],
       },
     });
+    const legacyRawSessionId = "backup-legacy-raw-acp-session-secret";
+    const legacyProtocolRequestId = `request:${legacyRawSessionId}:rpc`;
+    const derivedOnlyRawSessionId = "backup-derived-only-raw-acp-session-secret";
+    const validProviderSessionId = `acp:v1:${profile.id}:${Buffer.from(derivedOnlyRawSessionId).toString("base64url")}`;
+    const deepRawSessionId = "backup-deep-raw-acp-session-secret";
+    const legacyOperationId = "acpop-backup-legacy-session";
+    const legacyInteractionId = "interaction-backup-legacy-session";
+    let hostileDeepPayload = { sessionId: deepRawSessionId };
+    for (let depth = 0; depth < 40; depth += 1) hostileDeepPayload = { nested: hostileDeepPayload };
     let delivered;
     const manager = createAcpOperationManager({
       db: sourceDb,
@@ -165,6 +188,151 @@ describe("backup command", () => {
       Date.now(),
       Date.now(),
     );
+    sourceDb.prepare(`
+      INSERT INTO tasks (id, task_key, title, instructions, created_at, updated_at)
+      VALUES ('task-backup-webhook', 'T-BACKUP', 'Webhook task', 'Preserved task instructions', ?, ?)
+    `).run(Date.now(), Date.now());
+    sourceDb.prepare(`
+      INSERT INTO acp_operations
+        (id, profile_id, kind, state, remote_session_id, request_json, result_json,
+         error_json, created_at, updated_at, started_at, completed_at)
+      VALUES (?, ?, 'list_sessions', 'succeeded', ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      legacyOperationId,
+      profile.id,
+      legacyRawSessionId,
+      JSON.stringify({ sessionId: legacyRawSessionId, copied: legacyRawSessionId }),
+      JSON.stringify({
+        sessions: [{ id: legacyRawSessionId, providerSessionId: validProviderSessionId, title: legacyRawSessionId }],
+      }),
+      JSON.stringify({ message: `failed for ${legacyRawSessionId}` }),
+      Date.now(),
+      Date.now(),
+      Date.now(),
+      Date.now(),
+    );
+    sourceDb.prepare(`
+      INSERT INTO acp_interactions
+        (id, profile_id, operation_id, protocol_request_id, kind,
+         request_schema_json, state, disposition, created_at, updated_at, resolved_at)
+      VALUES (?, ?, ?, ?, 'form', ?, 'submitted', 'accept', ?, ?, ?)
+    `).run(
+      legacyInteractionId,
+      profile.id,
+      legacyOperationId,
+      legacyProtocolRequestId,
+      JSON.stringify({
+        session_id: legacyRawSessionId,
+        providerSessionId: validProviderSessionId,
+        description: `${legacyRawSessionId} ${legacyProtocolRequestId}`,
+      }),
+      Date.now(),
+      Date.now(),
+      Date.now(),
+    );
+    sourceDb.prepare(`
+      INSERT INTO acp_interactions
+        (id, profile_id, operation_id, protocol_request_id, kind,
+         request_schema_json, state, disposition, created_at, updated_at, resolved_at)
+      VALUES (?, ?, ?, ?, 'permission', '{}', 'submitted', 'accept', ?, ?, ?)
+    `).run(
+      "interaction-backup-safe-request",
+      profile.id,
+      operation.id,
+      "ordinary-request-id-42",
+      Date.now(),
+      Date.now(),
+      Date.now(),
+    );
+    sourceDb.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, stage, agent_name, provider_kind, started_at, status,
+         process_status, error_text, summary, details, result_json, diagnostics_json,
+         warnings_json, provider_session_id)
+      VALUES (?, ?, 'execute', 'execute', ?, 'acp', ?, 'complete', 'succeeded', ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "run-backup-acp-legacy",
+      "task-backup-webhook",
+      "backup-acp",
+      Date.now(),
+      `activity error ${legacyRawSessionId}`,
+      `activity summary ${legacyRawSessionId} ${derivedOnlyRawSessionId}`,
+      `activity details ${legacyProtocolRequestId}`,
+      JSON.stringify({ copied: legacyRawSessionId }),
+      JSON.stringify({ sessionId: legacyRawSessionId, providerSessionId: validProviderSessionId }),
+      JSON.stringify(hostileDeepPayload),
+      legacyRawSessionId,
+    );
+    sourceDb.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, stage, agent_name, provider_kind, started_at, status,
+         process_status, diagnostics_json, provider_session_id)
+      VALUES (?, ?, 'execute', 'execute', ?, 'acp', ?, 'complete', 'succeeded', ?, ?)
+    `).run(
+      "run-backup-acp-encoded",
+      "task-backup-webhook",
+      "backup-acp",
+      Date.now(),
+      JSON.stringify({ provider_session_id: validProviderSessionId }),
+      validProviderSessionId,
+    );
+    sourceDb.prepare(`
+      INSERT INTO agent_logs (id, task_run_id, events, status, created_at)
+      VALUES (?, ?, ?, 'complete', ?)
+    `).run(
+      "log-backup-acp-legacy",
+      "run-backup-acp-legacy",
+      JSON.stringify([{
+        type: "acp_session_update",
+        sessionId: legacyRawSessionId,
+        providerSessionId: validProviderSessionId,
+        text: `${legacyRawSessionId} ${legacyProtocolRequestId}`,
+      }]),
+      Date.now(),
+    );
+    sourceDb.prepare(`
+      INSERT INTO task_comments (id, task_id, author_type, body, created_at)
+      VALUES ('comment-backup-acp-legacy', 'task-backup-webhook', 'system', ?, ?)
+    `).run(`Copied ${legacyRawSessionId} ${legacyProtocolRequestId} ${derivedOnlyRawSessionId}`, Date.now());
+    sourceDb.prepare(`
+      INSERT INTO embeddings
+        (id, kind, ref, source_ref, title, chunk_text, vector_present, content_hash,
+         created_at, updated_at)
+      VALUES (?, 'task_comment', ?, ?, 'Legacy ACP copy', ?, 0, 'legacy-acp-copy', ?, ?)
+    `).run(
+      "embedding-backup-acp-legacy",
+      "comment-backup-acp-legacy",
+      "comment-backup-acp-legacy#chunk-0",
+      `Indexed ${legacyRawSessionId}`,
+      Date.now(),
+      Date.now(),
+    );
+    sourceDb.prepare(`
+      INSERT INTO embeddings_fts (id, kind, source_ref, title, chunk_text)
+      VALUES (?, 'task_comment', ?, 'Legacy ACP copy', ?)
+    `).run(
+      "embedding-backup-acp-legacy",
+      "comment-backup-acp-legacy#chunk-0",
+      `Indexed ${legacyRawSessionId}`,
+    );
+    sourceDb.prepare(`
+      INSERT INTO automations
+        (id, task_id, title, instructions, tags, trigger_json, webhook_id, enabled,
+         next_fire_at, last_status, last_error, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?, ?, ?)
+    `).run(
+      "automation-backup-webhook",
+      "task-backup-webhook",
+      "Preserved webhook title",
+      "Preserved webhook instructions",
+      '["preserved-tag"]',
+      '{"type":"webhook","webhook_id":"backup-webhook-capability-secret"}',
+      "backup-webhook-capability-secret",
+      "succeeded",
+      "previous non-secret status detail",
+      1_700_000_000_000,
+      1_700_000_000_001,
+    );
     sourceDb.close();
 
     const lines = [];
@@ -177,7 +345,7 @@ describe("backup command", () => {
     const restoredDb = openDb(restoredDbPath);
     try {
       expect(restoredDb.prepare("SELECT value FROM schema_meta WHERE key = 'version'").get().value)
-        .toBe("49");
+        .toBe(String(SCHEMA_VERSION));
       expect(restoredDb.prepare("SELECT agent_name, env_keys_json FROM acp_profiles WHERE id = ?")
         .get(profile.id)).toEqual({
         agent_name: "backup-acp",
@@ -207,6 +375,74 @@ describe("backup command", () => {
         api_key_encrypted: null,
       });
       expect(restoredDb.prepare("SELECT COUNT(*) AS count FROM push_subscriptions").get().count).toBe(0);
+      const restoredOperation = restoredDb.prepare(`
+        SELECT remote_session_id, request_json, result_json, error_json
+        FROM acp_operations WHERE id = ?
+      `).get(legacyOperationId);
+      expect(restoredOperation.remote_session_id).toBeNull();
+      expect(JSON.stringify(restoredOperation)).not.toContain(legacyRawSessionId);
+      expect(restoredOperation.result_json).toContain(validProviderSessionId);
+
+      const restoredInteraction = restoredDb.prepare(`
+        SELECT protocol_request_id, request_schema_json FROM acp_interactions WHERE id = ?
+      `).get(legacyInteractionId);
+      expect(restoredInteraction.protocol_request_id).toBe(`backup:${legacyInteractionId}`);
+      expect(JSON.stringify(restoredInteraction)).not.toContain(legacyRawSessionId);
+      expect(JSON.stringify(restoredInteraction)).not.toContain(legacyProtocolRequestId);
+      expect(restoredInteraction.request_schema_json).toContain(validProviderSessionId);
+      expect(restoredDb.prepare(`
+        SELECT protocol_request_id FROM acp_interactions WHERE id = 'interaction-backup-safe-request'
+      `).get().protocol_request_id).toBe("ordinary-request-id-42");
+
+      const restoredLegacyRun = restoredDb.prepare(`
+        SELECT provider_session_id, error_text, summary, details, result_json, diagnostics_json, warnings_json
+        FROM task_runs WHERE id = 'run-backup-acp-legacy'
+      `).get();
+      expect(restoredLegacyRun.provider_session_id).toBeNull();
+      expect(JSON.stringify(restoredLegacyRun)).not.toContain(legacyRawSessionId);
+      expect(JSON.stringify(restoredLegacyRun)).not.toContain(legacyProtocolRequestId);
+      expect(restoredLegacyRun.diagnostics_json).toContain(validProviderSessionId);
+      expect(JSON.parse(restoredLegacyRun.warnings_json)).toEqual({
+        redacted: true,
+        reason: "ACP session data exceeded backup scrub limits",
+      });
+      expect(restoredDb.prepare(`
+        SELECT provider_session_id, diagnostics_json
+        FROM task_runs WHERE id = 'run-backup-acp-encoded'
+      `).get()).toEqual({
+        provider_session_id: validProviderSessionId,
+        diagnostics_json: JSON.stringify({ provider_session_id: validProviderSessionId }),
+      });
+      const restoredEvents = restoredDb.prepare(`
+        SELECT events FROM agent_logs WHERE id = 'log-backup-acp-legacy'
+      `).get().events;
+      expect(restoredEvents).not.toContain(legacyRawSessionId);
+      expect(restoredEvents).not.toContain(legacyProtocolRequestId);
+      expect(restoredEvents).toContain(validProviderSessionId);
+      expect(restoredDb.prepare(`
+        SELECT body FROM task_comments WHERE id = 'comment-backup-acp-legacy'
+      `).get().body).toBe("Copied [redacted] request:[redacted]:rpc [redacted]");
+      expect(restoredDb.prepare(`
+        SELECT COUNT(*) AS count FROM embeddings WHERE id = 'embedding-backup-acp-legacy'
+      `).get().count).toBe(0);
+      expect(restoredDb.prepare(`
+        SELECT task_id, title, instructions, tags, trigger_json, webhook_id, enabled,
+               next_fire_at, last_status, last_error, created_at, updated_at
+        FROM automations WHERE id = 'automation-backup-webhook'
+      `).get()).toEqual({
+        task_id: "task-backup-webhook",
+        title: "Preserved webhook title",
+        instructions: "Preserved webhook instructions",
+        tags: '["preserved-tag"]',
+        trigger_json: '{"type":"webhook","reconfiguration_required":true}',
+        webhook_id: null,
+        enabled: 0,
+        next_fire_at: null,
+        last_status: "succeeded",
+        last_error: "Webhook credential omitted from backup; edit the automation to generate a new webhook ID.",
+        created_at: 1_700_000_000_000,
+        updated_at: 1_700_000_000_001,
+      });
     } finally {
       restoredDb.close();
     }
@@ -221,6 +457,11 @@ describe("backup command", () => {
       "backup-push-endpoint-secret",
       "backup-push-key-secret",
       "backup-push-auth-secret",
+      "backup-webhook-capability-secret",
+      legacyRawSessionId,
+      legacyProtocolRequestId,
+      derivedOnlyRawSessionId,
+      deepRawSessionId,
     ]) {
       expect(restoredBytes.includes(Buffer.from(secret))).toBe(false);
     }
