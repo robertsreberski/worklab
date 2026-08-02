@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   acpAuthMethods,
   acpEndpointUnsupported,
+  acpOperationCancellable,
+  acpOperationFinished,
+  acpOperationId,
   acpProfileForAgent,
   externalAgentDraft,
   externalAgentKind,
@@ -213,5 +216,14 @@ describe("external agent UI helpers", () => {
     expect(acpEndpointUnsupported({ status: 404 })).toBe(true);
     expect(acpEndpointUnsupported({ status: 501 })).toBe(true);
     expect(acpEndpointUnsupported({ status: 500 })).toBe(false);
+  });
+
+  it("offers cancellation only for identified nonterminal ACP operations", () => {
+    expect(acpOperationId({ operation_id: "operation-1" })).toBe("operation-1");
+    expect(acpOperationCancellable({ operationId: "operation-1", status: "running" })).toBe(true);
+    expect(acpOperationCancellable({ id: "operation-1", state: "queued" })).toBe(true);
+    expect(acpOperationFinished({ id: "operation-1", state: "completed" })).toBe(true);
+    expect(acpOperationCancellable({ id: "operation-1", state: "cancelled" })).toBe(false);
+    expect(acpOperationCancellable({ state: "running" })).toBe(false);
   });
 });

@@ -342,6 +342,7 @@
   line-height: 1.4;
 }
 .acp-health-empty { color: var(--text-muted); font-size: 11px; line-height: 1.4; }
+.acp-health-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .acp-capability-list { display: flex; flex-wrap: wrap; gap: 5px; }
 .acp-capability-list span {
   padding: 2px 7px;
