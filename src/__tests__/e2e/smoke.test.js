@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { createServer } from "../../api/server.js";
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
+import { sameOriginFetch } from "../helpers/test-server.js";
 
 describe("e2e smoke", () => {
   let http, baseUrl, tmp, db;
@@ -30,7 +31,7 @@ describe("e2e smoke", () => {
 
   it("full task lifecycle via HTTP", async () => {
     // create
-    let res = await fetch(`${baseUrl}/api/tasks`, {
+    let res = await sameOriginFetch(`${baseUrl}/api/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: "smoke task", instructions: "End-to-end smoke harness: create-list-update task lifecycle exercising the API surface enough to catch obvious regressions." }),
@@ -39,13 +40,13 @@ describe("e2e smoke", () => {
     const { task } = await res.json();
 
     // list
-    res = await fetch(`${baseUrl}/api/tasks`);
+    res = await sameOriginFetch(`${baseUrl}/api/tasks`);
     const { tasks } = await res.json();
     expect(tasks.some((t) => t.id === task.id)).toBe(true);
 
     // move through workflow stages
     for (const stage of ["plan", "execute", "review", "done"]) {
-      res = await fetch(`${baseUrl}/api/tasks/${task.id}`, {
+      res = await sameOriginFetch(`${baseUrl}/api/tasks/${task.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stage }),
@@ -56,12 +57,12 @@ describe("e2e smoke", () => {
     }
 
     // verify completed_at set
-    res = await fetch(`${baseUrl}/api/tasks/${task.id}`);
+    res = await sameOriginFetch(`${baseUrl}/api/tasks/${task.id}`);
     const { task: final } = await res.json();
     expect(final.completed_at).toBeTruthy();
 
     // comment
-    res = await fetch(`${baseUrl}/api/tasks/${task.id}/comments`, {
+    res = await sameOriginFetch(`${baseUrl}/api/tasks/${task.id}/comments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body: "done!" }),
@@ -69,12 +70,12 @@ describe("e2e smoke", () => {
     expect(res.status).toBe(201);
 
     // delete
-    res = await fetch(`${baseUrl}/api/tasks/${task.id}`, { method: "DELETE" });
+    res = await sameOriginFetch(`${baseUrl}/api/tasks/${task.id}`, { method: "DELETE" });
     expect(res.status).toBe(204);
   });
 
   it("returns JSON 404 for unknown API routes", async () => {
-    const res = await fetch(`${baseUrl}/api/schedules`);
+    const res = await sameOriginFetch(`${baseUrl}/api/schedules`);
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: { code: "not_found", message: "Not found" } });
   });

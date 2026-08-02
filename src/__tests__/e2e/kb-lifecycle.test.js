@@ -18,6 +18,7 @@ import { createServer } from "../../api/server.js";
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
 import { kbCreate, kbPath } from "../../core/kb.js";
+import { sameOriginFetch } from "../helpers/test-server.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -67,7 +68,7 @@ describe("e2e: KB lifecycle", () => {
       const first = await bootServer(tmp);
 
       // 2. POST /api/kb
-      const createRes = await fetch(`${first.baseUrl}/api/kb`, {
+      const createRes = await sameOriginFetch(`${first.baseUrl}/api/kb`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -84,7 +85,7 @@ describe("e2e: KB lifecycle", () => {
       expect(createdEntry.body).toContain("Hello.");
 
       // 4. GET /api/kb → list contains the new slug.
-      const listRes = await fetch(`${first.baseUrl}/api/kb`);
+      const listRes = await sameOriginFetch(`${first.baseUrl}/api/kb`);
       expect(listRes.status).toBe(200);
       const { entries } = await listRes.json();
       expect(entries.some((e) => e.slug === "team-handbook")).toBe(true);
@@ -124,13 +125,13 @@ describe("e2e: KB lifecycle", () => {
       const baseUrl2 = `http://localhost:${http2.address().port}`;
 
       // 8. GET /api/kb still returns the entry (filesystem is source of truth).
-      const listRes2 = await fetch(`${baseUrl2}/api/kb`);
+      const listRes2 = await sameOriginFetch(`${baseUrl2}/api/kb`);
       expect(listRes2.status).toBe(200);
       const { entries: entries2 } = await listRes2.json();
       expect(entries2.some((e) => e.slug === "team-handbook")).toBe(true);
 
       // 9. GET /api/kb/:slug → meta + body intact.
-      const getRes = await fetch(`${baseUrl2}/api/kb/team-handbook`);
+      const getRes = await sameOriginFetch(`${baseUrl2}/api/kb/team-handbook`);
       expect(getRes.status).toBe(200);
       const { entry: fetchedEntry } = await getRes.json();
       expect(fetchedEntry.meta.slug).toBe("team-handbook");
@@ -151,7 +152,7 @@ describe("e2e: KB lifecycle", () => {
       const { http, baseUrl, db } = await bootServer(tmp);
 
       // 1. Create an entry.
-      const createRes = await fetch(`${baseUrl}/api/kb`, {
+      const createRes = await sameOriginFetch(`${baseUrl}/api/kb`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -163,7 +164,7 @@ describe("e2e: KB lifecycle", () => {
       expect(createRes.status).toBe(201);
 
       // 2. PATCH /api/kb/:slug with { pinned: true, tags: ["a", "b"] } → 200.
-      const patchRes = await fetch(`${baseUrl}/api/kb/ops-runbook`, {
+      const patchRes = await sameOriginFetch(`${baseUrl}/api/kb/ops-runbook`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pinned: true, tags: ["a", "b"] }),
@@ -174,7 +175,7 @@ describe("e2e: KB lifecycle", () => {
       expect(patchedEntry.meta.tags).toEqual(["a", "b"]);
 
       // 3. GET /api/kb?pinned=true → entry is in the list.
-      const pinnedListRes = await fetch(`${baseUrl}/api/kb?pinned=true`);
+      const pinnedListRes = await sameOriginFetch(`${baseUrl}/api/kb?pinned=true`);
       expect(pinnedListRes.status).toBe(200);
       const { entries: pinnedEntries } = await pinnedListRes.json();
       expect(pinnedEntries.some((e) => e.slug === "ops-runbook")).toBe(true);
@@ -186,7 +187,7 @@ describe("e2e: KB lifecycle", () => {
       expect(fileContent).toContain("pinned: true");
 
       // 5. DELETE /api/kb/:slug → 204.
-      const deleteRes = await fetch(`${baseUrl}/api/kb/ops-runbook`, { method: "DELETE" });
+      const deleteRes = await sameOriginFetch(`${baseUrl}/api/kb/ops-runbook`, { method: "DELETE" });
       expect(deleteRes.status).toBe(204);
 
       // 6. File no longer exists on disk.
@@ -213,7 +214,7 @@ describe("e2e: KB lifecycle", () => {
       });
 
       // 2. GET /api/kb/:slug → meta.author === "my-agent".
-      const getRes = await fetch(`${baseUrl}/api/kb/agent-notes`);
+      const getRes = await sameOriginFetch(`${baseUrl}/api/kb/agent-notes`);
       expect(getRes.status).toBe(200);
       const { entry } = await getRes.json();
       expect(entry.meta.author).toBe("my-agent");

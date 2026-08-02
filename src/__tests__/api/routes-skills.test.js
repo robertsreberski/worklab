@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import JSZip from "jszip";
-import supertest from "supertest";
 import { makeTestDb } from "../helpers/test-db.js";
 import { createServer } from "../../api/server.js";
+import { sameOriginTestAgent } from "../helpers/test-server.js";
 
 async function zipBuffer(files) {
   const zip = new JSZip();
@@ -28,7 +28,7 @@ describe("skills CRUD", () => {
     mkdirSync(join(d, "skills"), { recursive: true });
     const db = makeTestDb();
     const { app } = createServer({ db, logger: undefined, watcher: undefined, dataDir: d });
-    return { agent: supertest(app), dataDir: d };
+    return { agent: sameOriginTestAgent(app), dataDir: d };
   }
 
   it("GET /api/skills lists filesystem entries", async () => {

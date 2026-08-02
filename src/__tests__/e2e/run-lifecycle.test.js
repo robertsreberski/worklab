@@ -10,6 +10,7 @@ import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
 import { createTaskWatcher } from "../../coordinator/task-watcher.js";
 import { spawnWorker } from "../../coordinator/spawn-worker.js";
+import { sameOriginFetch } from "../helpers/test-server.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fakeBinary = resolve(__dirname, "../helpers/fake-worker.js");
@@ -70,14 +71,14 @@ describe("e2e: full run lifecycle via fake worker", () => {
 
   it("create agent → create task → run → auto-flip to done (no reviewer) → final comment posted", async () => {
     // Create agent
-    let res = await fetch(`${baseUrl}/api/agents`, {
+    let res = await sameOriginFetch(`${baseUrl}/api/agents`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "e2e-coder", display_name: "E2E Coder", sdk: "claude", model: "claude:claude-sonnet-4-6" }),
     });
     expect(res.status).toBe(201);
 
     // Create task with owner in execute stage
-    res = await fetch(`${baseUrl}/api/tasks`, {
+    res = await sameOriginFetch(`${baseUrl}/api/tasks`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: "e2e run", instructions: "End-to-end run-lifecycle harness: drive the fake worker through one execute pass and verify auto-flip-to-done with a final comment.", owner_agent: "e2e-coder", stage: "execute" }),
     });
@@ -85,7 +86,7 @@ describe("e2e: full run lifecycle via fake worker", () => {
     const { task } = await res.json();
 
     // Request run
-    res = await fetch(`${baseUrl}/api/tasks/${task.id}/run`, { method: "POST" });
+    res = await sameOriginFetch(`${baseUrl}/api/tasks/${task.id}/run`, { method: "POST" });
     expect(res.status).toBe(200);
     const { runId } = await res.json();
 
@@ -95,7 +96,7 @@ describe("e2e: full run lifecycle via fake worker", () => {
     let finalTask;
     for (let i = 0; i < 50; i++) {
       await new Promise(r => setTimeout(r, 100));
-      const tr = await fetch(`${baseUrl}/api/tasks/${task.id}`).then(r => r.json());
+      const tr = await sameOriginFetch(`${baseUrl}/api/tasks/${task.id}`).then(r => r.json());
       if (tr.task.stage === "done") { finalTask = tr; break; }
     }
     expect(finalTask?.task.stage).toBe("done");
@@ -107,7 +108,7 @@ describe("e2e: full run lifecycle via fake worker", () => {
     expect(agentComments[0].body).toBe("hello from fake");
 
     // Run log persisted
-    const runRes = await fetch(`${baseUrl}/api/runs/${runId}`).then(r => r.json());
+    const runRes = await sameOriginFetch(`${baseUrl}/api/runs/${runId}`).then(r => r.json());
     expect(runRes.run.status).toBe("complete");
     expect(runRes.log.events.length).toBeGreaterThan(0);
     expect(runRes.log.input_tokens).toBe(10);
