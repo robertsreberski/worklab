@@ -157,6 +157,95 @@ describe("AcpOperationManager", () => {
     expect(persisted).not.toMatch(/actual-form-secret|schema-secret|auth-result-secret/u);
   });
 
+  it("rejects permission option ids that the ACP agent did not advertise", async () => {
+    let delivered;
+    const { db, profile, manager } = setup({
+      authenticate: async ({ onInteraction }) => {
+        delivered = await onInteraction({
+          requestId: "permission-echo",
+          kind: "permission",
+          schema: {
+            options: [{ optionId: "allow-once", name: "Allow once", kind: "allow_once" }],
+          },
+        });
+        return { authenticated: true };
+      },
+    });
+    const operation = manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "permission-login",
+    });
+    let interaction;
+    await vi.waitFor(() => {
+      interaction = db.prepare("SELECT * FROM acp_interactions WHERE operation_id = ?").get(operation.id);
+      expect(interaction?.state).toBe("pending");
+    });
+
+    expect(() => manager.respond({
+      operationId: operation.id,
+      interactionId: interaction.id,
+      disposition: "selected",
+      response: { outcome: { outcome: "selected", optionId: "hidden-admin-choice" } },
+    })).toThrowError("permission response must select an offered option");
+    expect(db.prepare("SELECT state FROM acp_interactions WHERE id = ?").get(interaction.id).state)
+      .toBe("pending");
+    expect(delivered).toBeUndefined();
+
+    expect(() => manager.respond({
+      operationId: operation.id,
+      interactionId: interaction.id,
+      disposition: "cancel",
+      response: { outcome: { outcome: "selected", optionId: "allow-once" } },
+    })).toThrowError("cancelled permission responses cannot select an option");
+    expect(db.prepare("SELECT state FROM acp_interactions WHERE id = ?").get(interaction.id).state)
+      .toBe("pending");
+
+    manager.respond({
+      operationId: operation.id,
+      interactionId: interaction.id,
+      disposition: "selected",
+      response: { outcome: { outcome: "selected", optionId: "allow-once" } },
+    });
+    await waitForOperation(manager, operation.id, "succeeded");
+    expect(delivered).toEqual({ outcome: { outcome: "selected", optionId: "allow-once" } });
+  });
+
+  it("accepts a permission cancellation without inventing an option selection", async () => {
+    let delivered;
+    const { db, profile, manager } = setup({
+      authenticate: async ({ onInteraction }) => {
+        delivered = await onInteraction({
+          requestId: "permission-cancel",
+          kind: "permission",
+          schema: {
+            options: [{ optionId: "allow-once", name: "Allow once", kind: "allow_once" }],
+          },
+        });
+        return { authenticated: false };
+      },
+    });
+    const operation = manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "permission-login",
+    });
+    let interaction;
+    await vi.waitFor(() => {
+      interaction = db.prepare("SELECT * FROM acp_interactions WHERE operation_id = ?").get(operation.id);
+      expect(interaction?.state).toBe("pending");
+    });
+
+    const result = manager.respond({
+      operationId: operation.id,
+      interactionId: interaction.id,
+      response: { outcome: { outcome: "cancelled" } },
+    });
+    expect(result).toMatchObject({ state: "submitted", disposition: "cancel" });
+    await waitForOperation(manager, operation.id, "succeeded");
+    expect(delivered).toEqual({ outcome: { outcome: "cancelled" } });
+  });
+
   it("cancels active operations and expires unanswered interactions", async () => {
     const { db, profile, manager } = setup({
       authenticate: async ({ onInteraction }) => onInteraction({

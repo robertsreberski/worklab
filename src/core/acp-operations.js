@@ -293,9 +293,9 @@ export function acpInteractionDisposition(interaction, response, explicit = null
     || source.disposition
     || source.action
     || source.selection
+    || nested.outcome
     || nested.optionId
     || nested.option_id
-    || nested.outcome
     || source.outcome;
   value = String(value || "").trim().toLowerCase();
   const aliases = {

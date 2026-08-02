@@ -27,7 +27,6 @@ import {
   finalizeAcpInteractionResponse,
   getAcpInteractionById,
   insertAcpInteractionRequest,
-  releaseAcpInteractionResponse,
 } from "../core/db/queries/acp-interactions.js";
 import { updateAcpProfileProbe } from "../core/db/queries/acp-profiles.js";
 
@@ -74,6 +73,44 @@ function raceWithAbort(promise, signal) {
     signal.addEventListener("abort", listener, { once: true });
   });
   return Promise.race([promise, aborted]).finally(() => signal.removeEventListener("abort", listener));
+}
+
+function permissionOptionId(response) {
+  const outcome = response?.outcome && typeof response.outcome === "object"
+    ? response.outcome
+    : null;
+  return outcome?.optionId || outcome?.option_id || response?.optionId || response?.option_id || null;
+}
+
+function assertOfferedPermissionResponse(row, response, disposition) {
+  if (row.kind !== "permission") return;
+  let request = {};
+  try { request = JSON.parse(row.request_schema_json || "{}"); } catch { /* fail closed below */ }
+  const offered = new Map((Array.isArray(request.options) ? request.options : [])
+    .map((option) => [option?.optionId || option?.id, option])
+    .filter(([optionId]) => typeof optionId === "string" && optionId.length > 0));
+  const selected = permissionOptionId(response);
+  if (disposition === "cancel") {
+    if (selected == null) return;
+    throw managerError("cancelled permission responses cannot select an option", {
+      code: "validation",
+      status: 400,
+    });
+  }
+  const option = typeof selected === "string" ? offered.get(selected) : null;
+  if (!option) {
+    throw managerError("permission response must select an offered option", {
+      code: "validation",
+      status: 400,
+    });
+  }
+  const optionKind = typeof option.kind === "string" ? option.kind.trim().toLowerCase() : "";
+  if (disposition !== "selected" && disposition !== optionKind) {
+    throw managerError("permission disposition does not match the selected option", {
+      code: "validation",
+      status: 400,
+    });
+  }
 }
 
 export class AcpOperationManager {
@@ -303,29 +340,29 @@ export class AcpOperationManager {
       });
     }
     const safeDisposition = acpInteractionDisposition(rowToAcpInteraction(row), response, disposition);
-    const claimed = claimAcpInteractionResponse(this.db, interactionId, {
-      disposition: safeDisposition,
-      updatedAt: this.now(),
-    });
-    if (!claimed) throw managerError("ACP interaction is not pending", { code: "not_pending", status: 409 });
-
-    try {
-      pending.resolve(response);
-      record.pending.delete(interactionId);
-      record.controller.signal.removeEventListener("abort", pending.abort);
+    assertOfferedPermissionResponse(row, response, safeDisposition);
+    const finalized = this.db.transaction(() => {
+      const claimed = claimAcpInteractionResponse(this.db, interactionId, {
+        disposition: safeDisposition,
+        updatedAt: this.now(),
+      });
+      if (!claimed) throw managerError("ACP interaction is not pending", { code: "not_pending", status: 409 });
       const finalized = finalizeAcpInteractionResponse(this.db, interactionId, { resolvedAt: this.now() });
       if (!finalized) throw managerError("ACP interaction response could not be finalized");
-      if (record.pending.size === 0) {
-        markAcpOperationRunning(this.db, operationId, { updatedAt: this.now() });
+      if (record.pending.size === 1) {
+        if (markAcpOperationRunning(this.db, operationId, { updatedAt: this.now() }).changes !== 1) {
+          throw managerError("ACP operation could not resume after interaction");
+        }
       }
-      const interaction = rowToAcpInteraction(finalized);
-      this.broker?.broadcast?.("global", { type: "acp_interaction_submitted", interaction });
-      this.#broadcastOperation(operationId, "running");
-      return interaction;
-    } catch (error) {
-      releaseAcpInteractionResponse(this.db, interactionId, { updatedAt: this.now() });
-      throw error;
-    }
+      return finalized;
+    })();
+    record.pending.delete(interactionId);
+    record.controller.signal.removeEventListener("abort", pending.abort);
+    pending.resolve(response);
+    const interaction = rowToAcpInteraction(finalized);
+    this.broker?.broadcast?.("global", { type: "acp_interaction_submitted", interaction });
+    this.#broadcastOperation(operationId, "running");
+    return interaction;
   }
 
   cancelInteraction({ operationId, interactionId } = {}) {

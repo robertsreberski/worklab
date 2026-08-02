@@ -477,6 +477,57 @@ describe("ACP API", () => {
     })).not.toMatch(/actual-form-secret|schema-secret/u);
   });
 
+  it("returns 400 and keeps management permissions pending for unoffered options", async () => {
+    const cwd = workspace();
+    let delivered;
+    const controls = {
+      authenticate: async ({ onInteraction }) => {
+        delivered = await onInteraction({
+          requestId: "permission-echo-api",
+          kind: "permission",
+          schema: {
+            options: [{ optionId: "allow-once", name: "Allow once", kind: "allow_once" }],
+          },
+        });
+        return { authenticated: true };
+      },
+    };
+    const { agent, db } = makeTestServer({ acpControls: controls });
+    const profile = (await createGeneric(agent, cwd)).body.profile;
+    const operation = (await agent.post(`/api/acp/profiles/${profile.id}/authenticate`)
+      .send({ authMethodId: "permission-login" })
+      .expect(202)).body.operation;
+    let interaction;
+    await vi.waitFor(() => {
+      interaction = db.prepare("SELECT * FROM acp_interactions WHERE operation_id = ?").get(operation.id);
+      expect(interaction?.state).toBe("pending");
+    });
+
+    await agent.post(`/api/acp/interactions/${interaction.id}/respond`).send({
+      disposition: "selected",
+      outcome: { outcome: "selected", optionId: "hidden-admin-choice" },
+    }).expect(400, {
+      error: { code: "validation", message: "permission response must select an offered option" },
+    });
+    expect(db.prepare("SELECT state FROM acp_interactions WHERE id = ?").get(interaction.id).state)
+      .toBe("pending");
+    expect(delivered).toBeUndefined();
+
+    await agent.post(`/api/acp/interactions/${interaction.id}/respond`).send({
+      disposition: "cancel",
+      outcome: { outcome: "selected", optionId: "allow-once" },
+    }).expect(400, {
+      error: { code: "validation", message: "cancelled permission responses cannot select an option" },
+    });
+    expect(db.prepare("SELECT state FROM acp_interactions WHERE id = ?").get(interaction.id).state)
+      .toBe("pending");
+
+    await agent.post(`/api/acp/interactions/${interaction.id}/respond`).send({
+      disposition: "selected",
+      outcome: { outcome: "selected", optionId: "allow-once" },
+    }).expect(200);
+  });
+
   it("cancels only active management operations", async () => {
     const cwd = workspace();
     const probe = vi.fn(({ signal }) => new Promise((resolve, reject) => {
