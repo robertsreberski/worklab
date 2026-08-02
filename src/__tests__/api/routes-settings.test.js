@@ -162,10 +162,17 @@ describe("settings", () => {
     expect(res.body.settings.delegation_auto_run_children).toBe(false);
   });
 
-  it("PATCH canonicalizes legacy SDK runtime model settings and rejects Codex CLI refs", async () => {
+  it("PATCH canonicalizes legacy SDK runtime model settings and rejects unsupported runtime refs", async () => {
     const { agent } = makeTestServer();
     await agent.patch("/api/settings").send({
       slack_model: "codex:gpt-5.5",
+    }).expect(400);
+
+    await agent.patch("/api/settings").send({
+      assistant_model: "acp:profile-a",
+    }).expect(400);
+    await agent.patch("/api/settings").send({
+      slack_model: "acp:profile-a",
     }).expect(400);
 
     await agent.patch("/api/settings").send({

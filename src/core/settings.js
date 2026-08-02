@@ -139,6 +139,9 @@ function agentRuntimeModelReference(key, value) {
     if (normalized.sdk === "codex") {
       throw new Error("codex cli refs require an agent execution_mode");
     }
+    if (normalized.sdk === "acp") {
+      throw new Error("ACP refs are supported only by task-bound agents");
+    }
     return normalized.reference;
   } catch {
     throw new Error(`${key} must be a valid model reference`);
