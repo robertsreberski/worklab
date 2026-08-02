@@ -48,6 +48,7 @@ describe("AcpOperationManager", () => {
         ok: true,
         status: "ready",
         protocolVersion: 1,
+        authRequired: true,
         accessToken: "probe-secret-token",
         capabilities: { sessions: true, apiKey: "nested-secret" },
         authMethods: [
@@ -70,6 +71,7 @@ describe("AcpOperationManager", () => {
     expect(JSON.stringify(completed)).not.toContain("probe-secret-token");
     expect(JSON.stringify(completed)).not.toContain("nested-secret");
     expect(JSON.stringify(completed)).not.toContain("method-secret");
+    expect(completed.result).not.toHaveProperty("authRequired");
     const probe = db.prepare(`
       SELECT last_probe_state, last_probe_result_json, last_probe_error_json
       FROM acp_profiles WHERE id = ?
@@ -208,24 +210,47 @@ describe("AcpOperationManager", () => {
     await waitForOperation(manager, operation.id, "succeeded");
   });
 
-  it("passes remote session identifiers to delete controls without broad request persistence", async () => {
+  it("round-trips encoded list identifiers to delete controls without persisting raw session ids", async () => {
+    const rawSessionId = "session/one";
     let received;
-    const { profile, manager } = setup({
+    const { db, profile, manager } = setup({
+      listSessions: async ({ profile: activeProfile }) => ({
+        sessions: [{
+          sessionId: rawSessionId,
+          providerSessionId: `acp:v1:${activeProfile.id}:${Buffer.from(rawSessionId).toString("base64url")}`,
+          title: "Listed session",
+          token: "drop-list-secret",
+        }],
+      }),
       deleteSession: async (context) => {
-        received = context.remoteSessionId;
-        return { deleted: true, sessionId: context.remoteSessionId, token: "drop-me" };
+        received = context.providerSessionId;
+        return {
+          deleted: true,
+          providerSessionId: context.providerSessionId,
+          sessionId: rawSessionId,
+          token: "drop-delete-secret",
+        };
       },
     });
-    const operation = manager.start({
+    const listedOperation = manager.start({ profileId: profile.id, kind: "list_sessions" });
+    const listed = await waitForOperation(manager, listedOperation.id, "succeeded");
+    const publicId = `acp:v1:${profile.id}:${Buffer.from(rawSessionId).toString("base64url")}`;
+    expect(listed.result).toEqual({
+      sessions: [{ id: publicId, title: "Listed session" }],
+      truncated: false,
+    });
+
+    const deleteOperation = manager.start({
       profileId: profile.id,
       kind: "delete_session",
-      remoteSessionId: "session/one",
+      remoteSessionId: listed.result.sessions[0].id,
     });
-    const completed = await waitForOperation(manager, operation.id, "succeeded");
-    expect(received).toBe("session/one");
-    expect(completed.request).toEqual({ remoteSessionId: "session/one" });
-    expect(completed.result).toEqual({ deleted: true, sessionId: "session/one" });
-    expect(JSON.stringify(completed)).not.toContain("drop-me");
+    const deleted = await waitForOperation(manager, deleteOperation.id, "succeeded");
+    expect(received).toBe(publicId);
+    expect(deleted.request).toEqual({ providerSessionId: publicId });
+    expect(deleted.result).toEqual({ deleted: true, id: publicId });
+    const persisted = JSON.stringify(db.prepare("SELECT * FROM acp_operations ORDER BY created_at").all());
+    expect(persisted).not.toMatch(/session\/one|drop-list-secret|drop-delete-secret/u);
   });
 
   it("fails closed when a control is unavailable or another operation is active", async () => {

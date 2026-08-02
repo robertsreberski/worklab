@@ -3,6 +3,8 @@ const MAX_TEXT_CHARS = 2000;
 const MAX_ITEMS = 200;
 const MAX_DEPTH = 8;
 const MAX_AUTH_METHOD_ID_CHARS = 500;
+const MAX_PROVIDER_SESSION_ID_CHARS = 5_600;
+const PROVIDER_SESSION_ID_RE = /^acp:v1:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([A-Za-z0-9_-]+)$/u;
 const SENSITIVE_KEY_RE = /(?:secret|password|passphrase|token|api[_-]?key|credential|authorization|cookie|answer|form[_-]?values?)/iu;
 const SCHEMA_VALUE_KEYS = new Set(["default", "const", "examples", "value", "values", "answer", "answers"]);
 
@@ -90,13 +92,17 @@ function picked(value, keys) {
 
 function sanitizeSession(value) {
   const session = picked(value, {
-    id: ["id", "sessionId", "session_id"],
+    id: ["providerSessionId", "provider_session_id"],
     title: ["title", "name", "label"],
     createdAt: ["createdAt", "created_at"],
     updatedAt: ["updatedAt", "updated_at"],
     status: "status",
   });
-  if (session.id != null) session.id = clippedText(String(session.id), 500);
+  try {
+    session.id = normalizeAcpProviderSessionId(session.id);
+  } catch {
+    return null;
+  }
   if (session.title != null) session.title = clippedText(String(session.title), 500);
   if (session.status != null) session.status = clippedText(String(session.status), 100);
   return boundedObject(session);
@@ -141,6 +147,29 @@ export function normalizeAcpAuthMethodId(value) {
   return value;
 }
 
+export function normalizeAcpProviderSessionId(value, profileId = null) {
+  if (typeof value !== "string"
+    || value.length === 0
+    || value.trim() !== value
+    || value.length > MAX_PROVIDER_SESSION_ID_CHARS
+    || /[\u0000-\u001f\u007f]/u.test(value)) {
+    throw Object.assign(new Error("providerSessionId is invalid"), {
+      code: "validation",
+      status: 400,
+      safeMessage: "providerSessionId is invalid",
+    });
+  }
+  const match = PROVIDER_SESSION_ID_RE.exec(value);
+  if (!match || (profileId && match[1] !== profileId)) {
+    throw Object.assign(new Error("providerSessionId is invalid"), {
+      code: "validation",
+      status: 400,
+      safeMessage: "providerSessionId is invalid",
+    });
+  }
+  return value;
+}
+
 export function sanitizeAcpOperationResult(kind, value) {
   const source = isPlainObject(value) ? value : {};
   if (kind === "authenticate" || kind === "logout") {
@@ -152,15 +181,24 @@ export function sanitizeAcpOperationResult(kind, value) {
     }));
   }
   if (kind === "list_sessions") {
-    const sessions = Array.isArray(source.sessions) ? source.sessions.slice(0, MAX_ITEMS).map(sanitizeSession) : [];
+    const candidates = Array.isArray(source.sessions) ? source.sessions.slice(0, MAX_ITEMS) : [];
+    const sessions = candidates.map(sanitizeSession).filter(Boolean);
     return boundedObject({ sessions, truncated: source.sessions?.length > sessions.length });
   }
   if (kind === "delete_session") {
-    return boundedObject(picked(source, {
+    const result = picked(source, {
       deleted: "deleted",
-      sessionId: ["sessionId", "session_id", "id"],
+      id: ["providerSessionId", "provider_session_id"],
       status: "status",
-    }));
+    });
+    if (result.id !== undefined) {
+      try {
+        result.id = normalizeAcpProviderSessionId(result.id);
+      } catch {
+        delete result.id;
+      }
+    }
+    return boundedObject(result);
   }
   const probe = picked(source, {
     ok: "ok",
@@ -170,7 +208,6 @@ export function sanitizeAcpOperationResult(kind, value) {
     installedVersion: ["installedVersion", "installed_version"],
     latencyMs: ["latencyMs", "latency_ms"],
     authenticated: "authenticated",
-    authRequired: ["authRequired", "auth_required"],
     capabilities: "capabilities",
     warnings: "warnings",
   });
