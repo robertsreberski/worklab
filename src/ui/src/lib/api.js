@@ -121,7 +121,9 @@ export const api = {
   search: (query) => request("GET", `/search?${new URLSearchParams(query)}`),
   searchMentions: (query, options) => request("GET", `/mentions/search?${new URLSearchParams(query)}`, null, options),
   suggestFiles: (query, options) => request("GET", `/files/suggest?${new URLSearchParams(query)}`, null, options),
+  readFile: (query, options) => request("GET", `/files/read?${new URLSearchParams(query)}`, null, options),
   searchStatus: () => request("GET", "/search/status"),
+  testEmbeddingBackend: () => request("GET", "/search/embedding-test"),
   uploadAttachment,
   // app updates
   getUpdate: (query, options) => request("GET", withQuery("/update", query), null, options),

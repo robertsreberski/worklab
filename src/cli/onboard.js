@@ -338,7 +338,7 @@ function embeddingModelFromLmStudio(db, providerId) {
     model.enabled
     && (model.capabilities?.embedding === true || /embed/i.test(model.model_name))
   ));
-  return match ? `vercel:${providerId}:${match.model_name}` : "";
+  return match ? `provider:${providerId}:${match.model_name}` : "";
 }
 
 function localEmbeddingAvailable(localProvider) {
@@ -445,7 +445,7 @@ async function setupEmbedding({ db, dataDir, args, localProvider, dryRun, assume
     modelRef = `ollama:${DEFAULT_OLLAMA_EMBEDDING_MODEL}`;
   } else if (choice === "local" && localProvider.choice === "lmstudio" && localProvider.provider?.id) {
     modelRef = dryRun
-      ? `vercel:${localProvider.provider.id}:<embedding-model>`
+      ? `provider:${localProvider.provider.id}:<embedding-model>`
       : embeddingModelFromLmStudio(db, localProvider.provider.id);
     if (!modelRef) {
       return {

@@ -89,6 +89,10 @@ Do not use reserved or legacy runtime refs such as `openai:<modelId>`,
 `codex-cli:<modelId>` unless you are deliberately testing compatibility
 canonicalization.
 
+Embedding and verification-adjudicator settings use
+`provider:<providerId>:<modelName>` for custom providers. This is separate from
+the agent runtime vocabulary above.
+
 Create narrow agents:
 
 - Use `name` only when a specific lowercase slug is needed; otherwise let

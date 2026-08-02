@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 
+import { CodeBlock } from "../../components/CodeBlock.jsx";
+import { Drawer } from "../../components/Drawer.jsx";
 import { EventTimeline } from "../../components/EventTimeline.jsx";
 import { FileTree } from "../../components/FileTree.jsx";
 import { Icon } from "../../components/Icon.jsx";
+import { MarkdownContent } from "../../components/Markdown.jsx";
 import { AgentReferenceText } from "../../components/AgentLink.jsx";
 import { Button } from "../../components/primitives/Button.jsx";
+import { IconButton } from "../../components/primitives/IconButton.jsx";
 import { Textarea } from "../../components/primitives/Textarea.jsx";
 import { api } from "../../lib/api.js";
 import { RunHistoryNotice } from "../../components/RunHistoryNotice.jsx";
@@ -736,7 +740,7 @@ export function outputRunArtifactsForDisplay(artifacts = []) {
 export function runArtifactMetaText(node = {}) {
   if (node.type && node.type !== "file") return "";
   const delta = artifactDeltaLabel(node);
-  if (delta) return delta;
+  if (delta && delta !== "0->0" && delta !== "+0 -0") return delta;
   if (node.status === "in_progress" || node.status === "running") return "pending";
   if (node.event_count > 1) return `${node.event_count} edits`;
   if (node.artifact_type === "qa_output") return "qa";
@@ -754,12 +758,176 @@ function RunArtifactMeta({ node }) {
   return <span class={`run-artifact-meta ${tone}`}>{text}</span>;
 }
 
+function languageForPath(path = "") {
+  const lower = String(path).toLowerCase();
+  const ext = lower.includes(".") ? lower.slice(lower.lastIndexOf(".") + 1) : "";
+  const map = {
+    js: "javascript", jsx: "jsx", mjs: "javascript", cjs: "javascript",
+    ts: "typescript", tsx: "tsx",
+    json: "json", md: "markdown", yml: "yaml", yaml: "yaml",
+    css: "css", scss: "scss", html: "html", xml: "xml",
+    py: "python", rb: "ruby", go: "go", rs: "rust",
+    sh: "bash", sql: "sql", toml: "toml",
+  };
+  return map[ext] || "text";
+}
+
+const FILE_PREVIEW_DEFAULT_WIDTH = 560;
+const FILE_PREVIEW_MIN_WIDTH = 360;
+const FILE_PREVIEW_COMPACT_BP = 860;
+
+function useIsCompactViewport(breakpoint = FILE_PREVIEW_COMPACT_BP) {
+  const [isCompact, setIsCompact] = useState(() =>
+    typeof window === "undefined" ? false : window.matchMedia(`(max-width: ${breakpoint}px)`).matches,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mql = window.matchMedia(`(max-width: ${breakpoint}px)`);
+    const onChange = (event) => setIsCompact(event.matches);
+    mql.addEventListener?.("change", onChange);
+    return () => mql.removeEventListener?.("change", onChange);
+  }, [breakpoint]);
+  return isCompact;
+}
+
+function FilePreviewDrawer({ file, taskId, onClose }) {
+  const [state, setState] = useState({ status: "idle", data: null, error: null });
+  const [width, setWidth] = useState(FILE_PREVIEW_DEFAULT_WIDTH);
+  const [isFull, setIsFull] = useState(false);
+  const [view, setView] = useState("preview");
+  const isCompact = useIsCompactViewport();
+  const isMarkdown = !!file && /\.(md|markdown)$/i.test(file.path || "");
+
+  useEffect(() => {
+    if (!file) return undefined;
+    let cancelled = false;
+    const controller = new AbortController();
+    setState({ status: "loading", data: null, error: null });
+    setView(isMarkdown ? "preview" : "source");
+    api
+      .readFile({ path: file.path, task_id: taskId || "" }, { signal: controller.signal })
+      .then((data) => {
+        if (cancelled) return;
+        setState({ status: "ready", data, error: null });
+      })
+      .catch((err) => {
+        if (cancelled || err?.name === "AbortError") return;
+        setState({ status: "error", data: null, error: err?.message || "Failed to load file" });
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [file?.path, taskId, isMarkdown]);
+
+  const handleResize = (startEvent) => {
+    startEvent.preventDefault();
+    const startX = startEvent.clientX;
+    const startWidth = isFull ? window.innerWidth : width;
+    if (isFull) {
+      setWidth(startWidth);
+      setIsFull(false);
+    }
+    const resizeHandle = startEvent.currentTarget;
+    resizeHandle?.setPointerCapture?.(startEvent.pointerId);
+    const onMove = (event) => {
+      const dx = startX - event.clientX;
+      const next = Math.max(FILE_PREVIEW_MIN_WIDTH, Math.min(window.innerWidth, startWidth + dx));
+      setWidth(next);
+    };
+    const onUp = () => {
+      if (resizeHandle?.hasPointerCapture?.(startEvent.pointerId)) {
+        resizeHandle.releasePointerCapture(startEvent.pointerId);
+      }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  if (!file) return null;
+  const title = file.display_path || file.path || file.name;
+  const data = state.data;
+  const showMarkdownToggle = isMarkdown && data?.encoding === "utf8";
+  const headerActions = (
+    <>
+      {showMarkdownToggle && (
+        <div class="file-preview-view-toggle" role="group" aria-label="View mode">
+          <Button
+            type="button"
+            size="sm"
+            variant={view === "preview" ? "secondary" : "ghost"}
+            onClick={() => setView("preview")}
+            aria-pressed={view === "preview"}
+          >Rendered</Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={view === "source" ? "secondary" : "ghost"}
+            onClick={() => setView("source")}
+            aria-pressed={view === "source"}
+          >Source</Button>
+        </div>
+      )}
+      {!isCompact && (
+        <IconButton
+          icon={<Icon name={isFull ? "minimize" : "maximize"} size={14} />}
+          aria-label={isFull ? "Restore size" : "Maximize"}
+          onClick={() => setIsFull((v) => !v)}
+        />
+      )}
+    </>
+  );
+  const drawerWidth = isCompact ? undefined : (isFull ? "100vw" : `${width}px`);
+  return (
+    <Drawer
+      open
+      onClose={onClose}
+      title={title}
+      class="file-preview-drawer"
+      width={drawerWidth}
+      headerActions={headerActions}
+      onResizeStart={isCompact ? undefined : handleResize}
+    >
+      {state.status === "loading" && <div class="field-hint">Loading…</div>}
+      {state.status === "error" && (
+        <div class="field-hint" role="alert">Failed to load: {state.error}</div>
+      )}
+      {state.status === "ready" && data && (
+        <>
+          <div class="file-preview-meta">
+            <span class="file-preview-path" title={data.abs_path}>{data.abs_path}</span>
+            <span class="file-preview-size">{data.size} bytes{data.truncated ? " · truncated" : ""}</span>
+          </div>
+          {data.encoding === "binary" && <div class="field-hint">Binary file — preview not available.</div>}
+          {data.encoding === "too_large" && <div class="field-hint">File exceeds preview limit ({data.max_bytes} bytes).</div>}
+          {data.encoding === "utf8" && (
+            isMarkdown && view === "preview" ? (
+              <MarkdownContent content={data.content} className="markdown doc-content file-preview-markdown" expandable={false} />
+            ) : (
+              <CodeBlock code={data.content} language={languageForPath(file.path)} class="file-preview-code" />
+            )
+          )}
+        </>
+      )}
+    </Drawer>
+  );
+}
+
 export function RunArtifactsSection({ task, runningRun, streamState = null }) {
   const isStreaming = Boolean(runningRun);
   const fallbackStream = useRunStream(streamState ? null : runningRun?.id, { subscribe: isStreaming });
   const effectiveStream = streamState || fallbackStream;
   const events = effectiveStream.events || [];
   const loading = effectiveStream.loading;
+  const [previewFile, setPreviewFile] = useState(null);
   const liveArtifacts = useMemo(() => {
     if (Array.isArray(effectiveStream.liveArtifacts) && effectiveStream.liveArtifacts.length) {
       return effectiveStream.liveArtifacts;
@@ -790,6 +958,16 @@ export function RunArtifactsSection({ task, runningRun, streamState = null }) {
     : isStreaming
       ? "No edited files recorded yet."
       : "No edited files recorded.";
+  const canPreviewArtifact = (node) => {
+    if (!node || node.type !== "file" || !node.path) return false;
+    if (node.artifact_type === "git_commit") return false;
+    if (node.kind === "delete" || node.status === "deleted") return false;
+    return true;
+  };
+  const handleFileClick = (node) => {
+    if (!canPreviewArtifact(node)) return;
+    setPreviewFile(node);
+  };
 
   if (!task) return null;
   return (
@@ -811,6 +989,8 @@ export function RunArtifactsSection({ task, runningRun, streamState = null }) {
         emptyText={emptyText}
         renderMeta={(node) => <RunArtifactMeta node={node} />}
         getNodeClass={(node) => node.type === "file" && (node.status === "in_progress" || node.status === "running") ? "is-pending" : ""}
+        onFileClick={handleFileClick}
+        canFileClick={canPreviewArtifact}
       />
       {outputGroups.length > 0 && (
         <details class="run-artifact-outputs">
@@ -828,12 +1008,15 @@ export function RunArtifactsSection({ task, runningRun, streamState = null }) {
                   ariaLabel={`${group.label} artifacts`}
                   renderMeta={(node) => <RunArtifactMeta node={node} />}
                   getNodeClass={(node) => node.type === "file" && (node.status === "in_progress" || node.status === "running") ? "is-pending" : ""}
+                  onFileClick={handleFileClick}
+                  canFileClick={canPreviewArtifact}
                 />
               </SectionGroup>
             ))}
           </SectionStack>
         </details>
       )}
+      <FilePreviewDrawer file={previewFile} taskId={task.id} onClose={() => setPreviewFile(null)} />
     </SectionGroup>
   );
 }

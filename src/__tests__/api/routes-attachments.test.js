@@ -1,7 +1,7 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import fs, { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeTestServer } from "../helpers/test-server.js";
 
 const dirs = [];
@@ -153,5 +153,159 @@ describe("task attachments API", () => {
       path: "src/project.js",
       absolute_path: join(workdir, "src", "project.js"),
     }));
+  });
+
+  describe("/api/files/read", () => {
+    it("returns file contents when the path resolves inside the task workdir", async () => {
+      const workdir = makeTempDir("worklab-read-workdir-");
+      const dataDir = makeTempDir("worklab-read-data-");
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src", "app.js"), "console.log('hi');\n");
+      const { agent } = makeTestServer({
+        dataDir,
+        config: { dataDir, repoRoot: workdir, workspace: workdir },
+      });
+      const task = await agent.post("/api/tasks").send({ title: "Read file" }).expect(201);
+
+      const res = await agent
+        .get(`/api/files/read?task_id=${task.body.task.id}&path=${encodeURIComponent("src/app.js")}`)
+        .expect(200);
+
+      expect(res.body).toMatchObject({
+        encoding: "utf8",
+        truncated: false,
+        content: "console.log('hi');\n",
+        abs_path: realpathSync(join(workdir, "src", "app.js")),
+      });
+    });
+
+    it("rejects paths outside the workdir", async () => {
+      const workdir = makeTempDir("worklab-read-outside-workdir-");
+      const dataDir = makeTempDir("worklab-read-outside-data-");
+      const outside = makeTempDir("worklab-read-outside-target-");
+      writeFileSync(join(outside, "secret.txt"), "nope");
+      const { agent } = makeTestServer({
+        dataDir,
+        config: { dataDir, repoRoot: workdir, workspace: workdir },
+      });
+      const task = await agent.post("/api/tasks").send({ title: "Outside" }).expect(201);
+
+      const res = await agent
+        .get(`/api/files/read?task_id=${task.body.task.id}&path=${encodeURIComponent(join(outside, "secret.txt"))}`)
+        .expect(403);
+
+      expect(res.body.error?.code).toBe("outside_workdir");
+    });
+
+    it("allows child filenames whose first segment starts with dots", async () => {
+      const workdir = makeTempDir("worklab-read-dotfile-workdir-");
+      const dataDir = makeTempDir("worklab-read-dotfile-data-");
+      writeFileSync(join(workdir, "..env"), "still inside\n");
+      const { agent } = makeTestServer({
+        dataDir,
+        config: { dataDir, repoRoot: workdir, workspace: workdir },
+      });
+      const task = await agent.post("/api/tasks").send({ title: "Dot child" }).expect(201);
+
+      const res = await agent
+        .get(`/api/files/read?task_id=${task.body.task.id}&path=${encodeURIComponent("..env")}`)
+        .expect(200);
+
+      expect(res.body.content).toBe("still inside\n");
+      expect(res.body.abs_path).toBe(realpathSync(join(workdir, "..env")));
+    });
+
+    it("returns 403 when a file cannot be read", async () => {
+      if (process.platform === "win32" || process.getuid?.() === 0) return;
+
+      const workdir = makeTempDir("worklab-read-forbidden-workdir-");
+      const dataDir = makeTempDir("worklab-read-forbidden-data-");
+      const unreadable = join(workdir, "secret.txt");
+      writeFileSync(unreadable, "nope");
+      chmodSync(unreadable, 0o000);
+      const { agent } = makeTestServer({
+        dataDir,
+        config: { dataDir, repoRoot: workdir, workspace: workdir },
+      });
+      const task = await agent.post("/api/tasks").send({ title: "Forbidden" }).expect(201);
+
+      try {
+        const res = await agent
+          .get(`/api/files/read?task_id=${task.body.task.id}&path=secret.txt`)
+          .expect(403);
+
+        expect(res.body.error).toMatchObject({
+          code: "forbidden",
+          message: "file is not readable",
+        });
+      } finally {
+        chmodSync(unreadable, 0o600);
+      }
+    });
+
+    it("flags binary files instead of returning their content", async () => {
+      const workdir = makeTempDir("worklab-read-binary-workdir-");
+      const dataDir = makeTempDir("worklab-read-binary-data-");
+      const binary = Buffer.from([0x00, 0x01, 0x02, 0x03, 0xff, 0xfe]);
+      writeFileSync(join(workdir, "blob.bin"), binary);
+      const { agent } = makeTestServer({
+        dataDir,
+        config: { dataDir, repoRoot: workdir, workspace: workdir },
+      });
+      const task = await agent.post("/api/tasks").send({ title: "Binary" }).expect(201);
+
+      const res = await agent
+        .get(`/api/files/read?task_id=${task.body.task.id}&path=blob.bin`)
+        .expect(200);
+
+      expect(res.body.encoding).toBe("binary");
+      expect(res.body.content).toBe("");
+    });
+
+    it("returns 404 for missing files", async () => {
+      const workdir = makeTempDir("worklab-read-missing-workdir-");
+      const dataDir = makeTempDir("worklab-read-missing-data-");
+      const { agent } = makeTestServer({
+        dataDir,
+        config: { dataDir, repoRoot: workdir, workspace: workdir },
+      });
+      const task = await agent.post("/api/tasks").send({ title: "Missing" }).expect(201);
+
+      const res = await agent
+        .get(`/api/files/read?task_id=${task.body.task.id}&path=does-not-exist.txt`)
+        .expect(404);
+
+      expect(res.body.error?.code).toBe("not_found");
+    });
+
+    it("returns 404 when a file disappears after stat", async () => {
+      const workdir = makeTempDir("worklab-read-race-workdir-");
+      const dataDir = makeTempDir("worklab-read-race-data-");
+      const filePath = join(workdir, "vanish.txt");
+      writeFileSync(filePath, "gone soon\n");
+      const resolvedPath = realpathSync(filePath);
+      const originalOpenSync = fs.openSync;
+      const openSpy = vi.spyOn(fs, "openSync").mockImplementation((target, flags, mode) => {
+        if (target === resolvedPath) {
+          throw Object.assign(new Error("file disappeared"), { code: "ENOENT" });
+        }
+        return originalOpenSync.call(fs, target, flags, mode);
+      });
+      const { agent } = makeTestServer({
+        dataDir,
+        config: { dataDir, repoRoot: workdir, workspace: workdir },
+      });
+      const task = await agent.post("/api/tasks").send({ title: "Race" }).expect(201);
+
+      try {
+        const res = await agent
+          .get(`/api/files/read?task_id=${task.body.task.id}&path=vanish.txt`)
+          .expect(404);
+
+        expect(res.body.error?.code).toBe("not_found");
+      } finally {
+        openSpy.mockRestore();
+      }
+    });
   });
 });

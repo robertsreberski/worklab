@@ -1,11 +1,11 @@
 import { Icon } from "../../components/Icon.jsx";
 import { StatusPill } from "../../components/primitives/StatusPill.jsx";
 
-export function FieldNote({ label, value, mono = false }) {
+export function FieldNote({ label, value, mono = false, title }) {
   return (
     <div class="settings-note">
       <span>{label}</span>
-      <strong class={mono ? "mono" : ""}>{value || "-"}</strong>
+      <strong class={mono ? "mono" : ""} title={title}>{value || "-"}</strong>
     </div>
   );
 }

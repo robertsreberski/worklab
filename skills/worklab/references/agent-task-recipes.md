@@ -63,6 +63,10 @@ requires exact model ids. Do not use reserved legacy refs such as
 `openai:<model>`, `claude-code:<model>`, `codex-cli:<model>`, or
 `vercel:<providerId>:<model>`.
 
+Embedding and verification-adjudicator settings use
+`provider:<providerId>:<model>` for custom providers; they do not use agent
+runtime references.
+
 ## Instruction Placement
 
 Use projects for context shared across many tasks:

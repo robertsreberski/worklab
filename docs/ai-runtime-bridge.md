@@ -30,9 +30,11 @@ Reserved ids are not accepted by strict runtime parsing:
 - `vercel:<providerId>:<model>` is reserved for future Vercel runtime work.
 - `claude-code:<model>` is reserved for a future Claude Code CLI bridge.
 
-Embedding references are separate from agent runtime references. They may still
-use provider ids such as `openai:<embeddingModel>` or
-`vercel:<providerId>:<embeddingModel>`.
+Embedding and verification-adjudicator references are separate from agent
+runtime references. Provider-backed models use
+`provider:<providerId>:<model>`; embedding models may also use
+`openai:<embeddingModel>` or `ollama:<embeddingModel>`. Legacy `vercel:`
+provider references remain accepted and are canonicalized on write.
 
 ## Legacy Migration
 

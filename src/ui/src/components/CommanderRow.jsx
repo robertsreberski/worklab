@@ -17,6 +17,7 @@ import { normalizeToolTokenEvent, ToolToken } from "./primitives/ToolToken.jsx";
 import { Checkbox } from "./primitives/Checkbox.jsx";
 import { agentDisplayName, hasRunError, taskDisplayKey, taskRecoveryLabel, taskRouteId } from "../lib/display.js";
 import { hasFileEditChangesPayload, isMutationToolName, sourceToolIdForFileEditId, toolResultPayload } from "../lib/toolEventLinking.js";
+import { isRedactedThinkingBlock, thinkingProgressLabel } from "../lib/thinkingEvents.js";
 
 function formatAge(value) {
   if (!value) return "";
@@ -40,11 +41,20 @@ function runningRunIdFromTask(task) {
 }
 
 function isThinkingPreviewEvent(event) {
-  return event?.kind === "think" || event?.type === "thinking";
+  return event?.kind === "think" || event?.type === "thinking" || event?.type === "thinking_progress";
 }
 
 function previewThinkingText(event) {
   return event?.text || event?.content || event?.thinking || "";
+}
+
+// Redacted thinking carries no text, so fall back to the provider's token
+// estimate — otherwise the row shows nothing at all while the agent thinks.
+function thinkingPreviewLabel(event) {
+  const text = previewThinkingText(event);
+  if (text.trim()) return text;
+  if (event?.type === "thinking_progress" || isRedactedThinkingBlock(event)) return thinkingProgressLabel(event);
+  return "";
 }
 
 function isTextPreviewEvent(event) {
@@ -137,13 +147,23 @@ export function commanderLivePreviewEvents(events = [], { limit = 2 } = {}) {
       }
 
       if (isThinkingPreviewEvent(event)) {
-        const text = previewThinkingText(event);
+        const text = thinkingPreviewLabel(event);
         if (!text.trim()) continue;
         const last = lastPreview();
-        if (isThinkingPreviewEvent(last)) {
+        const readable = Boolean(previewThinkingText(event).trim());
+        if (isThinkingPreviewEvent(last) && readable && !last.redacted) {
           last.text = mergePreviewText(previewThinkingText(last), text);
+        } else if (isThinkingPreviewEvent(last)) {
+          // Token-estimate rows supersede each other instead of stacking up.
+          preview[preview.length - 1] = {
+            ...preview[preview.length - 1],
+            event: { ...event, type: "thinking", text, redacted: !readable },
+          };
         } else {
-          pushPreview({ ...event, type: "thinking", text }, { toolUseId: rawToolUseId || event.tool_use_id || event.id || null });
+          pushPreview(
+            { ...event, type: "thinking", text, ...(readable ? {} : { redacted: true }) },
+            { toolUseId: rawToolUseId || event.tool_use_id || event.id || null },
+          );
         }
         continue;
       }

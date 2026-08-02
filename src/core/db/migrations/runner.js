@@ -792,6 +792,30 @@ function canonicalizeRuntimeModelRefs(db) {
   }
 }
 
+function canonicalizeProviderModelRefs(db) {
+  if (tableExists(db, "settings") && hasColumn(db, "settings", "value")) {
+    db.prepare(`
+      UPDATE settings
+      SET value = REPLACE(value, '"vercel:', '"provider:')
+      WHERE key IN ('default_embedding_model', 'agent_verification_adjudicator_model')
+        AND value LIKE '"vercel:%'
+    `).run();
+    db.prepare(`
+      UPDATE settings
+      SET value = REPLACE(value, 'vercel:', 'provider:')
+      WHERE key IN ('default_embedding_model', 'agent_verification_adjudicator_model')
+        AND value LIKE 'vercel:%'
+    `).run();
+  }
+  if (tableExists(db, "embeddings") && hasColumn(db, "embeddings", "model")) {
+    db.prepare(`
+      UPDATE embeddings
+      SET model = REPLACE(model, 'vercel:', 'provider:')
+      WHERE model LIKE 'vercel:%'
+    `).run();
+  }
+}
+
 export function runMigrations(db) {
   // Existing pre-v8 databases may have `tasks` but not `stage`; SCHEMA_SQL
   // creates an index on stage, so add the column before executing the full
@@ -1048,6 +1072,7 @@ export function runMigrations(db) {
   backfillTaskKeys(db);
   clearResolvedTaskFailureKinds(db);
   canonicalizeRuntimeModelRefs(db);
+  canonicalizeProviderModelRefs(db);
   // R4 backfill: derive lifetime_* counters from existing task_runs history.
   // Idempotent — only writes when the lifetime column is still 0 so re-running
   // migrations after the operator has logged real activity doesn't clobber

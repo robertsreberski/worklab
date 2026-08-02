@@ -1,4 +1,4 @@
-import { getIndexStatus, search } from "../../core/index.js";
+import { getIndexStatus, search, testEmbeddingBackend } from "../../core/index.js";
 
 function parseLimit(value) {
   const n = Number(value);
@@ -9,6 +9,14 @@ function parseLimit(value) {
 export function registerSearchRoutes(app, { db, dataDir }) {
   app.get("/api/search/status", (_req, res) => {
     res.json({ status: getIndexStatus(db, { dataDir }) });
+  });
+
+  app.get("/api/search/embedding-test", async (_req, res, next) => {
+    try {
+      res.json({ test: await testEmbeddingBackend({ db, dataDir }) });
+    } catch (err) {
+      next(err);
+    }
   });
 
   app.get("/api/search", async (req, res, next) => {

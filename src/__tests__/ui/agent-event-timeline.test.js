@@ -8,6 +8,7 @@ import {
 } from "../../ui/src/components/AgentEventTimeline.jsx";
 import { fileEditSummary } from "../../ui/src/components/ToolCallBlock.jsx";
 import { normalizeWorklabEvents } from "../../ui/src/components/EventTimeline.jsx";
+import { redactedThinkingLabel, thinkingProgressLabel } from "../../ui/src/lib/thinkingEvents.js";
 
 describe("agent event timeline normalization", () => {
   it("coalesces consecutive thinking fragments", () => {
@@ -73,6 +74,47 @@ describe("agent event timeline normalization", () => {
     expect(events).toEqual([
       { type: "thinking", text: fullText },
     ]);
+  });
+
+  it("keeps redacted thinking markers as their own timeline rows", () => {
+    const events = normaliseAgentTimelineEvents([
+      { type: "thinking", text: "Real thought" },
+      {
+        type: "assistant",
+        message: { content: [{ type: "thinking", text: "", redacted: true, estimated_tokens: 1200 }] },
+      },
+      {
+        type: "assistant",
+        message: { content: [{ type: "thinking", text: "", redacted: true, estimated_tokens: null }] },
+      },
+    ]);
+
+    expect(events).toEqual([
+      { type: "thinking", text: "Real thought" },
+      { type: "thinking", text: "", redacted: true, estimated_tokens: 1200 },
+      { type: "thinking", text: "", redacted: true, estimated_tokens: null },
+    ]);
+  });
+
+  it("labels redacted thinking with the provider token estimate", () => {
+    expect(redactedThinkingLabel({ estimated_tokens: 1200 })).toBe("Thought for ~1.2k tokens");
+    expect(redactedThinkingLabel({ estimated_tokens: 207 })).toBe("Thought for ~207 tokens");
+    expect(redactedThinkingLabel({ estimated_tokens: null })).toBe("Thinking not returned by the provider");
+    expect(thinkingProgressLabel({ estimated_tokens: 300 })).toBe("Thinking… ~300 tokens");
+    expect(thinkingProgressLabel({})).toBe("Thinking…");
+  });
+
+  it("groups thinking progress rows without folding them into tool calls", () => {
+    const items = groupAgentTimelineEvents([
+      { type: "thinking_progress", estimated_tokens: 300, estimated_tokens_delta: 100 },
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "tool-1", name: "Bash", input: { cmd: "pwd" } }] },
+      },
+    ]);
+
+    expect(items[0]).toEqual({ type: "thinking_progress", estimated_tokens: 300, estimated_tokens_delta: 100 });
+    expect(items[1]._toolCall).toBe(true);
   });
 
   it("marks only the tail timeline item as actively streaming", () => {

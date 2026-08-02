@@ -1,6 +1,7 @@
 import { useMemo } from "preact/hooks";
 import { AgentEventTimeline } from "./AgentEventTimeline.jsx";
 import { normalizeCommentText } from "../lib/commentFormatting.js";
+import { hasRedactedThinkingBlock, isRedactedThinkingBlock } from "../lib/thinkingEvents.js";
 import { normalizeCodexItemEvent } from "@mono-agent/agent-runtime/ai/streaming/codex-events.js";
 
 function visibleTextFromEvent(ev) {
@@ -205,12 +206,74 @@ function codexItemEvent(raw) {
   };
 }
 
+// Provider housekeeping subtypes. The worker drops these before they are
+// persisted (src/worker/event-coalescer.js); this filter keeps already-recorded
+// runs readable. Matched only against `type: "system"` so an unrelated provider
+// event that happens to carry `subtype: "status"` stays visible.
+const HIDDEN_SYSTEM_SUBTYPES = new Set([
+  "commands_changed",
+  "hook_started",
+  "hook_response",
+  "init",
+  "status",
+  "thinking_tokens",
+]);
+
+function isHiddenSystemEvent(ev) {
+  return ev?.type === "system" && HIDDEN_SYSTEM_SUBTYPES.has(ev.subtype);
+}
+
+function providerPayload(ev) {
+  const target = ev?.type === "sdk_event" ? ev.event : ev;
+  if (target?.type === "cli_event" && target.raw) return target.raw;
+  return target;
+}
+
+function thinkingTokensFromEvent(ev) {
+  const payload = providerPayload(ev);
+  if (payload?.type !== "system" || payload.subtype !== "thinking_tokens") return null;
+  const total = Number(payload.estimated_tokens);
+  return Number.isFinite(total) ? total : null;
+}
+
+function attachThinkingTokens(ev, tokens) {
+  const content = ev?.message?.content || ev?.content;
+  if (!Array.isArray(content)) return ev;
+  let consumed = false;
+  const next = content.map((block) => {
+    if (!isRedactedThinkingBlock(block)) return block;
+    const estimated = consumed || !(tokens > 0) ? (block.estimated_tokens ?? null) : tokens;
+    consumed = true;
+    return { type: "thinking", text: "", redacted: true, estimated_tokens: estimated };
+  });
+  if (ev.message?.content) return { ...ev, message: { ...ev.message, content: next } };
+  return { ...ev, content: next };
+}
+
+// A finalized thinking block supersedes the progress row that preceded it, and
+// only the latest of a run of progress rows is worth showing.
+function collapseThinkingProgress(rows) {
+  const collapsed = [];
+  for (const row of rows) {
+    const last = collapsed[collapsed.length - 1];
+    if (row?.type === "thinking_progress") {
+      if (last?.type === "thinking_progress") collapsed[collapsed.length - 1] = row;
+      else collapsed.push(row);
+      continue;
+    }
+    if (last?.type === "thinking_progress" && hasRedactedThinkingBlock(row)) collapsed.pop();
+    collapsed.push(row);
+  }
+  return collapsed;
+}
+
 function normalizeCliEvent(ev) {
   const raw = ev?.raw;
   if (!raw) return ev;
   const codexItem = codexItemEvent(raw);
   if (codexItem) return codexItem;
   if (HIDDEN_CLI_EVENT_TYPES.has(raw.type) || HIDDEN_CLI_EVENT_TYPES.has(raw.subtype)) return null;
+  if (isHiddenSystemEvent(raw)) return null;
   if (raw.type === "error") {
     return { type: "error", message: raw.message || raw.error || "CLI error" };
   }
@@ -238,6 +301,7 @@ function normalizeWorklabEvent(ev, { compactFinal = false } = {}) {
     };
   }
   if (ev.type === "worklab_result_candidate") return null;
+  if (isHiddenSystemEvent(ev)) return null;
   if (ev.type === "worklab_result_error") return { type: "error", message: ev.message || "Invalid worklab_result" };
   if (isStandaloneWorklabResultTextEvent(ev)) return null;
   if (ev.type === "worktree_reconcile") return normalizeWorktreeReconcileEvent(ev);
@@ -302,7 +366,15 @@ function normalizeWorklabEvent(ev, { compactFinal = false } = {}) {
 export function normalizeWorklabEvents(events = []) {
   const visibleTexts = new Set();
   let visibleTextTail = "";
-  return events.map((event, index) => {
+  let thinkingTokens = 0;
+  const rows = events.map((event, index) => {
+    // Hidden thinking-token estimates still carry the only reasoning signal the
+    // provider sends, so keep the running total for the block that follows.
+    const tokens = thinkingTokensFromEvent(event);
+    if (tokens != null) {
+      thinkingTokens = tokens;
+      return null;
+    }
     if (followedByMatchingStructuredOutput(events, index)) return null;
     const rawFinalText = String(event?.text || "").trim();
     const normalizedFinalText = normalizeCommentText(rawFinalText);
@@ -311,10 +383,14 @@ export function normalizeWorklabEvents(events = []) {
         ? visibleTexts.has(normalizedFinalText)
         : visibleTexts.size > 0
     );
-    const normalized = normalizeWorklabEvent(event, {
+    let normalized = normalizeWorklabEvent(event, {
       compactFinal,
     });
     if (!normalized) return null;
+    if (hasRedactedThinkingBlock(normalized)) {
+      normalized = attachThinkingTokens(normalized, thinkingTokens);
+      thinkingTokens = 0;
+    }
     const visibleText = normalizeCommentText(visibleTextFromEvent(event));
     if (visibleText) {
       visibleTextTail = isVisibleTextEvent(event)
@@ -327,6 +403,7 @@ export function normalizeWorklabEvents(events = []) {
     }
     return normalized;
   }).filter(Boolean);
+  return collapseThinkingProgress(rows);
 }
 
 export function EventTimeline({ events, streaming = false }) {

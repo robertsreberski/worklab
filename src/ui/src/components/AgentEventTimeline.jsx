@@ -5,6 +5,7 @@ import { StructuredContent } from "./StructuredContent.jsx";
 import { StructuredValue } from "./StructuredValue.jsx";
 import { structuredPreview } from "../lib/structuredValue.js";
 import { hasFileEditChangeDetails, isMutationToolName, sourceToolIdForFileEditId } from "../lib/toolEventLinking.js";
+import { REDACTED_THINKING_HINT, redactedThinkingLabel, thinkingProgressLabel } from "../lib/thinkingEvents.js";
 
 const PHASE_NAMES = Object.freeze({
   triage: "Triage",
@@ -70,7 +71,13 @@ function normaliseBlock(block) {
       source_tool_use_id: block.source_tool_use_id || block.sourceToolUseId,
     };
   }
-  if (block.type === "thinking") return { type: "thinking", text: block.text || block.thinking || "" };
+  if (block.type === "thinking") {
+    const text = block.text || block.thinking || "";
+    if (block.redacted) {
+      return { type: "thinking", text, redacted: true, estimated_tokens: block.estimated_tokens ?? null };
+    }
+    return { type: "thinking", text };
+  }
   if (block.type === "text") return { type: "text", text: block.text || "" };
   if (block.type === "tool_result") {
     const output = toolResultDisplayValue(block);
@@ -129,6 +136,15 @@ function mergeStreamingText(current, next) {
   return `${left}${right}`;
 }
 
+// Only streamed fragments merge. A redacted thinking marker carries no text, so
+// merging would silently swallow it into the neighbouring row.
+function canMergeStreamingBlocks(last, next) {
+  if (next?.type !== "thinking" && next?.type !== "text") return false;
+  if (last?.type !== next.type) return false;
+  if (last.redacted || next.redacted) return false;
+  return Boolean(String(last.text || "").trim()) && Boolean(String(next.text || "").trim());
+}
+
 function flattenEvents(events) {
   const flat = [];
   for (const event of events || []) {
@@ -147,7 +163,7 @@ function flattenEvents(events) {
   const coalesced = [];
   for (const event of flat) {
     const last = coalesced[coalesced.length - 1];
-    if ((event?.type === "thinking" || event?.type === "text") && last?.type === event.type) {
+    if (canMergeStreamingBlocks(last, event)) {
       last.text = mergeStreamingText(last.text, event.text);
     } else {
       coalesced.push(event);
@@ -432,6 +448,23 @@ function TimelineEvent({ event, isLast, streaming }) {
         className="agentlog-event-live-input doc-content"
         maxHeight={2000}
       />
+    );
+  } else if (type === "thinking" && event.redacted) {
+    railIcon = <RailIcon name="sparkles" />;
+    content = (
+      <div class="agentlog-thinking agentlog-thinking-static" title={REDACTED_THINKING_HINT}>
+        <span class="agentlog-thinking-glyph" aria-hidden="true">✦</span>
+        <span class="agentlog-final-meta">{redactedThinkingLabel(event)}</span>
+      </div>
+    );
+  } else if (type === "thinking_progress") {
+    railIcon = <RailIcon name="sparkles" />;
+    content = (
+      <div class="agentlog-thinking agentlog-thinking-static" title={REDACTED_THINKING_HINT}>
+        <span class="agentlog-thinking-glyph" aria-hidden="true">✦</span>
+        <span class="agentlog-final-meta">{thinkingProgressLabel(event)}</span>
+        {streaming && <span class="agentlog-thinking-cursor" aria-hidden="true" />}
+      </div>
     );
   } else if (type === "thinking") {
     railIcon = <RailIcon name="sparkles" />;

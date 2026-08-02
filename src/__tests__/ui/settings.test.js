@@ -261,7 +261,7 @@ describe("settings UI duration conversions", () => {
       agent_provider_recovery_base_delay_ms: secondsToMs("45"),
       agent_pi_codex_transport: "websocket",
       agent_verification_adjudicator_mode: "on",
-      agent_verification_adjudicator_model: "vercel:ollama-local:gpt-oss-safeguard:20b",
+      agent_verification_adjudicator_model: "provider:ollama-local:gpt-oss-safeguard:20b",
       agent_verification_adjudicator_timeout_ms: secondsToMs("45"),
       planning_harness: "execplan_deep",
       planning_tool_policy: "read_only_no_shell",
@@ -294,7 +294,7 @@ describe("settings UI duration conversions", () => {
     expect(payload.agent_provider_recovery_base_delay_ms).toBe(45000);
     expect(payload.agent_pi_codex_transport).toBe("websocket");
     expect(payload.agent_verification_adjudicator_mode).toBe("on");
-    expect(payload.agent_verification_adjudicator_model).toBe("vercel:ollama-local:gpt-oss-safeguard:20b");
+    expect(payload.agent_verification_adjudicator_model).toBe("provider:ollama-local:gpt-oss-safeguard:20b");
     expect(payload).not.toHaveProperty("agent_verification_adjudicator_base_url");
     expect(payload.agent_verification_adjudicator_timeout_ms).toBe(45000);
     expect(payload.planning_harness).toBe("execplan_deep");
@@ -377,6 +377,14 @@ describe("settings UI duration conversions", () => {
     expect(searchIndexMeta({ errors: 2, ready: true, model: "openai:text-embedding-3-small" })).toEqual({ status: "error", label: "Has errors" });
     expect(searchIndexMeta({ errors: 0, ready: false, model: "openai:text-embedding-3-small" })).toEqual({ status: "running", label: "Paused" });
     expect(searchIndexMeta({ errors: 0, ready: true, model: "openai:text-embedding-3-small" })).toEqual({ status: "enabled", label: "Ready" });
+  });
+
+  it("renders the resolved embedding label while retaining the raw reference", () => {
+    const source = readFileSync(settingsSourcePath, "utf8");
+    expect(source).toContain("indexStatus?.model_label || indexStatus?.model");
+    expect(source).toContain("title={indexStatus?.model || undefined}");
+    expect(source).toContain("api.testEmbeddingBackend()");
+    expect(source).toContain("loading={embeddingTestBusy}");
   });
 
   it("summarizes browser and PWA notification modes", () => {

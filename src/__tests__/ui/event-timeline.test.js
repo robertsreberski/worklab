@@ -179,6 +179,57 @@ describe("worklab event timeline normalization", () => {
     ]);
   });
 
+  it("hides provider status and thinking-token estimate events", () => {
+    const events = normalizeWorklabEvents([
+      { type: "sdk_event", event: { type: "cli_event", raw: { type: "system", subtype: "status", status: "requesting" } } },
+      { type: "sdk_event", event: { type: "cli_event", raw: { type: "system", subtype: "thinking_tokens", estimated_tokens: 50, estimated_tokens_delta: 50 } } },
+      { type: "sdk_event", event: { type: "system", subtype: "status", status: "requesting" } },
+      { type: "sdk_event", event: { type: "cli_event", raw: { type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "auto" } } } },
+    ]);
+
+    expect(events).toEqual([
+      { type: "cli_event", raw: { type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "auto" } } },
+    ]);
+  });
+
+  it("attaches hidden thinking-token estimates to the redacted block that follows", () => {
+    const events = normalizeWorklabEvents([
+      { type: "sdk_event", event: { type: "cli_event", raw: { type: "system", subtype: "thinking_tokens", estimated_tokens: 50, estimated_tokens_delta: 50 } } },
+      { type: "sdk_event", event: { type: "cli_event", raw: { type: "system", subtype: "thinking_tokens", estimated_tokens: 207, estimated_tokens_delta: 157 } } },
+      { type: "sdk_event", event: { type: "assistant", message: { content: [{ type: "thinking", thinking: "", signature: "sig-1" }] } } },
+      { type: "sdk_event", event: { type: "assistant", message: { content: [{ type: "thinking", thinking: "", signature: "sig-2" }] } } },
+    ]);
+
+    expect(events).toEqual([
+      { type: "assistant", message: { content: [{ type: "thinking", text: "", redacted: true, estimated_tokens: 207 }] } },
+      { type: "assistant", message: { content: [{ type: "thinking", text: "", redacted: true, estimated_tokens: null }] } },
+    ]);
+  });
+
+  it("keeps token counts the worker already attached to redacted blocks", () => {
+    const events = normalizeWorklabEvents([
+      { type: "sdk_event", event: { type: "assistant", message: { content: [{ type: "thinking", text: "", redacted: true, estimated_tokens: 420 }] } } },
+    ]);
+
+    expect(events).toEqual([
+      { type: "assistant", message: { content: [{ type: "thinking", text: "", redacted: true, estimated_tokens: 420 }] } },
+    ]);
+  });
+
+  it("collapses thinking progress rows and drops the one a redacted block supersedes", () => {
+    const events = normalizeWorklabEvents([
+      { type: "thinking_progress", estimated_tokens: 50, estimated_tokens_delta: 50 },
+      { type: "thinking_progress", estimated_tokens: 300, estimated_tokens_delta: 250 },
+      { type: "sdk_event", event: { type: "assistant", message: { content: [{ type: "thinking", text: "", redacted: true, estimated_tokens: 300 }] } } },
+      { type: "thinking_progress", estimated_tokens: 80, estimated_tokens_delta: 80 },
+    ]);
+
+    expect(events).toEqual([
+      { type: "assistant", message: { content: [{ type: "thinking", text: "", redacted: true, estimated_tokens: 300 }] } },
+      { type: "thinking_progress", estimated_tokens: 80, estimated_tokens_delta: 80 },
+    ]);
+  });
+
   it("normalizes historical Codex file change CLI events as file edits", () => {
     const changes = [{ path: "/workspace/catching-up/build_wp_p2_tree.py", kind: "add" }];
     const events = normalizeWorklabEvents([
@@ -199,6 +250,55 @@ describe("worklab event timeline normalization", () => {
     ]);
 
     expect(events).toEqual([
+      {
+        type: "assistant",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "item_file",
+            name: "file_edit",
+            input: { changes, status: "in_progress" },
+          }],
+        },
+      },
+      {
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "item_file",
+            content: { changes, status: "completed" },
+            is_error: false,
+          }],
+        },
+      },
+    ]);
+  });
+
+  it("keeps Codex file edits while filtering adjacent system and thinking metadata", () => {
+    const changes = [{ path: "/workspace/src/index.js", kind: "update" }];
+    const events = normalizeWorklabEvents([
+      { type: "sdk_event", event: { type: "cli_event", raw: { type: "system", subtype: "status", status: "requesting" } } },
+      { type: "sdk_event", event: { type: "cli_event", raw: { type: "system", subtype: "thinking_tokens", estimated_tokens: 144 } } },
+      { type: "sdk_event", event: { type: "assistant", message: { content: [{ type: "thinking", thinking: "", signature: "sig-1" }] } } },
+      {
+        type: "sdk_event",
+        event: {
+          type: "cli_event",
+          raw: { type: "item.started", item: { id: "item_file", type: "file_change", changes, status: "in_progress" } },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "cli_event",
+          raw: { type: "item.completed", item: { id: "item_file", type: "file_change", changes, status: "completed" } },
+        },
+      },
+    ]);
+
+    expect(events).toEqual([
+      { type: "assistant", message: { content: [{ type: "thinking", text: "", redacted: true, estimated_tokens: 144 }] } },
       {
         type: "assistant",
         message: {
