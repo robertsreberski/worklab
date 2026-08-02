@@ -6,10 +6,26 @@
   - Non-empty skill sets now carry an explicit `skillsRoot`, as required by
     the runtime's indexed-skill contract, while `skillDirs` continues to bound
     filesystem access for Worklab's disclosed skills.
-  - Worklab deliberately leaves the runtime's new per-route retry attempts,
-    request-scoped `toolEnvironment`, and generic Pi `Agent` subagents unset.
-    Existing fallback routing, worker environment, and native-subagent policy
-    remain Worklab-owned.
+  - Worklab deliberately leaves the runtime's new per-route retry attempts and
+    request-scoped `toolEnvironment` unset. Native subagents now stay runtime-
+    owned across fallback routes: Claude loads user/project/local profiles,
+    Codex keeps project instructions available to child threads, and Pi exposes
+    inline helpers bounded to the parent's read-only tool intersection.
+  - Team rosters now drive only durable Worklab child tasks. The retired
+    `subagent_mode` choices no longer inject roster members or gate provider-
+    native helpers; the physical database column remains temporarily as an
+    inert downgrade tombstone and is never returned by the API or MCP tools.
+  - Claude's native user/project/local settings are a trusted-code boundary:
+    they may load hooks, plugins, and provider-native skills in addition to
+    agent profiles. Worklab-managed Skills allowlists do not sandbox that
+    provider-owned configuration.
+  - Heterogeneous fallback routes now project the logical Worklab tool policy
+    for each attempted provider, preventing Codex's wildcard representation
+    from widening a Claude fallback or a Claude named list from killing Codex.
+  - Native child activity stays grouped under its initiating tool call across
+    Claude and Codex, including nested Codex descendants and failure state.
+    Assistant and task live tails preserve lifecycle bookends while retaining
+    at most 200 nested rows per delegation.
   - Runtime 0.17.1 restores fallback routing when Pi 0.83 reports a missing
     credential as `Provider is not configured`: the failure is normalized to
     `provider_auth`, so the next configured route is attempted.
