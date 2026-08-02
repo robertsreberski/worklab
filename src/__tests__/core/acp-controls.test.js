@@ -74,7 +74,7 @@ describe("createWorklabAcpControls", () => {
         request,
         nextCursor: null,
       })),
-      decodeAcpProviderSessionId: vi.fn(() => ({ profileId: PROFILE_ID, sessionId: "remote-1" })),
+      validateAcpProviderSessionId: vi.fn((value) => value),
       deleteAcpSession: vi.fn(async (id) => ({ profileId: PROFILE_ID, providerSessionId: id, deleted: true })),
     };
     const { db, profile, controls } = setup(runtime);
@@ -88,7 +88,7 @@ describe("createWorklabAcpControls", () => {
         .resolves.toMatchObject({ authenticated: true, methodId: "browser" });
       await expect(controls.logout({ profile, signal }))
         .resolves.toMatchObject({ loggedOut: true, status: "logged_out" });
-      const cursor = "opaque/page-2?state=keep+exact==";
+      const cursor = `acp-cursor:v1:${PROFILE_ID}:${Buffer.from("opaque/page-2?state=keep+exact==").toString("base64url")}`;
       await expect(controls.listSessions({
         profile: { ...profile, cwd: "/client/must-not-control-cwd" },
         cursor,
@@ -119,6 +119,7 @@ describe("createWorklabAcpControls", () => {
         opaque,
         expect.objectContaining({ resolveAcpProfile: expect.any(Function), signal }),
       );
+      expect(runtime.validateAcpProviderSessionId).toHaveBeenCalledWith(opaque, PROFILE_ID);
     } finally {
       db.close();
     }
@@ -150,9 +151,33 @@ describe("createWorklabAcpControls", () => {
     try {
       await expect(controls.listSessions({ profile, cursor: " page-2" }))
         .rejects.toMatchObject({ code: "validation", safeMessage: "cursor is invalid" });
-      await expect(controls.listSessions({ profile, cursor: "x".repeat(2_001) }))
+      await expect(controls.listSessions({ profile, cursor: "x".repeat(5_601) }))
         .rejects.toMatchObject({ code: "validation", safeMessage: "cursor is invalid" });
       expect(runtime.listAcpSessions).not.toHaveBeenCalled();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("accepts long canonical runtime cursors only for their bound profile", async () => {
+    const runtime = { listAcpSessions: vi.fn(async (_id, request) => ({ sessions: [], request })) };
+    const { db, profile, controls } = setup(runtime);
+    const rawCursor = `next/${"x".repeat(3_000)}`;
+    const cursor = `acp-cursor:v1:${PROFILE_ID}:${Buffer.from(rawCursor).toString("base64url")}`;
+    try {
+      expect(cursor.length).toBeGreaterThan(2_000);
+      await expect(controls.listSessions({ profile, cursor })).resolves.toMatchObject({
+        request: { cursor },
+      });
+      await expect(controls.listSessions({
+        profile,
+        cursor: `acp-cursor:v1:22222222-2222-4222-8222-222222222222:${Buffer.from("next").toString("base64url")}`,
+      })).rejects.toMatchObject({ code: "validation", safeMessage: "cursor is invalid" });
+      await expect(controls.listSessions({
+        profile,
+        cursor: `acp-cursor:v1:${PROFILE_ID}:bmV4dA==`,
+      })).rejects.toMatchObject({ code: "validation", safeMessage: "cursor is invalid" });
+      expect(runtime.listAcpSessions).toHaveBeenCalledTimes(1);
     } finally {
       db.close();
     }
@@ -222,12 +247,55 @@ describe("createWorklabAcpControls", () => {
     }
   });
 
+  it("redacts runtime context session ids from interaction ids and display fields", async () => {
+    const rawSessionId = "RAW_RUNTIME_CONTEXT_SESSION";
+    let delivered;
+    const runtime = {
+      probeAcpProfile: vi.fn(async (_id, options) => {
+        await options.onAcpInteractionRequest({
+          kind: "permission",
+          payload: {
+            sessionId: rawSessionId,
+            message: `Approve ${rawSessionId}`,
+            options: [{ optionId: "cancel", name: `Cancel ${rawSessionId}` }],
+          },
+        }, {
+          requestId: `request:${rawSessionId}`,
+          nested: { session_id: rawSessionId },
+        });
+        return { protocolVersion: 1, agentCapabilities: {}, authMethods: [] };
+      }),
+    };
+    const { db, profile, controls } = setup(runtime);
+    try {
+      await controls.probe({
+        profile,
+        onInteraction: async (request) => {
+          delivered = request;
+          return { disposition: "cancel" };
+        },
+      });
+      expect(delivered).toMatchObject({
+        kind: "permission",
+        protocolRequestId: expect.stringMatching(/^acp-request:v1:/u),
+        requestSchema: {
+          message: "Approve [redacted]",
+          options: [{ optionId: "cancel", name: "Cancel [redacted]" }],
+        },
+      });
+      expect(JSON.stringify(delivered)).not.toContain(rawSessionId);
+    } finally {
+      db.close();
+    }
+  });
+
   it("rejects opaque sessions owned by a different ACP profile before deletion", async () => {
     const runtime = {
-      decodeAcpProviderSessionId: vi.fn(() => ({
-        profileId: "22222222-2222-4222-8222-222222222222",
-        sessionId: "remote-1",
-      })),
+      validateAcpProviderSessionId: vi.fn(() => {
+        throw Object.assign(new Error("ACP provider session belongs to a different profile"), {
+          code: "invalid_session_id",
+        });
+      }),
       deleteAcpSession: vi.fn(),
     };
     const { db, profile, controls } = setup(runtime);
@@ -264,7 +332,7 @@ describe("createWorklabAcpControls", () => {
       authenticateAcpProfile: vi.fn(),
       logoutAcpProfile: vi.fn(),
       listAcpSessions: vi.fn(),
-      decodeAcpProviderSessionId: vi.fn(),
+      validateAcpProviderSessionId: vi.fn(),
       deleteAcpSession: vi.fn(),
     };
     const { db, profile, controls } = setup(null, { loadAgentRuntime });

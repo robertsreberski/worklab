@@ -88,16 +88,18 @@ describe("AcpOperationManager", () => {
   });
 
   it("keeps form answers in memory while persisting only schema and disposition", async () => {
+    const rawSessionId = "RAW_MANAGEMENT_INTERACTION_SESSION";
     let deliveredResponse;
     let selectedMethod;
-    const { db, profile, manager } = setup({
+    const { db, profile, events, manager } = setup({
       authenticate: async ({ authMethodId, onInteraction }) => {
         selectedMethod = authMethodId;
         deliveredResponse = await onInteraction({
-          requestId: "auth-form-1",
+          requestId: `auth-form:${rawSessionId}`,
           kind: "form",
           schema: {
-            title: "Sign in",
+            sessionId: rawSessionId,
+            title: `Sign in ${rawSessionId}`,
             properties: {
               password: { type: "string", title: "Password", default: "schema-secret" },
             },
@@ -148,8 +150,9 @@ describe("AcpOperationManager", () => {
     });
     const stored = getAcpInteractionById(db, interaction.id);
     expect(stored).toMatchObject({ state: "submitted", disposition: "accept" });
+    expect(stored.protocol_request_id).toMatch(/^acp-request:v1:/u);
     expect(JSON.parse(stored.request_schema_json)).toEqual({
-      title: "Sign in",
+      title: "Sign in [redacted]",
       properties: { password: { type: "string", title: "Password" } },
       required: ["password"],
     });
@@ -158,7 +161,8 @@ describe("AcpOperationManager", () => {
       interaction: stored,
       profile: db.prepare("SELECT * FROM acp_profiles WHERE id = ?").get(profile.id),
     });
-    expect(persisted).not.toMatch(/actual-form-secret|schema-secret|auth-result-secret/u);
+    expect(persisted).not.toMatch(/actual-form-secret|schema-secret|auth-result-secret|RAW_MANAGEMENT_INTERACTION_SESSION/u);
+    expect(JSON.stringify(events)).not.toContain(rawSessionId);
   });
 
   it("rejects permission option ids that the ACP agent did not advertise", async () => {
@@ -423,7 +427,7 @@ describe("AcpOperationManager", () => {
 
   it("round-trips encoded list identifiers to delete controls without persisting raw session ids", async () => {
     const rawSessionIds = ["session/one", "session/two"];
-    const pageCursor = "opaque/page-2?state=keep+exact==";
+    const rawPageCursor = "opaque/page-2?state=keep+exact==";
     const receivedCursors = [];
     let received;
     const { db, profile, manager } = setup({
@@ -448,10 +452,12 @@ describe("AcpOperationManager", () => {
           deleted: true,
           providerSessionId: context.providerSessionId,
           sessionId: rawSessionIds[1],
+          status: `deleted ${rawSessionIds[1]}`,
           token: "drop-delete-secret",
         };
       },
     });
+    const pageCursor = `acp-cursor:v1:${profile.id}:${Buffer.from(rawPageCursor).toString("base64url")}`;
     const listedOperation = manager.start({ profileId: profile.id, kind: "list_sessions" });
     const listed = await waitForOperation(manager, listedOperation.id, "succeeded");
     const firstPublicId = `acp:v1:${profile.id}:${Buffer.from(rawSessionIds[0]).toString("base64url")}`;
@@ -492,10 +498,9 @@ describe("AcpOperationManager", () => {
   });
 
   it("marks locally capped and unusably paginated session results as truncated", async () => {
-    const validCursor = "page-2";
     const { profile, manager } = setup({
       listSessions: async ({ profile: activeProfile, cursor }) => {
-        if (cursor) return { sessions: [], nextCursor: "x".repeat(2_001) };
+        if (cursor) return { sessions: [], nextCursor: "x".repeat(5_601) };
         return {
           sessions: Array.from({ length: 201 }, (_, index) => {
             const rawSessionId = `remote/${index}`;
@@ -507,6 +512,7 @@ describe("AcpOperationManager", () => {
         };
       },
     });
+    const validCursor = `acp-cursor:v1:${profile.id}:${Buffer.from("page-2").toString("base64url")}`;
 
     const capped = manager.start({ profileId: profile.id, kind: "list_sessions" });
     const cappedResult = await waitForOperation(manager, capped.id, "succeeded");
@@ -572,12 +578,22 @@ describe("AcpOperationManager", () => {
     expect(() => manager.start({
       profileId: profile.id,
       kind: "list_sessions",
+      cursor: "page-2",
+    })).toThrowError("cursor is invalid");
+    expect(() => manager.start({
+      profileId: profile.id,
+      kind: "list_sessions",
       cursor: " page-2",
     })).toThrowError("cursor is invalid");
     expect(() => manager.start({
       profileId: profile.id,
       kind: "list_sessions",
-      cursor: "x".repeat(2_001),
+      cursor: "x".repeat(5_601),
+    })).toThrowError("cursor is invalid");
+    expect(() => manager.start({
+      profileId: profile.id,
+      kind: "list_sessions",
+      cursor: `acp-cursor:v1:other-profile:${Buffer.from("page-2").toString("base64url")}`,
     })).toThrowError("cursor is invalid");
   });
 });

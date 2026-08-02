@@ -7,7 +7,7 @@ import {
   normalizeAcpSessionCursor,
   rowToAcpInteraction,
   rowToAcpOperation,
-  sanitizeAcpInteractionSchema,
+  sanitizeAcpInteractionRequest,
   sanitizeAcpOperationError,
   sanitizeAcpOperationResult,
 } from "../core/acp-operations.js";
@@ -232,7 +232,9 @@ export class AcpOperationManager {
       ? normalizeAcpProviderSessionId(remoteSessionId, profileId)
       : null;
     const methodId = kind === "authenticate" ? normalizeAcpAuthMethodId(authMethodId) : null;
-    const sessionCursor = kind === "list_sessions" ? normalizeAcpSessionCursor(cursor) : null;
+    const sessionCursor = kind === "list_sessions"
+      ? normalizeAcpSessionCursor(cursor, profileId)
+      : null;
     const now = this.now();
     const id = newAcpOperationId();
     const request = providerSessionId
@@ -299,7 +301,9 @@ export class AcpOperationManager {
       const result = await raceWithAbort(handlerPromise, record.controller.signal);
       if (record.controller.signal.aborted) throw abortReason(record.controller.signal, "ACP operation cancelled");
 
-      const sanitized = sanitizeAcpOperationResult(record.kind, result);
+      const sanitized = sanitizeAcpOperationResult(record.kind, result, {
+        profileId: record.profile.id,
+      });
       const completedAt = this.now();
       if (completeAcpOperation(this.db, record.id, {
         resultJson: JSON.stringify(sanitized),
@@ -387,7 +391,7 @@ export class AcpOperationManager {
     if (record.controller.signal.aborted) {
       return Promise.reject(abortReason(record.controller.signal, "ACP operation cancelled"));
     }
-    const protocolRequestId = boundedIdentifier(
+    const candidateProtocolRequestId = boundedIdentifier(
       request.protocolRequestId || request.requestId || request.id,
       "protocolRequestId",
       500,
@@ -399,9 +403,13 @@ export class AcpOperationManager {
         status: 400,
       });
     }
-    const requestSchema = sanitizeAcpInteractionSchema(
-      request.requestSchema || request.schema || request.payload || request,
-    );
+    const requestSchemaSource = request.requestSchema || request.schema || request.payload || request;
+    const safeRequest = sanitizeAcpInteractionRequest({
+      source: request,
+      protocolRequestId: candidateProtocolRequestId,
+      requestSchema: requestSchemaSource,
+    });
+    const { protocolRequestId, requestSchema } = safeRequest;
     const now = this.now();
     const id = newAcpInteractionId();
     insertAcpInteractionRequest(this.db, {

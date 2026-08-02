@@ -365,7 +365,8 @@ describe("ACP API", () => {
   it("starts control operations with 202 and exposes sanitized operation state", async () => {
     const cwd = workspace();
     const rawSessionIds = ["session/one", "session/two"];
-    const pageCursor = "opaque/page-2?state=keep+exact==";
+    const rawPageCursor = "opaque/page-2?state=keep+exact==";
+    let pageCursor;
     const listedContexts = [];
     let deletedSession;
     const controls = {
@@ -406,6 +407,7 @@ describe("ACP API", () => {
     };
     const { agent, db, acpOperationManager } = makeTestServer({ acpControls: controls });
     const profile = (await createGeneric(agent, cwd)).body.profile;
+    pageCursor = `acp-cursor:v1:${profile.id}:${Buffer.from(rawPageCursor).toString("base64url")}`;
 
     const started = await agent.post(`/api/acp/profiles/${profile.id}/probe`).expect(202);
     expect(started.body.operation.state).toBe("queued");
@@ -466,7 +468,7 @@ describe("ACP API", () => {
       message: "sessions:list accepts only one optional field: cursor",
     });
     const oversizedCursor = await agent.post(`/api/acp/profiles/${profile.id}/sessions:list`)
-      .send({ cursor: "x".repeat(2_001) })
+      .send({ cursor: "x".repeat(5_601) })
       .expect(400);
     expect(oversizedCursor.body.error).toEqual({ code: "validation", message: "cursor is invalid" });
     expect(listedContexts).toHaveLength(2);
@@ -484,6 +486,77 @@ describe("ACP API", () => {
     expect(JSON.stringify(deleteResult)).not.toMatch(/delete-secret|session\/(?:one|two)/u);
     expect(JSON.stringify(db.prepare("SELECT * FROM acp_operations ORDER BY created_at").all()))
       .not.toMatch(/delete-secret|session\/(?:one|two)/u);
+  });
+
+  it("sanitizes legacy ACP operation and interaction rows on every API read", async () => {
+    const cwd = workspace();
+    const { agent, db } = makeTestServer();
+    const profile = (await createGeneric(agent, cwd)).body.profile;
+    const rawSessionId = "RAW_LEGACY_API_SESSION";
+    const providerSessionId = `acp:v1:${profile.id}:${Buffer.from(rawSessionId).toString("base64url")}`;
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO acp_operations (
+        id, profile_id, kind, state, remote_session_id, request_json,
+        result_json, error_json, created_at, updated_at, started_at, completed_at
+      ) VALUES (?, ?, 'list_sessions', 'failed', ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "acpo_legacy_api",
+      profile.id,
+      rawSessionId,
+      JSON.stringify({ cursor: rawSessionId, sessionId: rawSessionId }),
+      JSON.stringify({
+        sessions: [{
+          sessionId: rawSessionId,
+          providerSessionId,
+          title: `Legacy ${rawSessionId}`,
+        }],
+        nextCursor: `cursor:${rawSessionId}`,
+      }),
+      JSON.stringify({ code: "protocol", safeMessage: `Failure ${rawSessionId}` }),
+      now,
+      now,
+      now,
+      now,
+    );
+    db.prepare(`
+      INSERT INTO acp_interactions (
+        id, profile_id, task_run_id, operation_id, protocol_request_id,
+        kind, request_schema_json, state, created_at, updated_at
+      ) VALUES (?, ?, NULL, ?, ?, 'form', ?, 'pending', ?, ?)
+    `).run(
+      "acpi_legacy_api",
+      profile.id,
+      "acpo_legacy_api",
+      `request:${rawSessionId}`,
+      JSON.stringify({
+        sessionId: rawSessionId,
+        title: `Legacy form ${rawSessionId}`,
+      }),
+      now,
+      now,
+    );
+
+    const operation = await agent.get("/api/acp/operations/acpo_legacy_api").expect(200);
+    const operations = await agent.get(`/api/acp/profiles/${profile.id}/operations`).expect(200);
+    const interactions = await agent.get("/api/acp/operations/acpo_legacy_api/interactions").expect(200);
+    const pending = await agent.get("/api/acp/interactions?state=pending").expect(200);
+    const responses = { operation: operation.body, operations: operations.body, interactions: interactions.body, pending: pending.body };
+
+    expect(operation.body.operation).toMatchObject({
+      remoteSessionId: null,
+      request: {},
+      result: {
+        sessions: [{ id: providerSessionId, title: "Legacy [redacted]" }],
+        truncated: true,
+      },
+      error: { code: "protocol", message: "ACP list_sessions operation failed." },
+    });
+    expect(interactions.body.interactions[0]).toMatchObject({
+      protocolRequestId: expect.stringMatching(/^acp-request:v1:/u),
+      requestSchema: { title: "Legacy form [redacted]" },
+    });
+    expect(JSON.stringify(responses)).not.toContain(rawSessionId);
   });
 
   it("responds to operation interactions without persisting or echoing form answers", async () => {

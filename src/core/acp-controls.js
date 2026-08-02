@@ -2,7 +2,10 @@ import {
   createMonoAcpDiscoveryControls,
   createWorklabAcpProfileResolver,
 } from "./acp-runtime-profile.js";
-import { normalizeAcpSessionCursor } from "./acp-operations.js";
+import {
+  normalizeAcpSessionCursor,
+  sanitizeAcpInteractionRequest,
+} from "./acp-operations.js";
 
 function controlError(code, message) {
   return Object.assign(new Error(message), {
@@ -34,12 +37,6 @@ function protocolRequestId(request, context) {
   return String(value);
 }
 
-function publicInteractionPayload(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const { sessionId: _sessionId, session_id: _sessionIdSnake, ...payload } = value;
-  return payload;
-}
-
 function permissionResponse(response) {
   if (response?.outcome?.outcome === "selected" && typeof response.outcome.optionId === "string") {
     return { outcome: { outcome: "selected", optionId: response.outcome.optionId } };
@@ -67,10 +64,14 @@ function interactionAdapter(onInteraction) {
   if (typeof onInteraction !== "function") return undefined;
   return async (request, context = {}) => {
     const kind = interactionKind(request);
+    const safeRequest = sanitizeAcpInteractionRequest({
+      source: { request, context },
+      protocolRequestId: protocolRequestId(request, context),
+      requestSchema: request?.payload,
+    });
     const response = await onInteraction({
       kind,
-      protocolRequestId: protocolRequestId(request, context),
-      requestSchema: publicInteractionPayload(request?.payload),
+      ...safeRequest,
     });
     return kind === "permission"
       ? permissionResponse(response)
@@ -168,7 +169,7 @@ export function createWorklabAcpControls({
 
     async listSessions({ profile, cursor, signal, onInteraction } = {}) {
       const id = profileId(profile);
-      const sessionCursor = normalizeAcpSessionCursor(cursor);
+      const sessionCursor = normalizeAcpSessionCursor(cursor, id);
       const client = await runtime();
       throwIfAborted(signal);
       const boundProfile = await resolveAcpProfile(id);
@@ -190,10 +191,10 @@ export function createWorklabAcpControls({
       const client = await runtime();
       throwIfAborted(signal);
       const opaqueSessionId = providerSessionId || remoteSessionId;
-      const decoded = requiredRuntimeMethod(client, "decodeAcpProviderSessionId")(opaqueSessionId);
-      if (decoded?.profileId !== profileId(profile)) {
-        throw controlError("invalid_session_id", "ACP provider session belongs to a different profile");
-      }
+      requiredRuntimeMethod(client, "validateAcpProviderSessionId")(
+        opaqueSessionId,
+        profileId(profile),
+      );
       return requiredRuntimeMethod(client, "deleteAcpSession")(
         opaqueSessionId,
         runtimeOptions({ signal, onInteraction }),
