@@ -41,6 +41,7 @@ const SECRET_ROOT_FILES = new Set([
 const OMITTED_ROOT_ENTRIES = new Set([
   ...SECRET_ROOT_FILES,
   ".coordinator.pid",
+  ".coordinator.lock",
   "config",
   "logs",
   "worklab.db",

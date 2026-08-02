@@ -1,9 +1,10 @@
 // src/coordinator.js
 import { createServer as createHttpServer } from "node:http";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { promisify } from "node:util";
+import Database from "better-sqlite3";
 import { createServer } from "./api/server.js";
 import {
   closeDb,
@@ -32,9 +33,95 @@ import { reconcileOrphanedAcpOperations } from "./coordinator/acp-operation-mana
 import { createAcpUrlHandoffStore, createWorklabAcpControls } from "./core/index.js";
 
 const DEFAULT_OPTIONAL_SERVICE_START_TIMEOUT_MS = 5000;
+const COORDINATOR_LOCK_FILE = ".coordinator.lock";
+const COORDINATOR_PID_FILE = ".coordinator.pid";
 
 export { startDeferredService } from "./coordinator/service-registry.js";
 export { createWatcherProxy } from "./coordinator/watcher-proxy.js";
+
+function parseCoordinatorPid(value) {
+  const pid = Number.parseInt(String(value || "").trim(), 10);
+  return Number.isInteger(pid) && pid > 0 ? pid : null;
+}
+
+function coordinatorProcessAlive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+function readFileOrNull(path) {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+function unlinkMatchingFile(path, expected) {
+  try {
+    if (readFileSync(path, "utf8") !== expected) return false;
+    unlinkSync(path);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+function coordinatorActiveError(dataDir, pid) {
+  return new Error(`Worklab is already running for ${dataDir}${pid ? ` (pid ${pid})` : ""}`);
+}
+
+function closeCoordinatorLock(lockDb) {
+  try {
+    if (lockDb?.inTransaction) lockDb.exec("ROLLBACK");
+  } finally {
+    try { lockDb?.close(); } catch {}
+  }
+}
+
+function claimCoordinatorOwnership(dataDir) {
+  const lockFile = join(dataDir, COORDINATOR_LOCK_FILE);
+  const pidFile = join(dataDir, COORDINATOR_PID_FILE);
+  const pidContent = String(process.pid);
+  const lockDb = new Database(lockFile, { timeout: 0 });
+  lockDb.pragma("busy_timeout = 0");
+  try {
+    // The open transaction is the ownership token. SQLite releases its kernel
+    // lock if the process exits, so there is no stale file to reclaim.
+    lockDb.exec("BEGIN EXCLUSIVE");
+  } catch (error) {
+    closeCoordinatorLock(lockDb);
+    if (error?.code === "SQLITE_BUSY" || error?.code === "SQLITE_LOCKED") {
+      throw coordinatorActiveError(dataDir, parseCoordinatorPid(readFileOrNull(pidFile)));
+    }
+    throw error;
+  }
+  try {
+    const legacyPid = parseCoordinatorPid(readFileOrNull(pidFile));
+    if (coordinatorProcessAlive(legacyPid)) throw coordinatorActiveError(dataDir, legacyPid);
+    writeFileSync(pidFile, pidContent, { mode: 0o600 });
+    return { lockDb, pidFile, pidContent };
+  } catch (error) {
+    closeCoordinatorLock(lockDb);
+    throw error;
+  }
+}
+
+function releaseCoordinatorOwnership(ownership) {
+  if (!ownership) return false;
+  try {
+    return unlinkMatchingFile(ownership.pidFile, ownership.pidContent);
+  } finally {
+    closeCoordinatorLock(ownership.lockDb);
+  }
+}
 
 export async function startCoordinator({
   config = loadConfig(),
@@ -56,30 +143,16 @@ export async function startCoordinator({
   };
   mkdirSync(config.dataDir, { recursive: true });
   mkdirSync(config.workspace, { recursive: true });
+  const ownership = claimCoordinatorOwnership(config.dataDir);
 
-  const pidFile = join(config.dataDir, ".coordinator.pid");
-  if (existsSync(pidFile)) {
-    const pid = parseInt(readFileSync(pidFile, "utf8").trim(), 10);
-    if (Number.isFinite(pid) && pid !== process.pid) {
-      try {
-        process.kill(pid, 0);
-        throw new Error(`Worklab is already running for ${config.dataDir} (pid ${pid})`);
-      } catch (err) {
-        if (err?.code !== "ESRCH") throw err;
-        try { unlinkSync(pidFile); } catch {}
-      }
-    } else {
-      try { unlinkSync(pidFile); } catch {}
-    }
-  }
-
+  try {
   const templateDir = join(config.repoRoot, "data-template");
   const seedResult = seedDataFromTemplate({ templateDir, dataDir: config.dataDir });
   if (seedResult.seeded) logger.info("seeded data dir from template");
 
   const dbPath = join(config.dataDir, "worklab.db");
   const db = getDb(dbPath);
-  // The PID ownership check above is the process boundary for crash recovery.
+  // The atomic ownership claim above is the process boundary for crash recovery.
   // Manager instances can also be created by tests and embedded servers, so
   // they must never reinterpret another live manager's rows as orphaned.
   reconcileOrphanedAcpOperations({ db, logger });
@@ -200,8 +273,6 @@ export async function startCoordinator({
   });
   logger.info({ host: config.host, port: config.port }, "coordinator listening");
   markStartup("http_listen", { host: config.host, port: http.address()?.port || config.port });
-
-  writeFileSync(pidFile, String(process.pid));
 
   function startOptionalServices() {
     if (optionalServicesStarted || shuttingDown) return;
@@ -333,7 +404,7 @@ export async function startCoordinator({
 
     try { await closeHttp(); } catch (err) { logger.warn({ err }, "http close error"); }
     try { closeDb(); } catch (err) { logger.warn({ err }, "db close error"); }
-    try { unlinkSync(pidFile); } catch {}
+    try { releaseCoordinatorOwnership(ownership); } catch (err) { logger.warn({ err }, "coordinator ownership cleanup error"); }
 
     if (watchdog) clearTimeout(watchdog);
     if (exit) process.exit(0);
@@ -359,4 +430,9 @@ export async function startCoordinator({
     eventLoopMonitor,
     slack: slackHolder.current,
   };
+  } catch (error) {
+    try { closeDb(); } catch {}
+    try { releaseCoordinatorOwnership(ownership); } catch {}
+    throw error;
+  }
 }

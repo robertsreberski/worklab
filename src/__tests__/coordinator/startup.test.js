@@ -1,8 +1,15 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startCoordinator, startDeferredService } from "../../coordinator.js";
+import { createAcpProfile } from "../../core/acp-profiles.js";
 import { loadConfig } from "../../core/config.js";
 
 function lifecycleService(extra = {}) {
@@ -30,6 +37,36 @@ function watcherService() {
     maybeAutoStartDependents: vi.fn(),
     maybeScheduleUnassignedTeamTask: vi.fn(),
     spawnLeadCycle: vi.fn(),
+  };
+}
+
+function startupServices(extra = {}) {
+  return {
+    createTaskWatcher: vi.fn(() => watcherService()),
+    createConsolidationManager: vi.fn(() => lifecycleService()),
+    createAutomationManager: vi.fn(() => lifecycleService()),
+    createTeamLeadCron: vi.fn(() => ({ start: vi.fn(), stop: vi.fn() })),
+    startSearchIndexer: vi.fn(() => ({
+      shutdown: vi.fn(async () => {}),
+      reindexAll: vi.fn(async () => ({ sources: 0, chunks: 0 })),
+    })),
+    createWorklabPushNotificationService: vi.fn(() => ({ start: vi.fn(), stop: vi.fn() })),
+    createWorklabSlackService: vi.fn(() => lifecycleService({
+      status: vi.fn(() => ({ enabled: false })),
+    })),
+    ...extra,
+  };
+}
+
+function startupConfig(root) {
+  return {
+    ...loadConfig({
+      WORKLAB_PORT: "7878",
+      WORKLAB_HOST: "127.0.0.1",
+      WORKLAB_DATA_DIR: join(root, "data"),
+      WORKLAB_WORKSPACE: join(root, "workspace"),
+    }),
+    port: 0,
   };
 }
 
@@ -216,5 +253,129 @@ describe("coordinator startup services", () => {
     } finally {
       await coordinator.shutdown();
     }
+  });
+
+  it("atomically permits only one concurrent coordinator for a data directory", async () => {
+    const root = mkdtempSync(join(tmpdir(), "worklab-startup-ownership-race-"));
+    roots.push(root);
+    const config = startupConfig(root);
+    const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn() };
+
+    const results = await Promise.allSettled([
+      startCoordinator({ config, logger, services: startupServices() }),
+      startCoordinator({ config, logger, services: startupServices() }),
+    ]);
+    const fulfilled = results.filter((result) => result.status === "fulfilled");
+    const rejected = results.filter((result) => result.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason?.message).toContain("Worklab is already running");
+    expect(readFileSync(join(config.dataDir, ".coordinator.pid"), "utf8"))
+      .toBe(String(process.pid));
+    expect(existsSync(join(config.dataDir, ".coordinator.lock"))).toBe(true);
+
+    await fulfilled[0].value.shutdown();
+    expect(existsSync(join(config.dataDir, ".coordinator.pid"))).toBe(false);
+    expect(existsSync(join(config.dataDir, ".coordinator.lock"))).toBe(true);
+  });
+
+  it("rejects same-PID reentry before it can reconcile a live ACP operation", async () => {
+    const root = mkdtempSync(join(tmpdir(), "worklab-startup-ownership-acp-"));
+    roots.push(root);
+    const config = startupConfig(root);
+    let releaseProbe;
+    const probeGate = new Promise((resolve) => { releaseProbe = resolve; });
+    const controls = { probe: vi.fn(async () => probeGate) };
+    const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn() };
+    const coordinator = await startCoordinator({
+      config,
+      logger,
+      services: startupServices({ createWorklabAcpControls: vi.fn(() => controls) }),
+    });
+    try {
+      const profile = createAcpProfile({
+        db: coordinator.db,
+        input: {
+          agentName: "ownership-acp",
+          displayName: "Ownership ACP",
+          command: process.execPath,
+          cwd: config.workspace,
+        },
+      });
+      const operation = coordinator.acpOperationManager.start({
+        profileId: profile.id,
+        kind: "probe",
+      });
+      await vi.waitFor(() => {
+        expect(coordinator.acpOperationManager.get(operation.id)?.state).toBe("running");
+      });
+
+      await expect(startCoordinator({
+        config: { ...config, port: 0 },
+        logger,
+        services: startupServices(),
+      })).rejects.toThrow("Worklab is already running");
+      expect(coordinator.acpOperationManager.get(operation.id)?.state).toBe("running");
+      expect(() => coordinator.acpOperationManager.start({
+        profileId: profile.id,
+        kind: "probe",
+      })).toThrow(expect.objectContaining({ code: "operation_active", status: 409 }));
+
+      releaseProbe({ ok: true, status: "ready" });
+      await vi.waitFor(() => {
+        expect(coordinator.acpOperationManager.get(operation.id)?.state).toBe("succeeded");
+      });
+    } finally {
+      releaseProbe?.({ ok: true, status: "ready" });
+      await coordinator.shutdown();
+    }
+  });
+
+  it("releases its ownership claim when startup fails", async () => {
+    const root = mkdtempSync(join(tmpdir(), "worklab-startup-ownership-failure-"));
+    roots.push(root);
+    const config = startupConfig(root);
+    const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn() };
+    await expect(startCoordinator({
+      config,
+      logger,
+      services: startupServices({
+        createWorklabPushNotificationService: vi.fn(() => {
+          throw new Error("forced startup failure");
+        }),
+      }),
+    })).rejects.toThrow("forced startup failure");
+    expect(existsSync(join(config.dataDir, ".coordinator.pid"))).toBe(false);
+    expect(existsSync(join(config.dataDir, ".coordinator.lock"))).toBe(true);
+
+    const coordinator = await startCoordinator({
+      config,
+      logger,
+      services: startupServices(),
+    });
+    await coordinator.shutdown();
+  });
+
+  it("does not remove another incarnation's claim during startup failure cleanup", async () => {
+    const root = mkdtempSync(join(tmpdir(), "worklab-startup-ownership-identity-"));
+    roots.push(root);
+    const config = startupConfig(root);
+    const pidFile = join(config.dataDir, ".coordinator.pid");
+    const replacement = "replacement-incarnation";
+    const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn() };
+
+    await expect(startCoordinator({
+      config,
+      logger,
+      services: startupServices({
+        createWorklabPushNotificationService: vi.fn(() => {
+          writeFileSync(pidFile, replacement);
+          throw new Error("failure after ownership replacement");
+        }),
+      }),
+    })).rejects.toThrow("failure after ownership replacement");
+
+    expect(readFileSync(pidFile, "utf8")).toBe(replacement);
+    expect(existsSync(join(config.dataDir, ".coordinator.lock"))).toBe(true);
   });
 });

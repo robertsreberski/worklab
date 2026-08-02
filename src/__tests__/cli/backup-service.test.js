@@ -51,6 +51,8 @@ describe("backup command", () => {
     writeFileSync(join(dataDir, "knowledge", "note.md"), "hello");
     writeFileSync(join(dataDir, "config", "layout.json"), "non-secret-config");
     writeFileSync(join(dataDir, "logs", "worklab.out.log"), "runtime");
+    writeFileSync(join(dataDir, ".coordinator.pid"), "12345");
+    writeFileSync(join(dataDir, ".coordinator.lock"), "runtime-lock");
     const secretFiles = new Map([
       [".env", "backup-env-file-secret"],
       [".provider-encryption-key", "backup-provider-key-secret"],
@@ -75,6 +77,8 @@ describe("backup command", () => {
     expect(listing).toContain("./config/layout.json");
     expect(contents).toContain("non-secret-config");
     expect(listing).not.toContain("logs/worklab.out.log");
+    expect(listing).not.toContain(".coordinator.pid");
+    expect(listing).not.toContain(".coordinator.lock");
     for (const [path, secret] of secretFiles) {
       expect(listing).not.toContain(path);
       expect(contents).not.toContain(secret);
