@@ -62,6 +62,8 @@ describe("external agent UI helpers", () => {
     expect(draft).not.toHaveProperty("allowTerminal");
     expect(draft).not.toHaveProperty("allowMcp");
     expect(draft).not.toHaveProperty("configPolicyText");
+    expect(draft).not.toHaveProperty("sessionPolicyText");
+    expect(draft).not.toHaveProperty("allowNetwork");
     expect(externalAgentVolatileState(profile)).toMatchObject({ health: "healthy", capabilities: { sessions: true } });
   });
 
@@ -97,10 +99,10 @@ describe("external agent UI helpers", () => {
       mcpOwner: "agent",
       allowFilesystem: true,
       allowTerminal: true,
-      allowNetwork: true,
       allowMcp: true,
       configPolicyText: '{"neutral":"private-policy-value"}',
-      sessionPolicyText: "{}",
+      sessionResumeStrategy: "load",
+      sessionModeId: "review",
     });
 
     expect(payload).toMatchObject({
@@ -110,9 +112,9 @@ describe("external agent UI helpers", () => {
       cwd: "/workspace",
       envKeys: ["AGENT_TOKEN", "PATH"],
       configurationOwner: "client",
-      permissionsPolicy: { filesystem: false, terminal: false, network: true, mcp: false },
+      permissionsPolicy: { filesystem: false, terminal: false, network: false, mcp: false },
       configPolicy: {},
-      sessionPolicy: {},
+      sessionPolicy: { resumeStrategy: "load", modeId: "review" },
     });
     expect(JSON.stringify(payload)).not.toContain("TOKEN=");
     expect(JSON.stringify(payload)).not.toContain("private-policy-value");
@@ -122,6 +124,7 @@ describe("external agent UI helpers", () => {
     expect(UNSUPPORTED_ACP_CLIENT_CAPABILITIES.map((capability) => capability.id)).toEqual([
       "filesystem",
       "terminal",
+      "network",
       "mcp",
     ]);
     for (const capability of UNSUPPORTED_ACP_CLIENT_CAPABILITIES) {
@@ -129,15 +132,30 @@ describe("external agent UI helpers", () => {
     }
   });
 
-  it("ignores arbitrary configuration policy input and still validates session policy JSON", () => {
+  it("ignores arbitrary configuration policy input and validates typed session policy fields", () => {
     expect(externalAgentPayload({
       displayName: "External",
       command: "/bin/agent",
       configPolicyText: '{"neutral":"private-policy-value"}',
-      sessionPolicyText: "{}",
+      sessionResumeStrategy: "resume",
+      sessionModeId: "focused",
     }).configPolicy).toEqual({});
-    expect(() => externalAgentPayload({ displayName: "External", command: "/bin/agent", sessionPolicyText: "[]" }))
-      .toThrow("Session policy must be a JSON object");
+    expect(externalAgentPayload({
+      displayName: "External",
+      command: "/bin/agent",
+      sessionResumeStrategy: "resume",
+      sessionModeId: "focused",
+    }).sessionPolicy).toEqual({ resumeStrategy: "resume", modeId: "focused" });
+    expect(() => externalAgentPayload({
+      displayName: "External",
+      command: "/bin/agent",
+      sessionResumeStrategy: "restart",
+    })).toThrow("Session resume strategy must be auto, load, or resume");
+    expect(() => externalAgentPayload({
+      displayName: "External",
+      command: "/bin/agent",
+      sessionModeId: "x".repeat(201),
+    })).toThrow("Session mode id must be at most 200 characters");
   });
 
   it("rejects environment values instead of treating them as key names", () => {
@@ -146,7 +164,8 @@ describe("external agent UI helpers", () => {
       command: "/bin/agent",
       envKeysText: "TOKEN=secret",
       configPolicyText: "{}",
-      sessionPolicyText: "{}",
+      sessionResumeStrategy: "auto",
+      sessionModeId: "",
     })).toThrow("Environment entries must contain key names only");
   });
 
@@ -164,10 +183,10 @@ describe("external agent UI helpers", () => {
       probeTimeoutMs: 12_345,
       allowFilesystem: true,
       allowTerminal: true,
-      allowNetwork: true,
       allowMcp: true,
       configPolicyText: '{"mode":"descriptor-owned"}',
-      sessionPolicyText: '{"resumeStrategy":"load"}',
+      sessionResumeStrategy: "load",
+      sessionModeId: "review",
     };
 
     const generic = externalAgentMutationPayload(draft, { driver: "generic" });

@@ -49,6 +49,12 @@ const OWNER_OPTIONS = [
   { value: "agent", label: "External agent", description: "Managed by the external agent and shown read-only here." },
 ];
 
+const SESSION_RESUME_OPTIONS = [
+  { value: "auto", label: "Automatic", description: "Resume when possible; otherwise load or create a session." },
+  { value: "load", label: "Load", description: "Load the existing session through ACP." },
+  { value: "resume", label: "Resume", description: "Resume the existing session through ACP." },
+];
+
 function emptyDraft() {
   return externalAgentDraft({ profile: { driver: "generic" } });
 }
@@ -325,8 +331,10 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
   const workspaceValid = workspaceManaged || !draft.canonicalWorkspace.trim() || draft.canonicalWorkspace.trim().startsWith("/");
   const envKeysValid = agentManaged || externalEnvKeysValid(draft.envKeysText);
   const probeTimeoutValid = Number(draft.probeTimeoutMs) >= 1000 && Number(draft.probeTimeoutMs) <= 300000;
+  const sessionModeIdValid = !draft.sessionModeId
+    || (draft.sessionModeId.trim().length <= 200 && !/[\u0000-\u001f\u007f]/u.test(draft.sessionModeId));
   const title = isNew ? "New external agent" : (draft.displayName || draft.agentName || name);
-  const canSave = !!draft.displayName.trim() && commandValid && cwdValid && workspaceValid && envKeysValid && probeTimeoutValid && !unsupported;
+  const canSave = !!draft.displayName.trim() && commandValid && cwdValid && workspaceValid && envKeysValid && probeTimeoutValid && sessionModeIdValid && !unsupported;
   const saveButtonLabel = isNew ? "Create" : "Save";
   const saveButtonVariant = isDirty || isNew ? "primary" : "secondary";
   const headerActions = (
@@ -498,7 +506,7 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
                   <Banner
                     variant="info"
                     title="Client services are unavailable"
-                    detail="Filesystem, terminal, and client-supplied MCP services stay disabled in this Worklab version. Mono capabilities remain agent-owned."
+                    detail="Filesystem, terminal, network, and client-supplied MCP services stay disabled in this Worklab version. Mono capabilities remain agent-owned."
                     dismissible={false}
                   />
                   <FormGrid columns={2}>
@@ -507,7 +515,6 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
                         <Switch checked={false} disabled label={capability.label} description={capability.description} />
                       </FormField>
                     ))}
-                    <FormField switchInside><Switch checked={draft.allowNetwork} onChange={(allowNetwork) => update({ allowNetwork })} label="Network requests" description="Allow external network-facing client operations." /></FormField>
                   </FormGrid>
                   <Banner
                     variant="info"
@@ -515,9 +522,14 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
                     detail="Worklab always submits an empty generic configuration policy. Reference credentials only by Environment key name; secret values are never accepted in this editor."
                     dismissible={false}
                   />
-                  <FormField label="Session policy (JSON)" hint="Advanced session lifecycle constraints.">
-                    <Textarea aria-label="Session policy" rows={6} monospace value={draft.sessionPolicyText} onInput={(event) => update({ sessionPolicyText: event.currentTarget.value })} />
-                  </FormField>
+                  <FormGrid columns={2}>
+                    <FormField label="Session resume strategy" hint="Choose how Worklab reuses an existing ACP session.">
+                      <Select ariaLabel="Session resume strategy" variant="native" value={draft.sessionResumeStrategy} options={SESSION_RESUME_OPTIONS} onChange={(sessionResumeStrategy) => update({ sessionResumeStrategy })} />
+                    </FormField>
+                    <FormField label="Session mode id" hint="Optional agent-advertised mode identifier; maximum 200 characters." error={sessionModeIdValid ? null : "Use at most 200 characters without control characters."}>
+                      <Input aria-label="Session mode id" value={draft.sessionModeId} maxLength={200} invalid={!sessionModeIdValid} onInput={(event) => update({ sessionModeId: event.currentTarget.value })} />
+                    </FormField>
+                  </FormGrid>
                   <FormField label="Probe timeout (ms)" hint="1,000–300,000 ms. Default 30,000." error={probeTimeoutValid ? null : "Enter a timeout from 1,000 to 300,000 ms."}>
                     <Input aria-label="Probe timeout" type="number" min={1000} max={300000} value={String(draft.probeTimeoutMs)} invalid={!probeTimeoutValid} onInput={(event) => update({ probeTimeoutMs: Number(event.currentTarget.value) || 0 })} />
                   </FormField>

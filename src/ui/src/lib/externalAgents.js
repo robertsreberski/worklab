@@ -12,6 +12,11 @@ export const UNSUPPORTED_ACP_CLIENT_CAPABILITIES = Object.freeze([
     description: "Unavailable — Worklab does not implement the complete ACP client terminal lifecycle.",
   }),
   Object.freeze({
+    id: "network",
+    label: "Network requests",
+    description: "Unavailable — Worklab does not implement an enforceable ACP client network service.",
+  }),
+  Object.freeze({
     id: "mcp",
     label: "Client MCP servers",
     description: "Unavailable — Worklab starts ACP sessions without client-supplied MCP servers.",
@@ -43,25 +48,6 @@ function owner(value, fallback = "client") {
 
 function plainObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-
-function jsonObjectText(value) {
-  return JSON.stringify(plainObject(value), null, 2);
-}
-
-function parseJsonObject(value, label) {
-  if (value && typeof value === "object" && !Array.isArray(value)) return value;
-  const source = text(value) || "{}";
-  let parsed;
-  try {
-    parsed = JSON.parse(source);
-  } catch {
-    throw new Error(`${label} must be valid JSON.`);
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`${label} must be a JSON object.`);
-  }
-  return parsed;
 }
 
 function finiteNumber(value, fallback) {
@@ -115,6 +101,9 @@ export function acpProfileForAgent(profiles = [], agentName = "") {
 
 export function externalAgentDraft({ agent = {}, profile = {} } = {}) {
   const normalized = normalizeAcpProfile({ ...profile, agent: { ...profile?.agent, ...agent } });
+  const resumeStrategy = ["auto", "load", "resume"].includes(normalized.sessionPolicy.resumeStrategy)
+    ? normalized.sessionPolicy.resumeStrategy
+    : "auto";
   return {
     agentName: normalized.agentName || text(agent?.name),
     displayName: normalized.displayName || text(firstDefined(agent?.display_name, agent?.displayName)),
@@ -130,8 +119,8 @@ export function externalAgentDraft({ agent = {}, profile = {} } = {}) {
     mcpOwner: normalized.mcpOwner,
     canonicalWorkspace: normalized.canonicalWorkspace,
     probeTimeoutMs: normalized.probeTimeoutMs,
-    allowNetwork: normalized.permissionsPolicy.network,
-    sessionPolicyText: jsonObjectText(normalized.sessionPolicy),
+    sessionResumeStrategy: resumeStrategy,
+    sessionModeId: text(normalized.sessionPolicy.modeId),
   };
 }
 
@@ -140,6 +129,15 @@ export function externalAgentPayload(draft = {}) {
   if (!externalEnvKeysValid(envKeys)) {
     throw new Error("Environment entries must contain key names only, one per line.");
   }
+  const resumeStrategy = text(draft.sessionResumeStrategy) || "auto";
+  if (!["auto", "load", "resume"].includes(resumeStrategy)) {
+    throw new Error("Session resume strategy must be auto, load, or resume.");
+  }
+  const modeId = text(draft.sessionModeId);
+  if (modeId.length > 200 || /[\u0000-\u001f\u007f]/u.test(modeId)) {
+    throw new Error("Session mode id must be at most 200 characters without control characters.");
+  }
+  const configurationOwner = owner(draft.configurationOwner);
   return {
     agentName: text(draft.agentName) || undefined,
     displayName: text(draft.displayName),
@@ -150,7 +148,7 @@ export function externalAgentPayload(draft = {}) {
     args: stringList(draft.argsText),
     cwd: text(draft.cwd) || null,
     envKeys,
-    configurationOwner: owner(draft.configurationOwner),
+    configurationOwner,
     workspaceOwner: owner(draft.workspaceOwner),
     mcpOwner: owner(draft.mcpOwner),
     canonicalWorkspace: text(draft.canonicalWorkspace) || null,
@@ -158,13 +156,16 @@ export function externalAgentPayload(draft = {}) {
     permissionsPolicy: {
       filesystem: false,
       terminal: false,
-      network: !!draft.allowNetwork,
+      network: false,
       mcp: false,
     },
     // Generic ACP profiles have no supported opaque configuration channel.
     // Credentials are referenced by env key name and values never enter UI state.
     configPolicy: {},
-    sessionPolicy: parseJsonObject(draft.sessionPolicyText, "Session policy"),
+    sessionPolicy: {
+      resumeStrategy,
+      ...(configurationOwner === "client" && modeId ? { modeId } : {}),
+    },
   };
 }
 
