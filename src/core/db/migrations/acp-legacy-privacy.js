@@ -183,7 +183,7 @@ function relatedRows(db, run) {
     ? db.prepare("SELECT id, summary, metadata_json, error_text FROM run_compactions WHERE task_run_id = ? ORDER BY rowid ASC").all(run.id)
     : [];
   const interactions = tableExists(db, "acp_interactions")
-    ? db.prepare("SELECT id, request_schema_json, disposition FROM acp_interactions WHERE task_run_id = ? ORDER BY rowid ASC").all(run.id)
+    ? db.prepare("SELECT id, protocol_request_id, request_schema_json, disposition FROM acp_interactions WHERE task_run_id = ? ORDER BY rowid ASC").all(run.id)
     : [];
   return { logs, comments, compactions, interactions };
 }
@@ -210,6 +210,7 @@ function preparedRunValue(run, jsonColumns, textColumns, related, rawLog) {
   const interactions = related.interactions.map((row) => {
     seeds.push(...explicitSessionSeeds(row.request_schema_json));
     return {
+      protocolRequestId: row.protocol_request_id,
       request_schema_json: parseJson(row.request_schema_json, {}).value,
       disposition: row.disposition,
     };
@@ -242,6 +243,7 @@ function failedClosedValue(run, jsonColumns, textColumns, related, rawLog, profi
       error_text: row.error_text == null ? null : "[redacted]",
     })),
     interactions: related.interactions.map((row) => ({
+      protocolRequestId: null,
       request_schema_json: {},
       disposition: row.disposition,
     })),
@@ -314,14 +316,148 @@ function applyRunPlan(db, run, plan, jsonColumns, textColumns, related) {
       changes += updateCompaction.run(summary, metadataJson, errorText, original.id).changes;
     }
   }
-  const updateInteraction = db.prepare("UPDATE acp_interactions SET request_schema_json = ?, disposition = ? WHERE id = ?");
+  const updateInteraction = db.prepare(`
+    UPDATE acp_interactions
+    SET protocol_request_id = ?, request_schema_json = ?, disposition = ?
+    WHERE id = ?
+  `);
   for (const [index, row] of (plan.interactions || []).entries()) {
     const original = related.interactions[index];
+    const protocolRequestId = row.protocolRequestId === original?.protocol_request_id
+      ? original.protocol_request_id
+      : `legacy-redacted:${original.id}`;
     const requestSchemaJson = serializedJson(row.request_schema_json, {});
     const disposition = row.disposition ?? null;
-    if (requestSchemaJson !== original?.request_schema_json || disposition !== original?.disposition) {
-      changes += updateInteraction.run(requestSchemaJson, disposition, original.id).changes;
+    if (protocolRequestId !== original?.protocol_request_id
+      || requestSchemaJson !== original?.request_schema_json
+      || disposition !== original?.disposition) {
+      changes += updateInteraction.run(protocolRequestId, requestSchemaJson, disposition, original.id).changes;
     }
+  }
+  return changes;
+}
+
+function scrubAcpProfileProbeData(db) {
+  if (!hasColumn(db, "acp_profiles", "last_probe_result_json")) return 0;
+  const rows = db.prepare(`
+    SELECT id, last_probe_result_json, last_probe_error_json
+    FROM acp_profiles ORDER BY rowid ASC
+  `).all();
+  const update = db.prepare(`
+    UPDATE acp_profiles
+    SET last_probe_result_json = ?, last_probe_error_json = ?
+    WHERE id = ?
+  `);
+  let changes = 0;
+  for (const row of rows) {
+    const boundary = createAcpEventPrivacyBoundary({ profileId: row.id, failureValue: null });
+    const prepared = {
+      result: parseJson(row.last_probe_result_json, {}).value,
+      error: parseJson(row.last_probe_error_json, {}).value,
+      legacySessionSeeds: [
+        ...explicitSessionSeeds(row.last_probe_result_json),
+        ...explicitSessionSeeds(row.last_probe_error_json),
+      ],
+    };
+    const sanitized = boundary.sanitizeEvent(prepared) || { result: {}, error: {} };
+    const resultJson = serializedJson(sanitized.result, {});
+    const errorJson = serializedJson(sanitized.error, {});
+    if (resultJson !== row.last_probe_result_json || errorJson !== row.last_probe_error_json) {
+      changes += update.run(resultJson, errorJson, row.id).changes;
+    }
+  }
+  return changes;
+}
+
+function scrubStandaloneAcpOperations(db) {
+  if (!tableExists(db, "acp_operations")) return 0;
+  const rows = db.prepare(`
+    SELECT o.id, o.profile_id, o.remote_session_id,
+           o.request_json, o.result_json, o.error_json
+    FROM acp_operations o
+    ORDER BY o.rowid ASC
+  `).all();
+  const updateOperation = db.prepare(`
+    UPDATE acp_operations
+    SET remote_session_id = ?, request_json = ?, result_json = ?, error_json = ?
+    WHERE id = ?
+  `);
+  const updateInteraction = db.prepare(`
+    UPDATE acp_interactions
+    SET protocol_request_id = ?, request_schema_json = ?, disposition = ?
+    WHERE id = ?
+  `);
+  let changes = 0;
+  for (const row of rows) {
+    const interactions = db.prepare(`
+      SELECT id, protocol_request_id, request_schema_json, disposition
+      FROM acp_interactions
+      WHERE operation_id = ? AND task_run_id IS NULL
+      ORDER BY rowid ASC
+    `).all(row.id);
+    const seeds = [
+      ...explicitSessionSeeds(row.request_json),
+      ...explicitSessionSeeds(row.result_json),
+      ...explicitSessionSeeds(row.error_json),
+    ];
+    const prepared = {
+      providerSessionId: row.remote_session_id,
+      request: parseJson(row.request_json, {}).value,
+      result: parseJson(row.result_json, {}).value,
+      error: parseJson(row.error_json, {}).value,
+      interactions: interactions.map((interaction) => {
+        seeds.push(...explicitSessionSeeds(interaction.request_schema_json));
+        return {
+          protocolRequestId: interaction.protocol_request_id,
+          requestSchema: parseJson(interaction.request_schema_json, {}).value,
+          disposition: interaction.disposition,
+        };
+      }),
+      legacySessionSeeds: seeds,
+    };
+    const boundary = createAcpEventPrivacyBoundary({ profileId: row.profile_id, failureValue: null });
+    const sanitized = boundary.sanitizeEvent(prepared) || {
+      providerSessionId: validateAcpProviderSessionId(row.remote_session_id, row.profile_id),
+      request: {},
+      result: {},
+      error: {},
+      interactions: interactions.map(() => ({
+        protocolRequestId: null,
+        requestSchema: {},
+        disposition: null,
+      })),
+    };
+    const remoteSessionId = sanitized.providerSessionId || null;
+    const requestJson = serializedJson(sanitized.request, {});
+    const resultJson = serializedJson(sanitized.result, {});
+    const errorJson = serializedJson(sanitized.error, {});
+    const transaction = db.transaction(() => {
+      if (remoteSessionId !== (row.remote_session_id || null)
+        || requestJson !== row.request_json
+        || resultJson !== row.result_json
+        || errorJson !== row.error_json) {
+        changes += updateOperation.run(remoteSessionId, requestJson, resultJson, errorJson, row.id).changes;
+      }
+      for (const [index, interaction] of (sanitized.interactions || []).entries()) {
+        const original = interactions[index];
+        const protocolRequestId = interaction.protocolRequestId === original?.protocol_request_id
+          ? original.protocol_request_id
+          : `legacy-redacted:${original.id}`;
+        const requestSchemaJson = serializedJson(interaction.requestSchema, {});
+        const disposition = interaction.disposition ?? null;
+        if (protocolRequestId !== original.protocol_request_id
+          || requestSchemaJson !== original.request_schema_json
+          || disposition !== original.disposition) {
+          changes += updateInteraction.run(
+            protocolRequestId,
+            requestSchemaJson,
+            disposition,
+            original.id,
+          ).changes;
+        }
+      }
+    });
+    transaction();
   }
   return changes;
 }
@@ -332,7 +468,7 @@ function applyRunPlan(db, run, plan, jsonColumns, textColumns, related) {
  * recursive key removal and copied-value redaction. Raw log replacement is
  * atomic and restricted to the database's configured data directory.
  */
-export function scrubLegacyAcpTaskRunData(db) {
+export function scrubLegacyAcpSessionData(db) {
   if (!tableExists(db, "task_runs") || !tableExists(db, "acp_profiles")) {
     return { databaseChanged: false, filesChanged: 0 };
   }
@@ -360,6 +496,8 @@ export function scrubLegacyAcpTaskRunData(db) {
       });
       transaction();
     }
+    databaseChanges += scrubAcpProfileProbeData(db);
+    databaseChanges += scrubStandaloneAcpOperations(db);
   } finally {
     db.pragma(`secure_delete = ${Number(previousSecureDelete) || 0}`);
   }

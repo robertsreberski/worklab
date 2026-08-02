@@ -51,8 +51,12 @@ describe("legacy ACP session privacy migration", () => {
     const handleOnlySession = "RAW_FROM_VALID_HANDLE";
     const malformedLineSession = "RAW_FROM_MALFORMED_LINE";
     const malformedProviderId = "RAW_MALFORMED_PROVIDER_ID";
+    const operationSession = "RAW_OPERATION_SESSION";
+    const invalidOperationSession = "RAW_INVALID_OPERATION_SESSION";
+    const probeSession = "RAW_PROFILE_PROBE_SESSION";
     const nonAcpSession = "NON_ACP_SESSION_MUST_SURVIVE";
     const providerSessionId = opaqueSessionId(handleOnlySession);
+    const operationProviderSessionId = opaqueSessionId(operationSession);
     writeFileSync(rawPath, [
       JSON.stringify({
         type: "sdk_event",
@@ -67,6 +71,15 @@ describe("legacy ACP session privacy migration", () => {
     const db = openDb(dbPath);
     runMigrations(db);
     insertAcpFixture(db);
+    db.prepare(`
+      UPDATE acp_profiles
+      SET last_probe_result_json = ?, last_probe_error_json = ?
+      WHERE id = ?
+    `).run(
+      JSON.stringify({ sessionId: probeSession, copied: probeSession }),
+      JSON.stringify({ message: probeSession }),
+      PROFILE_ID,
+    );
     db.prepare(`
       INSERT INTO task_runs (
         id, task_id, mode, stage, agent_name, provider_kind, status, process_status,
@@ -127,8 +140,52 @@ describe("legacy ACP session privacy migration", () => {
       INSERT INTO acp_interactions (
         id, profile_id, task_run_id, protocol_request_id, kind,
         request_schema_json, state, disposition, created_at, updated_at
-      ) VALUES ('interaction-acp', ?, 'run-raw', 'request-1', 'form', ?, 'submitted', ?, 1, 1)
-    `).run(PROFILE_ID, JSON.stringify({ session_id: rawSession, description: rawSession }), `accepted ${rawSession}`);
+      ) VALUES ('interaction-acp', ?, 'run-raw', ?, 'form', ?, 'submitted', ?, 1, 1)
+    `).run(
+      PROFILE_ID,
+      `request-${rawSession}`,
+      JSON.stringify({ session_id: rawSession, description: rawSession }),
+      `accepted ${rawSession}`,
+    );
+    db.prepare(`
+      INSERT INTO acp_operations (
+        id, profile_id, kind, state, remote_session_id, request_json,
+        result_json, error_json, created_at, updated_at, completed_at
+      ) VALUES ('operation-acp', ?, 'delete_session', 'succeeded', ?, ?, ?, ?, 1, 1, 1)
+    `).run(
+      PROFILE_ID,
+      operationProviderSessionId,
+      JSON.stringify({ providerSessionId: operationProviderSessionId, note: operationSession }),
+      JSON.stringify({ copied: operationSession }),
+      JSON.stringify({ message: operationSession }),
+    );
+    db.prepare(`
+      INSERT INTO acp_interactions (
+        id, profile_id, operation_id, protocol_request_id, kind,
+        request_schema_json, state, disposition, created_at, updated_at
+      ) VALUES ('interaction-operation', ?, 'operation-acp', ?, 'form', ?, 'submitted', ?, 1, 1)
+    `).run(
+      PROFILE_ID,
+      `operation-request-${operationSession}`,
+      JSON.stringify({ description: operationSession }),
+      `accepted ${operationSession}`,
+    );
+    db.prepare(`
+      INSERT INTO acp_operations (
+        id, profile_id, kind, state, remote_session_id, request_json,
+        result_json, error_json, created_at, updated_at, completed_at
+      ) VALUES ('operation-invalid', ?, 'delete_session', 'failed', ?, ?, '{}', '{}', 2, 2, 2)
+    `).run(
+      PROFILE_ID,
+      invalidOperationSession,
+      JSON.stringify({ provider_session_id: invalidOperationSession, copied: invalidOperationSession }),
+    );
+    db.prepare(`
+      INSERT INTO acp_interactions (
+        id, profile_id, operation_id, protocol_request_id, kind,
+        request_schema_json, state, created_at, updated_at
+      ) VALUES ('interaction-ordinary', ?, 'operation-invalid', 'ordinary-request-id', 'form', '{}', 'submitted', 2, 2)
+    `).run(PROFILE_ID);
 
     runMigrations(db);
 
@@ -155,8 +212,36 @@ describe("legacy ACP session privacy migration", () => {
       .toBe("copied [redacted] [redacted] [redacted]");
     expect(db.prepare("SELECT summary, metadata_json, error_text FROM run_compactions WHERE id = 'compact-acp'").get())
       .toEqual({ summary: "[redacted]", metadata_json: '{"copied":"[redacted]"}', error_text: "[redacted]" });
-    expect(db.prepare("SELECT request_schema_json, disposition FROM acp_interactions WHERE id = 'interaction-acp'").get())
-      .toEqual({ request_schema_json: '{"description":"[redacted]"}', disposition: "accepted [redacted]" });
+    expect(db.prepare("SELECT protocol_request_id, request_schema_json, disposition FROM acp_interactions WHERE id = 'interaction-acp'").get())
+      .toEqual({
+        protocol_request_id: "legacy-redacted:interaction-acp",
+        request_schema_json: '{"description":"[redacted]"}',
+        disposition: "accepted [redacted]",
+      });
+    expect(db.prepare("SELECT last_probe_result_json, last_probe_error_json FROM acp_profiles WHERE id = ?").get(PROFILE_ID))
+      .toEqual({
+        last_probe_result_json: '{"copied":"[redacted]"}',
+        last_probe_error_json: '{"message":"[redacted]"}',
+      });
+    expect(db.prepare(`
+      SELECT remote_session_id, request_json, result_json, error_json
+      FROM acp_operations WHERE id = 'operation-acp'
+    `).get()).toEqual({
+      remote_session_id: operationProviderSessionId,
+      request_json: `{"providerSessionId":"${operationProviderSessionId}","note":"[redacted]"}`,
+      result_json: '{"copied":"[redacted]"}',
+      error_json: '{"message":"[redacted]"}',
+    });
+    expect(db.prepare("SELECT protocol_request_id, request_schema_json, disposition FROM acp_interactions WHERE id = 'interaction-operation'").get())
+      .toEqual({
+        protocol_request_id: "legacy-redacted:interaction-operation",
+        request_schema_json: '{"description":"[redacted]"}',
+        disposition: "accepted [redacted]",
+      });
+    expect(db.prepare("SELECT remote_session_id, request_json FROM acp_operations WHERE id = 'operation-invalid'").get())
+      .toEqual({ remote_session_id: null, request_json: '{"copied":"[redacted]"}' });
+    expect(db.prepare("SELECT protocol_request_id FROM acp_interactions WHERE id = 'interaction-ordinary'").get())
+      .toEqual({ protocol_request_id: "ordinary-request-id" });
 
     const sanitizedRaw = readFileSync(rawPath, "utf8");
     expect(sanitizedRaw).toContain(providerSessionId);
@@ -164,7 +249,15 @@ describe("legacy ACP session privacy migration", () => {
       type: "privacy_redaction",
       reason: "legacy_acp_session_data",
     });
-    for (const sentinel of [rawSession, handleOnlySession, malformedLineSession, malformedProviderId]) {
+    for (const sentinel of [
+      rawSession,
+      handleOnlySession,
+      malformedLineSession,
+      malformedProviderId,
+      operationSession,
+      invalidOperationSession,
+      probeSession,
+    ]) {
       expect(sanitizedRaw).not.toContain(sentinel);
       expect(databaseContains(dbPath, sentinel)).toBe(false);
       expect(databaseContains(`${dbPath}-wal`, sentinel)).toBe(false);
