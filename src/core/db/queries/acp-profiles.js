@@ -27,6 +27,21 @@ export function getAcpProfileByMonoSourceId(db, sourceId) {
   return db.prepare(`${PROFILE_SELECT} WHERE p.mono_source_id = ?`).get(sourceId);
 }
 
+export function listMonoAcpSourceBindings(db) {
+  return db.prepare(`
+    SELECT
+      p.mono_source_id,
+      p.id AS profile_id,
+      p.agent_name,
+      a.display_name AS agent_display_name,
+      a.enabled AS agent_enabled
+    FROM acp_profiles p
+    JOIN agents a ON a.name = p.agent_name
+    WHERE p.driver = 'mono' AND p.mono_source_id IS NOT NULL
+    ORDER BY p.mono_source_id
+  `).all();
+}
+
 export function insertAcpProfile(db, profile) {
   db.prepare(`
     INSERT INTO acp_profiles (

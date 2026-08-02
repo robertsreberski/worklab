@@ -219,7 +219,11 @@ describe("ACP API", () => {
     const discoveryResponse = await agent.get("/api/acp/discovery/mono").expect(200);
     expect(discoveryResponse.body.discovery).toMatchObject({
       schema: "mono-agent.acp-discovery.v1",
-      sources: [{ sourceId: "mono-primary", constraints: { promptContent: ["text", "resource_link"] } }],
+      sources: [{
+        sourceId: "mono-primary",
+        imported: false,
+        constraints: { promptContent: ["text", "resource_link"] },
+      }],
     });
     expect(JSON.stringify(discoveryResponse.body)).not.toMatch(/discovery-secret|do-not-expose/u);
     expect(discoverMono).toHaveBeenCalledWith(expect.objectContaining({
@@ -252,6 +256,26 @@ describe("ACP API", () => {
     }));
     expect(JSON.stringify(db.prepare("SELECT * FROM acp_profiles").all()))
       .not.toContain("resolved-secret");
+
+    const linkedDiscovery = await agent.get("/api/acp/discovery/mono").expect(200);
+    expect(linkedDiscovery.body.discovery.sources[0]).toMatchObject({
+      sourceId: "mono-primary",
+      imported: true,
+      binding: {
+        profileId: created.body.profile.id,
+        agentName: "mono-primary",
+        displayName: "Mono Primary",
+        enabled: true,
+      },
+    });
+    expect(linkedDiscovery.body.discovery.sources[0].binding).toEqual({
+      profileId: created.body.profile.id,
+      agentName: "mono-primary",
+      displayName: "Mono Primary",
+      enabled: true,
+    });
+    expect(linkedDiscovery.body.discovery.sources[0].binding).not.toHaveProperty("command");
+    expect(linkedDiscovery.body.discovery.sources[0].binding).not.toHaveProperty("envKeys");
   });
 
   it("accepts only sourceId in mono profile import requests", async () => {

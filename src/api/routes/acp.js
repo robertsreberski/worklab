@@ -20,6 +20,7 @@ import {
   getAcpOperationById,
   listAcpOperationsForProfile,
 } from "../../core/db/queries/acp-operations.js";
+import { listMonoAcpSourceBindings } from "../../core/db/queries/acp-profiles.js";
 
 const INTERACTION_STATES = new Set(["pending", "submitted", "cancelled", "expired"]);
 const DEFAULT_DISCOVERY_TIMEOUT_MS = 30_000;
@@ -50,6 +51,27 @@ function requiredControl(controls, name, message) {
     throw routeError(message, { code: "not_configured", status: 501 });
   }
   return control;
+}
+
+function discoveryWithBindings(db, discovery) {
+  const bindings = new Map(listMonoAcpSourceBindings(db).map((row) => [row.mono_source_id, row]));
+  return {
+    ...discovery,
+    sources: discovery.sources.map((source) => {
+      const row = bindings.get(source.sourceId);
+      if (!row) return { ...source, imported: false };
+      return {
+        ...source,
+        imported: true,
+        binding: {
+          profileId: row.profile_id,
+          agentName: row.agent_name,
+          displayName: row.agent_display_name,
+          enabled: !!row.agent_enabled,
+        },
+      };
+    }),
+  };
 }
 
 function normalizedLimit(value, fallback = 200) {
@@ -194,7 +216,7 @@ export function registerAcpRoutes(app, {
         failureCode: "discovery_failed",
         failureMessage: "mono-agent ACP discovery failed",
       });
-      res.json({ discovery: normalizeMonoDiscovery(discovery) });
+      res.json({ discovery: discoveryWithBindings(db, normalizeMonoDiscovery(discovery)) });
     } catch (error) {
       sendError(res, error);
     }
