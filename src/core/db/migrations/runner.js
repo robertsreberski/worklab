@@ -1,5 +1,9 @@
 import { ACP_SCHEMA_SQL, SCHEMA_SQL, SCHEMA_VERSION } from "../schema/current.js";
 import { ensureCurrentSchemaColumnsBeforeSchema } from "./preflight.js";
+import {
+  compactLegacyAcpTaskRunData,
+  scrubLegacyAcpTaskRunData,
+} from "./acp-legacy-privacy.js";
 import { STAGES } from "../../state-machine.js";
 import { backfillTaskKeys } from "../../task-keys.js";
 import {
@@ -1153,6 +1157,8 @@ export function runMigrations(db) {
   // Keep the ACP slice explicit in the idempotent upgrade path as well as in
   // SCHEMA_SQL. The tables depend only on current agents/task_runs tables.
   db.exec(ACP_SCHEMA_SQL);
+  const acpPrivacy = scrubLegacyAcpTaskRunData(db);
+  compactLegacyAcpTaskRunData(db, acpPrivacy);
   db.prepare(
     "INSERT INTO schema_meta (key, value) VALUES ('version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
   ).run(String(SCHEMA_VERSION));
