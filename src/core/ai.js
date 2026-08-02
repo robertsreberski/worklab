@@ -572,6 +572,30 @@ function piInlineAllowedTools(allowedTools, disallowedTools) {
     (allowAll || allowed.includes(tool)) && !denied.has(tool));
 }
 
+function defaultExecutionModeForSdk(sdk) {
+  if (sdk === "codex" || sdk === "opencode") return "cli";
+  if (sdk === "acp") return "acp";
+  return "sdk";
+}
+
+function routerChainEntry(entry, executionMode) {
+  const model = entry?.model && typeof entry.model === "object"
+    ? entry.model
+    : {
+      sdk: entry?.sdk,
+      model: entry?.model,
+      ...(entry?.provider ? { provider: entry.provider } : {}),
+    };
+  const explicitMode = entry?.executionMode || entry?.execution_mode || executionMode;
+  return {
+    model,
+    executionMode: explicitMode || defaultExecutionModeForSdk(model.sdk),
+    ...(Object.hasOwn(entry || {}, "effort") ? { effort: entry.effort } : {}),
+    ...(Object.hasOwn(entry || {}, "attempts") ? { attempts: entry.attempts } : {}),
+    ...(entry?.requires ? { requires: entry.requires } : {}),
+  };
+}
+
 // Caller-side dependency injection: providers (src/ai/providers/*) must not
 // reach back into core/. generateResponse pre-computes everything those
 // adapters need — normalized effort, settings, skill access dirs, and (for
@@ -658,29 +682,36 @@ export async function generateResponse(systemPrompt, options) {
   // `options`.
   const { toolLimits, compaction } = runtimePoliciesFromSettings(settings);
 
+  const fallbackChain = Array.isArray(options.fallbackChain) && options.fallbackChain.length > 0
+    ? options.fallbackChain.filter((entry) => entry && (entry.model || entry.sdk))
+    : null;
+
   // Direct Codex/OpenCode reject anything but the exact allow-all contract, so
   // an "allow every builtin" policy has to be spelled `["*"]` for them. This is
   // the single choke point where the resolved runtime is known, which is why it
   // lives here rather than in run-input.js.
-  const toolPolicy = projectToolPolicy(resolved, {
+  const logicalToolPolicy = {
     allowedTools: options.allowedTools,
     disallowedTools: options.disallowedTools,
     // Set by applyPlanningToolPolicy. The read-only planning policy is the one
     // restriction a non-projecting runtime can honour, via its native plan mode.
     planning: options.toolPolicy?.planning === true,
     permissionMode: options.permissionMode,
-  });
-  if (toolPolicy.droppedNetworkTools.length) {
+  };
+  const toolPolicy = projectToolPolicy(resolved, logicalToolPolicy);
+  function warnToolPolicyDowngrade(route, projected) {
+    if (!projected.droppedNetworkTools.length) return;
     // Provider-native read-only mode pins networkAccess:false, so tools the
     // planning policy granted stop working. Surface it rather than letting the
     // agent discover it as a mid-run tool failure.
     onEvent({
       type: "runtime_warning",
       warning_kind: "tool_policy_downgraded",
-      message: `${resolved.sdk} enforces read-only planning natively, which disables network access: `
-        + `${toolPolicy.droppedNetworkTools.join(", ")} are unavailable for this run.`,
+      message: `${route.sdk} enforces read-only planning natively, which disables network access: `
+        + `${projected.droppedNetworkTools.join(", ")} are unavailable for this run.`,
     });
   }
+  if (!fallbackChain) warnToolPolicyDowngrade(resolved, toolPolicy);
 
   // Provider-native discovery options share one run-level bag. Router attempts
   // replace only `model`, so selecting these from the primary SDK would make a
@@ -758,18 +789,30 @@ export async function generateResponse(systemPrompt, options) {
   // model in the chain (replaying transcript-tail so the second attempt
   // continues rather than restarts). Single-model runs keep using
   // createRuntime to avoid the chain overhead.
-  const fallbackChain = Array.isArray(options.fallbackChain) && options.fallbackChain.length > 0
-    ? options.fallbackChain.filter((entry) => entry && (entry.model || entry.sdk))
-    : null;
   const runtime = fallbackChain && fallbackChain.length > 0
     ? createRouterRuntime({
       host: hostOptions,
       chain: [
         // Primary model is always tried first; downstream entries are the
         // host's declared fallbacks.
-        { sdk: resolved.sdk, model: resolved.model, ...(resolved.provider ? { provider: resolved.provider } : {}) },
-        ...fallbackChain,
+        routerChainEntry(resolved, nextOptions.executionMode),
+        ...fallbackChain.map((entry) => routerChainEntry(entry)),
       ],
+      // Tool-policy representations are provider-specific. Keep the logical
+      // Worklab grant on the host side and project it for the route actually
+      // attempted so Codex's wildcard never widens a Claude fallback, while a
+      // named Claude policy never kills an otherwise valid Codex fallback.
+      resolveAttempt: ({ model, retryIndex }) => {
+        const projected = projectToolPolicy(model, logicalToolPolicy);
+        if (retryIndex === 0) warnToolPolicyDowngrade(model, projected);
+        return {
+          policyOptions: {
+            allowedTools: projected.allowedTools,
+            disallowedTools: projected.disallowedTools,
+            permissionMode: projected.permissionMode,
+          },
+        };
+      },
     })
     : createRuntime(hostOptions);
   const result = await runtime.run(systemPrompt, nextOptions);

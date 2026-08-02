@@ -146,8 +146,14 @@ describe("generateResponse Codex runtime options", () => {
     const routerOptions = mockCreateRouterRuntime.mock.calls[0][0];
     expect(routerOptions).not.toHaveProperty("retry");
     expect(routerOptions.chain).toEqual([
-      { sdk: "pi", provider: "openai", model: "gpt-5.5" },
-      { sdk: "claude", model: "claude-sonnet-4-6" },
+      {
+        model: { sdk: "pi", provider: "openai", model: "gpt-5.5" },
+        executionMode: "sdk",
+      },
+      {
+        model: { sdk: "claude", model: "claude-sonnet-4-6" },
+        executionMode: "sdk",
+      },
     ]);
     expect(routerOptions.chain.every((entry) => !Object.hasOwn(entry, "attempts"))).toBe(true);
 
@@ -247,10 +253,22 @@ describe("generateResponse Codex runtime options", () => {
 
   it("keeps native options on the run bag when a forced fallback changes SDK", async () => {
     const attempts = [];
-    mockCreateRouterRuntime.mockImplementationOnce(({ chain }) => ({
+    mockCreateRouterRuntime.mockImplementationOnce(({ chain, resolveAttempt }) => ({
       run: async (systemPrompt, runOptions) => {
         for (const [index, entry] of chain.entries()) {
-          const attemptOptions = { ...runOptions, model: entry };
+          const resolution = await resolveAttempt({
+            model: entry.model,
+            executionMode: entry.executionMode,
+            attemptIndex: index,
+            retryIndex: 0,
+            routeSafety: "uniform",
+          });
+          const attemptOptions = {
+            ...runOptions,
+            model: entry.model,
+            executionMode: entry.executionMode,
+            ...resolution.policyOptions,
+          };
           attempts.push({ systemPrompt, options: attemptOptions });
           if (index < chain.length - 1) continue; // force each route to fall through
           return { text: "fallback ok" };
@@ -273,12 +291,71 @@ describe("generateResponse Codex runtime options", () => {
     expect(result.text).toBe("fallback ok");
     expect(attempts).toHaveLength(3);
     expect(attempts[0].options.model.sdk).toBe("claude");
+    expect(attempts[0].options.executionMode).toBe("sdk");
     expect(attempts[1].options.model.sdk).toBe("pi");
+    expect(attempts[1].options.executionMode).toBe("sdk");
     expect(attempts[2].options.model.sdk).toBe("codex");
+    expect(attempts[2].options.executionMode).toBe("cli");
     for (const attempt of attempts) {
       expect(attempt.options.settingSources).toEqual(["user", "project", "local"]);
       expect(attempt.options.codexLoadProjectDocs).toBe(true);
       expect(attempt.options.subagents.inline.allowedTools).toEqual(["Read", "Grep"]);
     }
+    // A genuine subset remains a subset on direct Codex so that bridge can
+    // fail closed; it is never widened merely to keep fallback moving.
+    expect(attempts[2].options.allowedTools).toEqual(["Read", "Grep", "Agent", "Task", "Skill"]);
+  });
+
+  it("projects an all-builtins policy per route without widening Claude", async () => {
+    const attempts = [];
+    mockCreateRouterRuntime.mockImplementationOnce(({ chain, resolveAttempt }) => ({
+      run: async (systemPrompt, runOptions) => {
+        for (const [index, entry] of chain.entries()) {
+          const resolution = await resolveAttempt({
+            model: entry.model,
+            executionMode: entry.executionMode,
+            attemptIndex: index,
+            retryIndex: 0,
+            routeSafety: "uniform",
+          });
+          attempts.push({
+            ...runOptions,
+            model: entry.model,
+            executionMode: entry.executionMode,
+            ...resolution.policyOptions,
+          });
+        }
+        return { text: "ok" };
+      },
+    }));
+
+    await generateResponse("sys", {
+      model: resolveModel("codex:gpt-5.5"),
+      executionMode: "cli",
+      fallbackChain: [{ sdk: "claude", model: "claude-sonnet-4-6" }],
+      messages: [{ role: "user", content: "hi" }],
+      allowedTools: [
+        "Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch",
+        "Agent", "Task", "Skill", "SlashCommand", "NotebookEdit", "BashOutput", "KillShell",
+      ],
+      disallowedTools: [],
+    });
+
+    expect(attempts).toHaveLength(2);
+    expect(attempts[0]).toMatchObject({
+      model: { sdk: "codex" },
+      executionMode: "cli",
+      allowedTools: ["*"],
+      disallowedTools: [],
+    });
+    expect(attempts[1]).toMatchObject({
+      model: { sdk: "claude" },
+      executionMode: "sdk",
+      allowedTools: [
+        "Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch",
+        "Agent", "Task", "Skill", "SlashCommand", "NotebookEdit", "BashOutput", "KillShell",
+      ],
+      disallowedTools: [],
+    });
   });
 });
