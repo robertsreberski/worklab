@@ -388,7 +388,7 @@ describe("ACP API", () => {
           sessions: [{
             sessionId: rawSessionId,
             providerSessionId: `acp:v1:${activeProfile.id}:${Buffer.from(rawSessionId).toString("base64url")}`,
-            title: `Listed session ${page + 1}`,
+            title: page === 0 ? "Listed session 1" : rawSessionId,
           }],
           ...(cursor ? {} : { nextCursor: pageCursor }),
         };
@@ -447,7 +447,7 @@ describe("ACP API", () => {
     const secondResult = acpOperationManager.get(secondPage.body.operation.id).result;
     const publicId = `acp:v1:${profile.id}:${Buffer.from(rawSessionIds[1]).toString("base64url")}`;
     expect(secondResult).toEqual({
-      sessions: [{ id: publicId, title: "Listed session 2" }],
+      sessions: [{ id: publicId }],
       truncated: false,
     });
     expect(listedContexts).toEqual([
@@ -487,6 +487,7 @@ describe("ACP API", () => {
 
   it("responds to operation interactions without persisting or echoing form answers", async () => {
     const cwd = workspace();
+    const rawSessionId = "RAW_REMOTE_OPERATION_SESSION_DO_NOT_PERSIST";
     let delivered;
     let selectedMethod;
     const controls = {
@@ -496,6 +497,7 @@ describe("ACP API", () => {
           requestId: "login-form",
           kind: "form",
           schema: {
+            sessionId: rawSessionId,
             title: "Login",
             properties: { password: { type: "string", default: "schema-secret" } },
           },
@@ -531,7 +533,7 @@ describe("ACP API", () => {
       profiles: db.prepare("SELECT * FROM acp_profiles").all(),
       operations: db.prepare("SELECT * FROM acp_operations").all(),
       interactions: db.prepare("SELECT * FROM acp_interactions").all(),
-    })).not.toMatch(/actual-form-secret|schema-secret/u);
+    })).not.toMatch(/actual-form-secret|schema-secret|RAW_REMOTE_OPERATION_SESSION/u);
   });
 
   it("returns 400 and keeps management permissions pending for unoffered options", async () => {

@@ -113,8 +113,23 @@ function sanitizeSession(value) {
   } catch {
     return null;
   }
-  if (session.title != null) session.title = clippedText(String(session.title), 500);
-  if (session.status != null) session.status = clippedText(String(session.status), 100);
+  const rawSessionId = typeof value?.sessionId === "string"
+    ? value.sessionId
+    : typeof value?.session_id === "string"
+      ? value.session_id
+      : null;
+  for (const [key, limit] of [["title", 500], ["status", 100]]) {
+    if (session[key] == null) continue;
+    const text = String(session[key]);
+    if (rawSessionId && text === rawSessionId) {
+      delete session[key];
+      continue;
+    }
+    session[key] = clippedText(
+      rawSessionId ? text.split(rawSessionId).join("[redacted]") : text,
+      limit,
+    );
+  }
   return boundedObject(session);
 }
 
@@ -274,7 +289,9 @@ export function sanitizeAcpOperationError(kind, error, { cancelled = false } = {
 }
 
 export function sanitizeAcpInteractionSchema(value) {
-  return boundedObject(value, { schema: true });
+  if (!isPlainObject(value)) return boundedObject({}, { schema: true });
+  const { sessionId: _sessionId, session_id: _sessionIdSnake, ...schema } = value;
+  return boundedObject(schema, { schema: true });
 }
 
 export function rowToAcpOperation(row) {

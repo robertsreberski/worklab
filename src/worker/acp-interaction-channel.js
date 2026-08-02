@@ -32,7 +32,6 @@ function sanitizePermission(payload = {}) {
     })).filter((option) => option.optionId)
     : [];
   return {
-    sessionId: boundedText(payload.sessionId, 1024),
     ...(toolCall ? { toolCall } : {}),
     options,
   };
@@ -43,7 +42,6 @@ function sanitizeElicitation(payload = {}) {
     ? payload.requestedSchema
     : null;
   return {
-    sessionId: boundedText(payload.sessionId, 1024),
     toolCallId: boundedText(payload.toolCallId, 1024),
     requestId: boundedText(payload.requestId, 1024),
     mode: payload.mode === "url" ? "url" : "form",

@@ -34,6 +34,12 @@ function protocolRequestId(request, context) {
   return String(value);
 }
 
+function publicInteractionPayload(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const { sessionId: _sessionId, session_id: _sessionIdSnake, ...payload } = value;
+  return payload;
+}
+
 function permissionResponse(response) {
   if (response?.outcome?.outcome === "selected" && typeof response.outcome.optionId === "string") {
     return { outcome: { outcome: "selected", optionId: response.outcome.optionId } };
@@ -64,7 +70,7 @@ function interactionAdapter(onInteraction) {
     const response = await onInteraction({
       kind,
       protocolRequestId: protocolRequestId(request, context),
-      requestSchema: request?.payload || {},
+      requestSchema: publicInteractionPayload(request?.payload),
     });
     return kind === "permission"
       ? permissionResponse(response)

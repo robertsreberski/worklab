@@ -29,7 +29,25 @@ function boundedIdentifier(value, max = 1024) {
   return String(value).replace(/[\u0000-\u001f\u007f]/gu, "").slice(0, max);
 }
 
+function stripAcpSessionIdentifiers(value, depth = 0) {
+  if (depth > 20 || value == null || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    return value.map((entry) => stripAcpSessionIdentifiers(entry, depth + 1));
+  }
+  return Object.fromEntries(Object.entries(value).flatMap(([key, entry]) => (
+    key === "sessionId" || key === "session_id"
+      ? []
+      : [[key, stripAcpSessionIdentifiers(entry, depth + 1)]]
+  )));
+}
+
 export function sanitizeTaskRunAcpInteractionEvent(event) {
+  if (event?.type === "acp_session_update") {
+    return stripAcpSessionIdentifiers(event);
+  }
+  if (event?.type === "sdk_event" && event.event?.type === "acp_session_update") {
+    return { ...event, event: stripAcpSessionIdentifiers(event.event) };
+  }
   if (!event || !String(event.type || "").startsWith("acp_interaction_")) return event;
   if (event.type === "acp_interaction_requested") {
     return {

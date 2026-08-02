@@ -24,6 +24,8 @@ describe("createAcpInteractionChannel", () => {
       interaction_kind: "permission",
     }));
     expect(emit.mock.calls[0][0].request.toolCall).not.toHaveProperty("rawInput");
+    expect(emit.mock.calls[0][0].request).not.toHaveProperty("sessionId");
+    expect(JSON.stringify(emit.mock.calls)).not.toContain("session-1");
     channel.acceptResponse({ interaction_id: "int-1", optionId: "allow-once", action: "selected" });
     await expect(result).resolves.toEqual({ outcome: { outcome: "selected", optionId: "allow-once" } });
   });
@@ -70,6 +72,7 @@ describe("createAcpInteractionChannel", () => {
       kind: "elicitation",
       profileId: "profile-1",
       payload: {
+        sessionId: "RAW_REMOTE_FORM_SESSION",
         mode: "url",
         url: `https://user:${sentinel}@example.test/login?token=${sentinel}#${sentinel}`,
         requestedSchema: {
@@ -92,6 +95,7 @@ describe("createAcpInteractionChannel", () => {
 
     const emitted = emit.mock.calls[0][0];
     expect(JSON.stringify(emitted)).not.toContain(sentinel);
+    expect(JSON.stringify(emitted)).not.toContain("RAW_REMOTE_FORM_SESSION");
     expect(emitted.request.url).toBe("https://example.test/login?token=%5Bredacted%5D");
     expect(emitted.request.requestedSchema.properties.password).toEqual({ type: "string" });
     expect(emitted.request.requestedSchema.properties.answer).toEqual({ type: "string" });

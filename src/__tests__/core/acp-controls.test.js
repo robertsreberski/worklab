@@ -146,7 +146,10 @@ describe("createWorklabAcpControls", () => {
       probeAcpProfile: vi.fn(async (_id, options) => {
         const response = await options.onAcpInteractionRequest({
           kind: "permission",
-          payload: { options: [{ optionId: "allow-once", name: "Allow once" }] },
+          payload: {
+            sessionId: "RAW_REMOTE_PERMISSION_SESSION",
+            options: [{ optionId: "allow-once", name: "Allow once" }],
+          },
         }, { requestId: 42 });
         expect(response).toEqual({ outcome: { outcome: "selected", optionId: "allow-once" } });
         return { protocolVersion: 1, agentCapabilities: {}, authMethods: [] };
@@ -155,6 +158,7 @@ describe("createWorklabAcpControls", () => {
         const response = await options.onAcpInteractionRequest({
           kind: "elicitation",
           payload: {
+            sessionId: "RAW_REMOTE_FORM_SESSION",
             mode: "form",
             message: "Enter code",
             requestedSchema: { type: "object", properties: { code: { type: "string" } } },
@@ -184,6 +188,7 @@ describe("createWorklabAcpControls", () => {
           },
         },
       ]);
+      expect(JSON.stringify(delivered)).not.toMatch(/RAW_REMOTE_(?:PERMISSION|FORM)_SESSION/u);
     } finally {
       db.close();
     }

@@ -1,5 +1,7 @@
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 
 import { spawnWorker } from "../../coordinator/spawn-worker.js";
@@ -50,9 +52,11 @@ async function waitForRow(db, id) {
 describe("spawnWorker ACP interactions", () => {
   it("persists the request, delivers values only over stdin, and stores disposition only", async () => {
     const db = makeTestDb();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-acp-private-session-"));
     try {
       const { taskId, runId } = seed(db);
       const sentinel = "task-run-request-secret-sentinel";
+      const rawSessionId = "RAW_REMOTE_SESSION_DO_NOT_PERSIST";
       const script = {
         ackAcpControls: true,
         echoControls: true,
@@ -64,6 +68,7 @@ describe("spawnWorker ACP interactions", () => {
           profile_id: "profile-1",
           interaction_kind: "elicitation",
           request: {
+            sessionId: rawSessionId,
             mode: "form",
             message: "Choose",
             requestedSchema: {
@@ -77,6 +82,16 @@ describe("spawnWorker ACP interactions", () => {
             },
             url: `https://example.test/form?token=${sentinel}#${sentinel}`,
           },
+        }, {
+          type: "sdk_event",
+          event: {
+            type: "acp_session_update",
+            sessionId: rawSessionId,
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              nested: { session_id: rawSessionId },
+            },
+          },
         }],
         exitAfterMs: 250,
       };
@@ -84,7 +99,11 @@ describe("spawnWorker ACP interactions", () => {
       const handle = spawnWorker({
         binary: fakeBinary,
         args: ["--task", taskId, "--mode", "execute", "--agent", "external"],
-        env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+        env: {
+          FAKE_WORKER_SCRIPT: JSON.stringify(script),
+          WORKLAB_RUN_ID: runId,
+          WORKLAB_DATA_DIR: dataDir,
+        },
         runId,
         taskId,
         broker: {
@@ -105,6 +124,7 @@ describe("spawnWorker ACP interactions", () => {
         state: "pending",
       });
       expect(pending.request_schema_json).not.toContain(sentinel);
+      expect(pending.request_schema_json).not.toContain(rawSessionId);
 
       const delivered = await handle.sendAcpInteractionResponse({
         interactionId: "interaction-1",
@@ -119,12 +139,15 @@ describe("spawnWorker ACP interactions", () => {
 
       await handle.done;
       const log = db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runId);
-      expect(log.events).not.toMatch(/do-not-persist|task-run-request-secret-sentinel/u);
-      const run = db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId);
-      expect(run.diagnostics_json).not.toMatch(/do-not-persist|task-run-request-secret-sentinel/u);
-      expect(JSON.stringify(broadcasts)).not.toMatch(/do-not-persist|task-run-request-secret-sentinel/u);
+      expect(log.events).not.toMatch(/do-not-persist|task-run-request-secret-sentinel|RAW_REMOTE_SESSION/u);
+      const run = db.prepare("SELECT diagnostics_json, raw_output_path FROM task_runs WHERE id = ?").get(runId);
+      expect(run.diagnostics_json).not.toMatch(/do-not-persist|task-run-request-secret-sentinel|RAW_REMOTE_SESSION/u);
+      expect(readFileSync(run.raw_output_path, "utf8")).not.toContain(rawSessionId);
+      expect(JSON.stringify(broadcasts)).not.toMatch(/do-not-persist|task-run-request-secret-sentinel|RAW_REMOTE_SESSION/u);
+      expect(JSON.stringify(db.prepare("SELECT * FROM acp_interactions").all())).not.toContain(rawSessionId);
     } finally {
       db.close();
+      rmSync(dataDir, { recursive: true, force: true });
     }
   });
 
