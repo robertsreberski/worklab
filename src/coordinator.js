@@ -28,6 +28,7 @@ import { createBackgroundServiceRegistry, startDeferredService } from "./coordin
 import { createStartupTimer } from "./coordinator/startup-timer.js";
 import { mountStaticUi } from "./coordinator/static-ui.js";
 import { createWatcherProxy } from "./coordinator/watcher-proxy.js";
+import { reconcileOrphanedAcpOperations } from "./coordinator/acp-operation-manager.js";
 import { createAcpUrlHandoffStore, createWorklabAcpControls } from "./core/index.js";
 
 const DEFAULT_OPTIONAL_SERVICE_START_TIMEOUT_MS = 5000;
@@ -78,6 +79,10 @@ export async function startCoordinator({
 
   const dbPath = join(config.dataDir, "worklab.db");
   const db = getDb(dbPath);
+  // The PID ownership check above is the process boundary for crash recovery.
+  // Manager instances can also be created by tests and embedded servers, so
+  // they must never reinterpret another live manager's rows as orphaned.
+  reconcileOrphanedAcpOperations({ db, logger });
 
   // Seed the default planner / executor / reviewer trio if missing. Idempotent —
   // existing rows with the same name are left alone, so users can rename or

@@ -115,6 +115,44 @@ async function waitForSettlement(promise, timeoutMs) {
   }
 }
 
+export function reconcileOrphanedAcpOperations({
+  db,
+  logger,
+  now = () => Date.now(),
+} = {}) {
+  const completedAt = now();
+  const reconcile = db.transaction(() => {
+    let operations = 0;
+    for (const operation of listActiveAcpOperations(db)) {
+      const errorJson = JSON.stringify(sanitizeAcpOperationError(
+        operation.kind,
+        managerError("Worklab restarted before the ACP operation completed.", {
+          code: "coordinator_restarted",
+          status: 500,
+        }),
+      ));
+      const terminalized = failAcpOperation(db, operation.id, {
+        errorJson,
+        completedAt,
+      });
+      if (terminalized.changes === 1) operations += 1;
+    }
+    const expiredInteractions = expireUnresolvedAcpInteractionsForTerminalOperations(db, {
+      disposition: "operation_ended",
+      resolvedAt: completedAt,
+    }).changes;
+    return { operations, expiredInteractions };
+  });
+  const result = reconcile();
+  if (result.operations > 0 || result.expiredInteractions > 0) {
+    logger?.warn?.({
+      operations: result.operations,
+      expired_interactions: result.expiredInteractions,
+    }, "reconciled orphaned ACP operations at boot");
+  }
+  return result;
+}
+
 function isPlainObject(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
@@ -283,44 +321,6 @@ export class AcpOperationManager {
     this.active = new Map();
     this.quarantinedProfiles = new Map();
     this.closing = false;
-    this.#reconcileOrphanedOperations();
-  }
-
-  #reconcileOrphanedOperations() {
-    const completedAt = this.now();
-    const reconcile = this.db.transaction(() => {
-      let operations = 0;
-      const orphaned = listActiveAcpOperations(this.db)
-        .filter((operation) => !this.active.has(operation.id));
-      for (const operation of orphaned) {
-        const errorJson = JSON.stringify(sanitizeAcpOperationError(
-          operation.kind,
-          managerError("Worklab restarted before the ACP operation completed.", {
-            code: "coordinator_restarted",
-            status: 500,
-          }),
-        ));
-        const terminalized = failAcpOperation(this.db, operation.id, {
-          errorJson,
-          completedAt,
-        });
-        if (terminalized.changes !== 1) continue;
-        operations += 1;
-      }
-      const expiredInteractions = expireUnresolvedAcpInteractionsForTerminalOperations(this.db, {
-        disposition: "operation_ended",
-        resolvedAt: completedAt,
-      }).changes;
-      return { operations, expiredInteractions };
-    });
-    const result = reconcile();
-    if (result.operations > 0 || result.expiredInteractions > 0) {
-      this.logger?.warn?.({
-        operations: result.operations,
-        expired_interactions: result.expiredInteractions,
-      }, "reconciled orphaned ACP operations at boot");
-    }
-    return result;
   }
 
   supports(kind) {

@@ -6,7 +6,10 @@ import {
   createAcpProfile,
   deleteAcpProfileRecord,
 } from "../../core/acp-profiles.js";
-import { createAcpOperationManager } from "../../coordinator/acp-operation-manager.js";
+import {
+  createAcpOperationManager,
+  reconcileOrphanedAcpOperations,
+} from "../../coordinator/acp-operation-manager.js";
 import {
   claimAcpInteractionResponse,
   finalizeAcpInteractionResponse,
@@ -99,6 +102,11 @@ describe("ACP operation startup reconciliation", () => {
     const logger = { warn: vi.fn() };
     const probe = vi.fn(async () => ({ ok: true, status: "ready" }));
 
+    reconcileOrphanedAcpOperations({
+      db,
+      logger,
+      now: () => restartedAt,
+    });
     const manager = createAcpOperationManager({
       db,
       broker: { broadcast: vi.fn() },
@@ -161,9 +169,8 @@ describe("ACP operation startup reconciliation", () => {
       END;
     `);
 
-    expect(() => createAcpOperationManager({
+    expect(() => reconcileOrphanedAcpOperations({
       db,
-      controls: { probe: async () => ({ ok: true }) },
       now: () => 20_000,
     })).toThrowError("forced interaction expiry failure");
 
@@ -220,7 +227,7 @@ describe("ACP operation startup reconciliation", () => {
     });
     finalizeAcpInteractionResponse(db, "terminal-submitted-resolved", { resolvedAt: 10_300 });
 
-    createAcpOperationManager({ db, controls: {}, now: () => 20_000 });
+    reconcileOrphanedAcpOperations({ db, now: () => 20_000 });
 
     expect(db.prepare("SELECT state, error_json, completed_at FROM acp_operations WHERE id = ?")
       .get(operationId)).toEqual({

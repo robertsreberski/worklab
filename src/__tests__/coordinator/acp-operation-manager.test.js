@@ -964,6 +964,77 @@ describe("AcpOperationManager", () => {
       .toBe("running");
   });
 
+  it("does not let a late manager reconcile another manager's quarantine", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "worklab-acp-operation-late-manager-"));
+    cleanup.push(cwd);
+    const databasePath = join(cwd, "worklab.db");
+    const firstDb = openDb(databasePath);
+    let secondDb;
+    let firstManager;
+    let secondManager;
+    let finishCleanup;
+    const cleanupGate = new Promise((resolve) => { finishCleanup = resolve; });
+    try {
+      runMigrations(firstDb);
+      const profile = createAcpProfile({
+        db: firstDb,
+        input: {
+          agentName: "late-manager",
+          displayName: "Late manager",
+          command: process.execPath,
+          cwd,
+        },
+      });
+      firstManager = createAcpOperationManager({
+        db: firstDb,
+        controls: {
+          probe: async ({ signal }) => {
+            await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+            await cleanupGate;
+            throw signal.reason;
+          },
+        },
+        abortCleanupTimeoutMs: 20,
+      });
+      const operation = firstManager.start({ profileId: profile.id, kind: "probe" });
+      await vi.waitFor(() => expect(firstManager.get(operation.id)?.state).toBe("running"));
+      expect(firstManager.abort(operation.id, "late manager quarantine")).toBe(true);
+      await vi.waitFor(() => expect(firstManager.isActive(operation.id)).toBe(false), {
+        timeout: 500,
+        interval: 5,
+      });
+
+      secondDb = openDb(databasePath);
+      secondManager = createAcpOperationManager({
+        db: secondDb,
+        controls: { probe: async () => ({ ok: true, status: "ready" }) },
+      });
+      expect(secondManager.get(operation.id)?.state).toBe("running");
+      let conflict;
+      try {
+        secondManager.start({ profileId: profile.id, kind: "probe" });
+      } catch (error) {
+        conflict = error;
+      }
+      expect(conflict).toMatchObject({ code: "operation_active", status: 409 });
+      expect(() => deleteAcpProfileRecord({ db: secondDb, id: profile.id }))
+        .toThrow(expect.objectContaining({ code: "profile_in_use", status: 409 }));
+
+      finishCleanup();
+      await waitForOperation(firstManager, operation.id, "cancelled");
+      const replacement = secondManager.start({ profileId: profile.id, kind: "probe" });
+      await waitForOperation(secondManager, replacement.id, "succeeded");
+    } finally {
+      finishCleanup?.();
+      await Promise.allSettled([
+        firstManager?.shutdown(),
+        secondManager?.shutdown(),
+      ]);
+      firstDb.close();
+      secondDb?.close();
+    }
+  });
+
   it("persists deadline expiry as a failure instead of a user cancellation", async () => {
     vi.useFakeTimers();
     const { profile, manager } = setup({
