@@ -6,6 +6,7 @@ export function createWatcherProxy(watcherHolder) {
     isActive: (...args) => watcherHolder.current.isActive(...args),
     getRunLiveInputState: (...args) => watcherHolder.current.getRunLiveInputState(...args),
     sendRunMessage: (...args) => watcherHolder.current.sendRunMessage(...args),
+    sendRunApprovalDecision: (...args) => watcherHolder.current.sendRunApprovalDecision(...args),
     sendRunAcpInteractionResponse: (...args) => watcherHolder.current.sendRunAcpInteractionResponse(...args),
     sendRunAcpInteractionCancel: (...args) => watcherHolder.current.sendRunAcpInteractionCancel(...args),
     maybeAutoStart: (...args) => watcherHolder.current.maybeAutoStart(...args),
