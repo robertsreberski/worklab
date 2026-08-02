@@ -179,9 +179,10 @@ Worklab retains it only in bounded process memory, bound to the interaction and
 its owning task run or profile operation. The UI opens it through an owner-
 checked, one-use redirect; it expires and is removed on use, successful
 response or cancellation, terminal owner state, or process shutdown. Public
-interaction data contains only a non-sensitive origin label, so credentials or
-tokens in URL user info, paths, queries, and fragments do not enter SQLite,
-events, logs, the DOM, or backups.
+interaction data contains only a fixed Worklab-owned availability marker, not
+the destination origin or any other URL-derived text, so credentials or tokens
+in URL hosts, paths, queries, and fragments do not enter SQLite, events, logs,
+the DOM, or backups.
 
 Agent-owned ACP turns receive task-owned context and file attachments as
 `resource_link` blocks. Worklab instructions, memory, knowledge, skills, MCP

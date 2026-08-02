@@ -11,10 +11,11 @@
   inheriting Worklab memory, knowledge, tools, MCP, skills, repository
   instructions, or delegation policy. Interaction response values remain
   process-only. Exact browser continuation URLs use bounded, owner-bound,
-  one-use in-memory handoffs; only a non-sensitive origin label can reach
-  persisted or broadcast interaction schemas. Worklab does not expose ACP
-  filesystem, terminal, or client-MCP services; mono-agent is documented as a
-  core-session profile rather than a generally conformant ACP Agent.
+  one-use in-memory handoffs; only a fixed Worklab-owned availability marker
+  can reach persisted or broadcast interaction schemas. Worklab does not
+  expose ACP filesystem, terminal, or client-MCP services; mono-agent is
+  documented as a core-session profile rather than a generally conformant ACP
+  Agent.
 
 - Added bounded ACP operation lifecycles: one active control per profile,
   cancellable startup/operation deadlines, startup reconciliation for orphaned
