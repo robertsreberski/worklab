@@ -135,6 +135,23 @@ export {
 
 export { isValidSlug, slugify, uniqueSlug } from "./slugs.js";
 
+export {
+  ACP_BRIDGE_VERSION,
+  ACP_DISCOVERY_SCHEMA,
+  ACP_PROTOCOL_VERSION,
+  ACP_SOURCE_SCHEMA,
+  assertAcpProfileBinding,
+  createAcpProfile,
+  deleteAcpProfileRecord,
+  getAcpProfile,
+  getAcpProfileForAgent,
+  getAcpProfiles,
+  normalizeMonoDiscovery,
+  normalizeMonoSourceDescriptor,
+  rowToAcpProfile,
+  updateAcpProfileRecord,
+} from "./acp-profiles.js";
+
 // ---------- Settings + runtime ----------
 export {
   DEFAULT_SETTINGS,
