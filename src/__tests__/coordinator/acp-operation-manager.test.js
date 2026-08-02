@@ -177,6 +177,164 @@ describe("AcpOperationManager", () => {
     expect(JSON.stringify(events)).not.toContain(rawSessionId);
   });
 
+  it.each([
+    ["first then second", ["concurrent-first", "concurrent-second"]],
+    ["second then first", ["concurrent-second", "concurrent-first"]],
+  ])("keeps concurrent interactions waiting until both settle: %s", async (_label, resolutionOrder) => {
+    vi.useFakeTimers();
+    let deliveredResponses;
+    const { db, profile, events, manager } = setup({
+      authenticate: async ({ onInteraction }) => {
+        const first = onInteraction({
+          requestId: "concurrent-first",
+          kind: "form",
+          schema: { title: "First concurrent request" },
+        });
+        const second = onInteraction({
+          requestId: "concurrent-second",
+          kind: "form",
+          schema: { title: "Second concurrent request" },
+        });
+        deliveredResponses = await Promise.all([first, second]);
+        return { authenticated: true };
+      },
+    }, { probeTimeoutMs: 1_000 });
+    const operation = manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "concurrent-login",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const interactions = db.prepare(`
+      SELECT * FROM acp_interactions WHERE operation_id = ? ORDER BY rowid ASC
+    `).all(operation.id);
+    expect(interactions.map(({ protocol_request_id: id }) => id))
+      .toEqual(["concurrent-first", "concurrent-second"]);
+    expect(manager.get(operation.id)?.state).toBe("waiting_for_interaction");
+    expect(manager.active.get(operation.id)?.pending.size).toBe(2);
+    expect(manager.active.get(operation.id)?.deadline).toBeNull();
+    const interactionByRequest = new Map(interactions.map((row) => [row.protocol_request_id, row]));
+    const runningEvents = () => events.filter(({ event }) => (
+      event.type === "acp_operation_updated"
+      && event.operation.id === operation.id
+      && event.state === "running"
+    ));
+    expect(runningEvents()).toHaveLength(1);
+    expect(events.filter(({ event }) => (
+      event.type === "acp_operation_updated"
+      && event.operation.id === operation.id
+      && event.state === "waiting_for_interaction"
+    ))).toHaveLength(1);
+
+    const firstResolved = interactionByRequest.get(resolutionOrder[0]);
+    manager.respond({
+      operationId: operation.id,
+      interactionId: firstResolved.id,
+      response: { disposition: "accept", values: { answer: resolutionOrder[0] } },
+    });
+    expect(manager.get(operation.id)?.state).toBe("waiting_for_interaction");
+    expect(manager.active.get(operation.id)?.pending.size).toBe(1);
+    expect(manager.active.get(operation.id)?.deadline).toBeNull();
+    expect(runningEvents()).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(manager.get(operation.id)?.state).toBe("waiting_for_interaction");
+    expect(manager.isActive(operation.id)).toBe(true);
+
+    const lastResolved = interactionByRequest.get(resolutionOrder[1]);
+    manager.respond({
+      operationId: operation.id,
+      interactionId: lastResolved.id,
+      response: { disposition: "accept", values: { answer: resolutionOrder[1] } },
+    });
+    expect(manager.get(operation.id)?.state).toBe("running");
+    expect(manager.active.get(operation.id)?.pending.size).toBe(0);
+    expect(manager.active.get(operation.id)?.deadline).not.toBeNull();
+    expect(runningEvents()).toHaveLength(2);
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(manager.get(operation.id)?.state).toBe("succeeded");
+    expect(deliveredResponses.map(({ values }) => values.answer))
+      .toEqual(["concurrent-first", "concurrent-second"]);
+  });
+
+  it("keeps sibling interactions pending after a response error or cancellation", async () => {
+    let deliveredResponses;
+    const { db, profile, events, manager } = setup({
+      authenticate: async ({ onInteraction }) => {
+        const first = onInteraction({
+          requestId: "permission-first",
+          kind: "permission",
+          schema: {
+            options: [{ optionId: "allow-first", name: "Allow first", kind: "allow_once" }],
+          },
+        });
+        const second = onInteraction({
+          requestId: "permission-second",
+          kind: "permission",
+          schema: {
+            options: [{ optionId: "allow-second", name: "Allow second", kind: "allow_once" }],
+          },
+        });
+        deliveredResponses = await Promise.all([first, second]);
+        return { authenticated: true };
+      },
+    });
+    const operation = manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "concurrent-permissions",
+    });
+    let interactions;
+    await vi.waitFor(() => {
+      interactions = db.prepare(`
+        SELECT * FROM acp_interactions WHERE operation_id = ? ORDER BY rowid ASC
+      `).all(operation.id);
+      expect(interactions).toHaveLength(2);
+    });
+    const [first, second] = interactions;
+    const runningEvents = () => events.filter(({ event }) => (
+      event.type === "acp_operation_updated"
+      && event.operation.id === operation.id
+      && event.state === "running"
+    ));
+
+    expect(() => manager.respond({
+      operationId: operation.id,
+      interactionId: first.id,
+      disposition: "selected",
+      response: { outcome: { outcome: "selected", optionId: "unoffered" } },
+    })).toThrowError("permission response must select an offered option");
+    expect(db.prepare("SELECT state FROM acp_interactions WHERE operation_id = ? ORDER BY rowid ASC")
+      .all(operation.id)).toEqual([{ state: "pending" }, { state: "pending" }]);
+    expect(manager.get(operation.id)?.state).toBe("waiting_for_interaction");
+    expect(manager.active.get(operation.id)?.pending.size).toBe(2);
+    expect(runningEvents()).toHaveLength(1);
+
+    manager.cancelInteraction({ operationId: operation.id, interactionId: first.id });
+    expect(db.prepare("SELECT state, disposition FROM acp_interactions WHERE id = ?").get(first.id))
+      .toEqual({ state: "cancelled", disposition: "cancel" });
+    expect(manager.get(operation.id)?.state).toBe("waiting_for_interaction");
+    expect(manager.active.get(operation.id)?.pending.size).toBe(1);
+    expect(manager.active.get(operation.id)?.deadline).toBeNull();
+    expect(runningEvents()).toHaveLength(1);
+
+    manager.respond({
+      operationId: operation.id,
+      interactionId: second.id,
+      disposition: "allow_once",
+      response: { outcome: { outcome: "selected", optionId: "allow-second" } },
+    });
+    const completed = await waitForOperation(manager, operation.id, "succeeded");
+    expect(completed.result).toEqual({ authenticated: true });
+    expect(deliveredResponses).toEqual([
+      { disposition: "cancel" },
+      { outcome: { outcome: "selected", optionId: "allow-second" } },
+    ]);
+    expect(runningEvents()).toHaveLength(2);
+  });
+
   it("redacts private string, numeric, and boolean response echoes from results and later schemas", async () => {
     const privateCode = "OTP-493827";
     const privatePin = 493827;

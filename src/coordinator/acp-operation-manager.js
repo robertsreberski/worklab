@@ -538,6 +538,7 @@ export class AcpOperationManager {
     const { protocolRequestId, requestSchema } = safeRequest;
     const now = this.now();
     const id = newAcpInteractionId();
+    const entersWaiting = record.pending.size === 0;
     let retainedUrl = false;
     if (kind === "url") {
       retainedUrl = this.urlHandoffStore?.retain?.({
@@ -566,7 +567,8 @@ export class AcpOperationManager {
         createdAt: now,
         updatedAt: now,
       });
-      if (markAcpOperationWaiting(this.db, record.id, { updatedAt: now }).changes !== 1) {
+      if (entersWaiting
+        && markAcpOperationWaiting(this.db, record.id, { updatedAt: now }).changes !== 1) {
         cancelAcpInteraction(this.db, id, { disposition: "cancel", resolvedAt: now });
         throw managerError("ACP operation is not accepting interactions");
       }
@@ -574,10 +576,10 @@ export class AcpOperationManager {
       if (retainedUrl) this.urlHandoffStore?.remove?.(id);
       throw error;
     }
-    this.#clearDeadline(record);
+    if (entersWaiting) this.#clearDeadline(record);
     const interaction = rowToAcpInteraction(getAcpInteractionById(this.db, id));
     this.broker?.broadcast?.("global", { type: "acp_interaction_requested", interaction });
-    this.#broadcastOperation(record.id, "waiting_for_interaction");
+    if (entersWaiting) this.#broadcastOperation(record.id, "waiting_for_interaction");
 
     return new Promise((resolve, reject) => {
       const abort = () => {
@@ -626,6 +628,7 @@ export class AcpOperationManager {
         status: 400,
       });
     }
+    const resumesOperation = record.pending.size === 1;
     const finalized = this.db.transaction(() => {
       const claimed = claimAcpInteractionResponse(this.db, interactionId, {
         disposition: safeDisposition,
@@ -634,7 +637,7 @@ export class AcpOperationManager {
       if (!claimed) throw managerError("ACP interaction is not pending", { code: "not_pending", status: 409 });
       const finalized = finalizeAcpInteractionResponse(this.db, interactionId, { resolvedAt: this.now() });
       if (!finalized) throw managerError("ACP interaction response could not be finalized");
-      if (record.pending.size === 1) {
+      if (resumesOperation) {
         if (markAcpOperationRunning(this.db, operationId, { updatedAt: this.now() }).changes !== 1) {
           throw managerError("ACP operation could not resume after interaction");
         }
@@ -649,11 +652,11 @@ export class AcpOperationManager {
     this.#clearInteractionDeadline(pending);
     record.pending.delete(interactionId);
     record.controller.signal.removeEventListener("abort", pending.abort);
-    this.#armDeadline(record);
+    if (resumesOperation) this.#armDeadline(record);
     pending.resolve(response);
     const interaction = rowToAcpInteraction(finalized);
     this.broker?.broadcast?.("global", { type: "acp_interaction_submitted", interaction });
-    this.#broadcastOperation(operationId, "running");
+    if (resumesOperation) this.#broadcastOperation(operationId, "running");
     return interaction;
   }
 
@@ -662,11 +665,21 @@ export class AcpOperationManager {
     if (!record) throw managerError("ACP operation is not active", { code: "not_active", status: 409 });
     const pending = record.pending.get(interactionId);
     if (!pending) throw managerError("ACP interaction is not pending", { code: "not_pending", status: 409 });
-    const cancelled = cancelAcpInteraction(this.db, interactionId, {
-      disposition: "cancel",
-      resolvedAt: this.now(),
-    });
-    if (!cancelled) throw managerError("ACP interaction is not pending", { code: "not_pending", status: 409 });
+    const resumesOperation = record.pending.size === 1;
+    const cancelled = this.db.transaction(() => {
+      const cancelled = cancelAcpInteraction(this.db, interactionId, {
+        disposition: "cancel",
+        resolvedAt: this.now(),
+      });
+      if (!cancelled) {
+        throw managerError("ACP interaction is not pending", { code: "not_pending", status: 409 });
+      }
+      if (resumesOperation
+        && markAcpOperationRunning(this.db, operationId, { updatedAt: this.now() }).changes !== 1) {
+        throw managerError("ACP operation could not resume after interaction");
+      }
+      return cancelled;
+    })();
     this.urlHandoffStore?.remove?.(interactionId, {
       ownerKind: "operation",
       ownerId: operationId,
@@ -675,14 +688,11 @@ export class AcpOperationManager {
     this.#clearInteractionDeadline(pending);
     record.pending.delete(interactionId);
     record.controller.signal.removeEventListener("abort", pending.abort);
-    if (record.pending.size === 0) {
-      markAcpOperationRunning(this.db, operationId, { updatedAt: this.now() });
-    }
-    this.#armDeadline(record);
+    if (resumesOperation) this.#armDeadline(record);
     pending.resolve({ disposition: "cancel" });
     const interaction = rowToAcpInteraction(cancelled);
     this.broker?.broadcast?.("global", { type: "acp_interaction_cancelled", interaction });
-    this.#broadcastOperation(operationId, "running");
+    if (resumesOperation) this.#broadcastOperation(operationId, "running");
     return interaction;
   }
 
