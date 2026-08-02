@@ -20,6 +20,7 @@ import { buildRunLifecycleEvent } from "../../core/run-events.js";
 import { readSettings } from "../../core/settings.js";
 import { inspectWorktreeSupport, prepareRunWorktree } from "../../core/worktrees.js";
 import { assertAcpTaskRunPreflight } from "../../core/acp-preflight.js";
+import { validateAcpProviderSessionId } from "../../core/acp-privacy.js";
 
 const WORKTREE_TASK_MODES = new Set(["plan", "execute", "review"]);
 const PI_CODEX_TRANSPORTS = new Set(["sse", "auto", "websocket", "websocket-cached"]);
@@ -203,7 +204,12 @@ export function spawnTaskRun({
       ].filter(Boolean);
       for (const sourceRunId of sessionSourceIds) {
         const parent = db.prepare("SELECT provider_session_id FROM task_runs WHERE id = ?").get(sourceRunId);
-        if (parent?.provider_session_id) return parent.provider_session_id;
+        const reusable = providerKind === "acp"
+          ? validateAcpProviderSessionId(parent?.provider_session_id, acpPreflight?.profileId)
+          : typeof parent?.provider_session_id === "string" && parent.provider_session_id.length > 0
+            ? parent.provider_session_id
+            : null;
+        if (reusable) return reusable;
       }
       return null;
     } catch {

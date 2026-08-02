@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { spawnTaskRun } from "../../coordinator/watcher/spawn-run.js";
 import { makeTestDb } from "../helpers/test-db.js";
-import { newTaskId } from "../../core/ids.js";
+import { newRunId, newTaskId } from "../../core/ids.js";
 
 function setup(db, dataDir, { withProfile = true } = {}) {
   const now = Date.now();
@@ -69,6 +69,85 @@ describe("spawnTaskRun ACP preflight", () => {
       expect(spawned.env.WORKLAB_ACP_PROFILE_ID).toBe("profile-1");
       expect(db.prepare("SELECT provider_kind FROM task_runs WHERE id = ?").get(runId))
         .toEqual({ provider_kind: "acp" });
+    } finally {
+      db.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reuses only a canonical provider session id bound to the ACP profile", () => {
+    const db = makeTestDb();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-acp-spawn-"));
+    try {
+      const task = setup(db, dataDir);
+      const parentRunId = newRunId();
+      const providerSessionId = `acp:v1:profile-1:${Buffer.from("remote-session").toString("base64url")}`;
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, provider_kind, started_at, status, process_status, provider_session_id)
+        VALUES (?, ?, 'execute', 'execute', 'external', 'acp', ?, 'error', 'failed', ?)
+      `).run(parentRunId, task.id, Date.now(), providerSessionId);
+      let spawned;
+
+      spawnTaskRun({
+        ...runOptions({
+          db,
+          dataDir,
+          task,
+          spawn: (options) => {
+            spawned = options;
+            return { pid: 123, done: new Promise(() => {}) };
+          },
+        }),
+        parentRunId,
+        diagnosticsSeed: {
+          continuation_of_run_id: parentRunId,
+          continuation_reason: "provider_retryable",
+        },
+      });
+
+      expect(spawned.env.WORKLAB_PROVIDER_SESSION_ID).toBe(providerSessionId);
+    } finally {
+      db.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ["raw remote id", "remote-session"],
+    ["wrong profile", `acp:v1:profile-2:${Buffer.from("remote-session").toString("base64url")}`],
+    ["non-canonical base64url", "acp:v1:profile-1:A"],
+  ])("does not reuse a %s during ACP recovery", (_label, providerSessionId) => {
+    const db = makeTestDb();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-acp-spawn-"));
+    try {
+      const task = setup(db, dataDir);
+      const parentRunId = newRunId();
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, provider_kind, started_at, status, process_status, provider_session_id)
+        VALUES (?, ?, 'execute', 'execute', 'external', 'acp', ?, 'error', 'failed', ?)
+      `).run(parentRunId, task.id, Date.now(), providerSessionId);
+      let spawned;
+
+      spawnTaskRun({
+        ...runOptions({
+          db,
+          dataDir,
+          task,
+          spawn: (options) => {
+            spawned = options;
+            return { pid: 123, done: new Promise(() => {}) };
+          },
+        }),
+        parentRunId,
+        diagnosticsSeed: {
+          continuation_of_run_id: parentRunId,
+          continuation_reason: "provider_retryable",
+        },
+      });
+
+      expect(spawned.env).not.toHaveProperty("WORKLAB_PROVIDER_SESSION_ID");
     } finally {
       db.close();
       rmSync(dataDir, { recursive: true, force: true });
