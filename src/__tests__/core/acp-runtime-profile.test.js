@@ -79,16 +79,32 @@ describe("Worklab ACP runtime profiles", () => {
     };
     const discover = vi.fn().mockResolvedValue({ sources: [descriptor] });
     const controls = createMonoAcpDiscoveryControls({
-      command: process.execPath,
-      env: { PATH: process.env.PATH, HOME: "/tmp/home" },
+      env: {
+        WORKLAB_MONO_AGENT_BIN: process.execPath,
+        PATH: process.env.PATH,
+        HOME: "/tmp/home",
+        TMPDIR: "/tmp/acp",
+        WORKLAB_SERVICE_TOKEN: "sentinel-secret",
+        ANTHROPIC_API_KEY: "sentinel-provider-secret",
+      },
       discover,
     });
-    await expect(controls.resolveMonoSource({ sourceId: "personal" })).resolves.toEqual({
+    const controller = new AbortController();
+    await expect(controls.resolveMonoSource({
+      sourceId: "personal",
+      signal: controller.signal,
+      timeoutMs: 12_345,
+    })).resolves.toEqual({
       descriptor,
       command: resolveExecutable(process.execPath),
       args: ["bridge", "acp", "--source-id", "personal"],
-      envKeys: ["HOME", "PATH"],
+      envKeys: ["HOME", "PATH", "TMPDIR"],
     });
-    expect(discover).toHaveBeenCalledWith(expect.objectContaining({ command: resolveExecutable(process.execPath) }));
+    expect(discover).toHaveBeenCalledWith({
+      signal: controller.signal,
+      timeoutMs: 12_345,
+      command: resolveExecutable(process.execPath),
+      env: { HOME: "/tmp/home", PATH: process.env.PATH, TMPDIR: "/tmp/acp" },
+    });
   });
 });

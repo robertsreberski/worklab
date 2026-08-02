@@ -41,13 +41,31 @@ describe("discoverMonoAcpAgents", () => {
     input.sources[0].apiKey = "secret";
     input.sources[0].operatorBaseUrl = "http://127.0.0.1:9999";
     const execFileImpl = fakeExec(input);
-    const result = await discoverMonoAcpAgents({ command: "/opt/bin/mono-agent", execFileImpl, env: {} });
+    const result = await discoverMonoAcpAgents({
+      command: "/opt/bin/mono-agent",
+      execFileImpl,
+      env: {
+        HOME: "/tmp/home",
+        PATH: "/opt/bin:/usr/bin",
+        TMPDIR: "/tmp/private",
+        WORKLAB_MONO_AGENT_BIN: "/ignored/by-explicit-command",
+        WORKLAB_SERVICE_TOKEN: "must-not-reach-child",
+        OPENAI_API_KEY: "must-not-reach-child",
+      },
+    });
     expect(execFileImpl).toHaveBeenCalledWith(
       "/opt/bin/mono-agent",
       ["bridge", "acp", "--discover"],
       expect.objectContaining({ shell: false, timeout: 5_000 }),
       expect.any(Function),
     );
+    const childOptions = execFileImpl.mock.calls[0][2];
+    expect(childOptions.env).toEqual({
+      HOME: "/tmp/home",
+      PATH: "/opt/bin:/usr/bin",
+      TMPDIR: "/tmp/private",
+    });
+    expect(JSON.stringify(childOptions.env)).not.toMatch(/must-not-reach-child|WORKLAB_MONO_AGENT_BIN/u);
     expect(result.sources[0]).not.toHaveProperty("apiKey");
     expect(result.sources[0]).not.toHaveProperty("operatorBaseUrl");
     expect(result.sources[0]).toMatchObject({
@@ -57,12 +75,44 @@ describe("discoverMonoAcpAgents", () => {
     });
   });
 
+  it("honors the configured binary without forwarding Worklab secrets", async () => {
+    const execFileImpl = fakeExec(descriptor());
+    await discoverMonoAcpAgents({
+      execFileImpl,
+      env: {
+        WORKLAB_MONO_AGENT_BIN: "/custom/mono-agent",
+        PATH: "/custom",
+        WORKLAB_SERVICE_TOKEN: "sentinel-secret",
+      },
+    });
+    expect(execFileImpl.mock.calls[0][0]).toBe("/custom/mono-agent");
+    expect(execFileImpl.mock.calls[0][2].env).toEqual({ PATH: "/custom" });
+  });
+
+  it("passes cancellation to the child process and rejects promptly", async () => {
+    let childOptions;
+    const execFileImpl = vi.fn((_command, _args, options) => {
+      childOptions = options;
+    });
+    const controller = new AbortController();
+    const pending = discoverMonoAcpAgents({ execFileImpl, signal: controller.signal });
+    const reason = Object.assign(new Error("request timed out"), { code: "timeout" });
+    controller.abort(reason);
+    await expect(pending).rejects.toBe(reason);
+    expect(childOptions.signal).toBe(controller.signal);
+  });
+
   it("rejects incompatible versions and missing ACP baseline content", async () => {
     await expect(discoverMonoAcpAgents({ execFileImpl: fakeExec(descriptor({ protocolVersion: 2 })) }))
       .rejects.toMatchObject({ code: "incompatible_discovery" });
     const input = descriptor();
     input.sources[0].constraints.promptContent = ["text"];
     await expect(discoverMonoAcpAgents({ execFileImpl: fakeExec(input) }))
+      .rejects.toMatchObject({ code: "incompatible_discovery" });
+
+    const unsupported = descriptor();
+    unsupported.sources[0].constraints.clientMcp = true;
+    await expect(discoverMonoAcpAgents({ execFileImpl: fakeExec(unsupported) }))
       .rejects.toMatchObject({ code: "incompatible_discovery" });
   });
 

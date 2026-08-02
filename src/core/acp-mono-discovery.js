@@ -8,6 +8,33 @@ export const ACP_PROTOCOL_VERSION = 1;
 
 const VALID_HEALTH = new Set(["running", "stale", "stopped", "failed"]);
 const VALID_PROMPT_CONTENT = new Set(["text", "resource_link"]);
+const MONO_ACP_HOST_ENV_KEYS = Object.freeze([
+  "HOME",
+  "PATH",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "USER",
+  "LOGNAME",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "SHELL",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+  "XDG_STATE_HOME",
+  "XDG_CACHE_HOME",
+  "MONO_AGENT_TRACE_REGISTRY_DIR",
+  "SystemRoot",
+  "SYSTEMROOT",
+  "ComSpec",
+  "COMSPEC",
+  "PATHEXT",
+  "USERPROFILE",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "USERNAME",
+]);
 
 export class MonoAcpDiscoveryError extends Error {
   constructor(code, message, options = {}) {
@@ -15,6 +42,14 @@ export class MonoAcpDiscoveryError extends Error {
     this.name = "MonoAcpDiscoveryError";
     this.code = code;
   }
+}
+
+export function monoAcpHostEnvironment(env = process.env) {
+  const selected = {};
+  for (const key of MONO_ACP_HOST_ENV_KEYS) {
+    if (typeof env?.[key] === "string") selected[key] = env[key];
+  }
+  return selected;
 }
 
 function cleanText(value, { required = false, max = 4096 } = {}) {
@@ -49,6 +84,16 @@ function sanitizeSource(source) {
   if (!promptContent.includes("text") || !promptContent.includes("resource_link")) {
     throw new MonoAcpDiscoveryError("incompatible_discovery", "mono-agent ACP source lacks baseline text/resource-link prompt support");
   }
+  if (source.constraints.clientMcp !== false
+    || source.constraints.clientFilesystem !== false
+    || source.constraints.clientTerminal !== false
+    || source.constraints.attachments !== false
+    || source.constraints.additionalDirectories !== false) {
+    throw new MonoAcpDiscoveryError(
+      "incompatible_discovery",
+      "mono-agent ACP source requires client capabilities that Worklab does not support",
+    );
+  }
   const warnings = Array.isArray(source.warnings)
     ? source.warnings.slice(0, 32).map((warning) => cleanText(warning, { max: 1024 })).filter(Boolean)
     : [];
@@ -75,38 +120,79 @@ function sanitizeSource(source) {
   };
 }
 
-function runDiscovery(command, { timeoutMs, maxBuffer, execFileImpl, env }) {
+function abortError(signal) {
+  if (signal?.reason?.code) return signal.reason;
+  return new MonoAcpDiscoveryError("cancelled", "mono-agent ACP discovery was cancelled");
+}
+
+function runDiscovery(command, {
+  timeoutMs,
+  maxBuffer,
+  execFileImpl,
+  env,
+  signal,
+}) {
   return new Promise((resolvePromise, reject) => {
-    execFileImpl(command, ["bridge", "acp", "--discover"], {
-      encoding: "utf8",
-      timeout: timeoutMs,
-      maxBuffer,
-      windowsHide: true,
-      shell: false,
-      env,
-    }, (err, stdout) => {
-      if (err) {
-        const reason = err.killed || err.code === "ETIMEDOUT" ? "timed out" : "failed";
-        reject(new MonoAcpDiscoveryError(
-          reason === "timed out" ? "discovery_timeout" : "discovery_failed",
-          `mono-agent ACP discovery ${reason}`,
-          { cause: err },
-        ));
-        return;
-      }
-      resolvePromise(stdout);
-    });
+    if (signal?.aborted) {
+      reject(abortError(signal));
+      return;
+    }
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      callback(value);
+    };
+    const onAbort = () => finish(reject, abortError(signal));
+    signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      execFileImpl(command, ["bridge", "acp", "--discover"], {
+        encoding: "utf8",
+        timeout: timeoutMs,
+        maxBuffer,
+        windowsHide: true,
+        shell: false,
+        env,
+        ...(signal ? { signal } : {}),
+      }, (err, stdout) => {
+        if (err) {
+          if (signal?.aborted) {
+            finish(reject, abortError(signal));
+            return;
+          }
+          const reason = err.killed || err.code === "ETIMEDOUT" ? "timed out" : "failed";
+          finish(reject, new MonoAcpDiscoveryError(
+            reason === "timed out" ? "discovery_timeout" : "discovery_failed",
+            `mono-agent ACP discovery ${reason}`,
+            { cause: err },
+          ));
+          return;
+        }
+        finish(resolvePromise, stdout);
+      });
+    } catch (error) {
+      finish(reject, error);
+    }
   });
 }
 
 export async function discoverMonoAcpAgents({
-  command = process.env.WORKLAB_MONO_AGENT_BIN || "mono-agent",
+  command,
   timeoutMs = 5_000,
   maxBuffer = 1024 * 1024,
   execFileImpl = execFile,
   env = process.env,
+  signal,
 } = {}) {
-  const stdout = await runDiscovery(command, { timeoutMs, maxBuffer, execFileImpl, env });
+  const executable = command || env.WORKLAB_MONO_AGENT_BIN || "mono-agent";
+  const stdout = await runDiscovery(executable, {
+    timeoutMs,
+    maxBuffer,
+    execFileImpl,
+    env: monoAcpHostEnvironment(env),
+    signal,
+  });
   let parsed;
   try {
     parsed = JSON.parse(stdout);

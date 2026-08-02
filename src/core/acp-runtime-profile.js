@@ -2,10 +2,12 @@ import { constants, accessSync, realpathSync, statSync } from "node:fs";
 import { delimiter, isAbsolute, join } from "node:path";
 
 import { assertAcpProfileBinding } from "./acp-profiles.js";
-import { discoverMonoAcpAgents } from "./acp-mono-discovery.js";
+import {
+  discoverMonoAcpAgents,
+  monoAcpHostEnvironment,
+} from "./acp-mono-discovery.js";
 
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const MONO_ENV_KEYS = ["HOME", "PATH", "TMPDIR", "USER", "LOGNAME", "LANG", "LC_ALL"];
 const MAX_ACP_LINE_BYTES = 16 * 1024 * 1024;
 
 function runtimeProfileError(code, message) {
@@ -62,11 +64,14 @@ export function createWorklabAcpProfileResolver({ db, env = process.env } = {}) 
         `Worklab does not enable ACP client ${unsupported.join(", ")} capabilities`,
       );
     }
+    const environment = profile.driver === "mono"
+      ? monoAcpHostEnvironment(env)
+      : selectedEnvironment(profile.envKeys, env);
     return {
       command: profile.command,
       args: profile.args,
       cwd: profile.cwd || profile.canonicalWorkspace || undefined,
-      env: selectedEnvironment(profile.envKeys, env),
+      env: environment,
       configurationOwner: profile.configurationOwner,
       workspaceOwner: profile.workspaceOwner,
       mcpOwner: profile.mcpOwner,
@@ -107,17 +112,19 @@ export function resolveExecutable(command, env = process.env) {
 }
 
 export function createMonoAcpDiscoveryControls({
-  command = process.env.WORKLAB_MONO_AGENT_BIN || "mono-agent",
+  command,
   env = process.env,
   discover = discoverMonoAcpAgents,
 } = {}) {
-  const executable = () => resolveExecutable(command, env);
+  const hostEnv = monoAcpHostEnvironment(env);
+  const configuredCommand = command || env.WORKLAB_MONO_AGENT_BIN || "mono-agent";
+  const executable = () => resolveExecutable(configuredCommand, hostEnv);
   async function discoverMono(options = {}) {
-    return discover({ command: executable(), env, ...options });
+    return discover({ ...options, command: executable(), env: hostEnv });
   }
-  async function resolveMonoSource({ sourceId, signal } = {}) {
+  async function resolveMonoSource({ sourceId, signal, timeoutMs } = {}) {
     if (signal?.aborted) throw signal.reason || runtimeProfileError("cancelled", "mono-agent discovery was cancelled");
-    const discovery = await discoverMono();
+    const discovery = await discoverMono({ signal, timeoutMs });
     const descriptor = discovery.sources.find((source) => source.sourceId === sourceId);
     if (!descriptor) throw runtimeProfileError("source_not_found", "mono-agent source was not found");
     if (!descriptor.compatible) throw runtimeProfileError("source_incompatible", "mono-agent source is not compatible");
@@ -125,9 +132,8 @@ export function createMonoAcpDiscoveryControls({
       descriptor,
       command: executable(),
       args: ["bridge", "acp", "--source-id", descriptor.sourceId],
-      envKeys: MONO_ENV_KEYS.filter((key) => typeof env[key] === "string"),
+      envKeys: Object.keys(hostEnv),
     };
   }
   return { discoverMono, resolveMonoSource };
 }
-
