@@ -37,7 +37,7 @@ describe("service drain helper", () => {
   it("returns timed_out when the coordinator stays alive after SIGTERM", async () => {
     const dataDir = tempDataDir();
     const pidFile = join(dataDir, ".coordinator.pid");
-    writeFileSync(pidFile, "12345\n");
+    writeFileSync(pidFile, "12345\nv2:drain-test-incarnation");
     vi.spyOn(process, "kill").mockImplementation(() => true);
 
     const result = await gracefulStopCoordinator({
@@ -47,6 +47,35 @@ describe("service drain helper", () => {
     });
 
     expect(result.status).toBe("timed_out");
-    expect(readFileSync(pidFile, "utf8")).toBe("12345\n");
+    expect(readFileSync(pidFile, "utf8")).toBe("12345\nv2:drain-test-incarnation");
+  });
+
+  it("does not unlink a replacement incarnation that reuses the same PID", async () => {
+    const dataDir = tempDataDir();
+    const pidFile = join(dataDir, ".coordinator.pid");
+    const initialClaim = "12345\nv2:initial-incarnation";
+    const replacementClaim = "12345\nv2:replacement-incarnation";
+    writeFileSync(pidFile, initialClaim);
+    vi.spyOn(process, "kill").mockImplementation((_pid, signal) => {
+      if (signal === "SIGTERM") {
+        writeFileSync(pidFile, replacementClaim);
+        return true;
+      }
+      if (readFileSync(pidFile, "utf8") === replacementClaim) {
+        const error = new Error("not found");
+        error.code = "ESRCH";
+        throw error;
+      }
+      return true;
+    });
+
+    const result = await gracefulStopCoordinator({
+      config: { dataDir },
+      timeoutMs: 100,
+      pollMs: 1,
+    });
+
+    expect(result.status).toBe("exited");
+    expect(readFileSync(pidFile, "utf8")).toBe(replacementClaim);
   });
 });

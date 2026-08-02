@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { parseCoordinatorPid } from "../core/process/index.js";
 
 const DEFAULT_POLL_MS = 250;
 const DRAIN_SHUTDOWN_SLACK_MS = 10_000;
@@ -19,24 +20,21 @@ export function gracefulStopTimeoutMs(config = {}) {
   return Math.min(base + DRAIN_SHUTDOWN_SLACK_MS, MAX_DRAIN_TIMEOUT_MS);
 }
 
-function parsePid(value) {
-  const pid = Number(String(value || "").trim());
-  return Number.isInteger(pid) && pid > 0 ? pid : null;
-}
-
 function readPid(pidFile) {
   if (!pidFile || !existsSync(pidFile)) return { status: "not_running", pidFile };
   let pid = null;
+  let claim = null;
   try {
-    pid = parsePid(readFileSync(pidFile, "utf8"));
+    claim = readFileSync(pidFile, "utf8");
+    pid = parseCoordinatorPid(claim);
   } catch {
     pid = null;
   }
   if (!pid) {
-    try { unlinkSync(pidFile); } catch {}
+    unlinkMatchingPidFile(pidFile, claim);
     return { status: "stale_pid", pid: null, pidFile };
   }
-  return { status: "running", pid, pidFile };
+  return { status: "running", pid, pidFile, claim };
 }
 
 function processAlive(pid) {
@@ -50,21 +48,21 @@ function processAlive(pid) {
   }
 }
 
-function unlinkMatchingPidFile(pidFile, pid) {
+function unlinkMatchingPidFile(pidFile, claim) {
   if (!pidFile || !existsSync(pidFile)) return;
   try {
-    const current = parsePid(readFileSync(pidFile, "utf8"));
-    if (!current || current === pid) unlinkSync(pidFile);
+    if (readFileSync(pidFile, "utf8") === claim) unlinkSync(pidFile);
   } catch {
-    try { unlinkSync(pidFile); } catch {}
+    // A replacement claim or an already-removed file belongs to no cleanup
+    // action from this drain attempt.
   }
 }
 
-async function waitForExit({ pid, pidFile, timeoutMs, pollMs }) {
+async function waitForExit({ pid, pidFile, claim, timeoutMs, pollMs }) {
   const startedAt = Date.now();
   for (;;) {
     if (!processAlive(pid)) {
-      unlinkMatchingPidFile(pidFile, pid);
+      unlinkMatchingPidFile(pidFile, claim);
       return { status: "exited", pid, pidFile, elapsedMs: Date.now() - startedAt };
     }
     if (Date.now() - startedAt >= timeoutMs) {
@@ -84,14 +82,14 @@ export async function gracefulStopCoordinator({
   const current = readPid(pidFile);
   if (current.status !== "running") return current;
   if (!processAlive(current.pid)) {
-    unlinkMatchingPidFile(pidFile, current.pid);
+    unlinkMatchingPidFile(pidFile, current.claim);
     return { status: "stale_pid", pid: current.pid, pidFile };
   }
   try {
     process.kill(current.pid, signal);
   } catch (err) {
     if (err?.code === "ESRCH") {
-      unlinkMatchingPidFile(pidFile, current.pid);
+      unlinkMatchingPidFile(pidFile, current.claim);
       return { status: "stale_pid", pid: current.pid, pidFile };
     }
     throw err;
@@ -99,6 +97,7 @@ export async function gracefulStopCoordinator({
   return waitForExit({
     pid: current.pid,
     pidFile,
+    claim: current.claim,
     timeoutMs: Math.max(0, Number(timeoutMs) || 0),
     pollMs: Math.max(1, Number(pollMs) || DEFAULT_POLL_MS),
   });

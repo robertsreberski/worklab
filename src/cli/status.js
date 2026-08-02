@@ -1,7 +1,12 @@
 // src/cli/status.js
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig, serviceStatus, worklabBaseUrl } from "../core/index.js";
+import {
+  loadConfig,
+  serviceStatus,
+  worklabBaseUrl,
+} from "../core/index.js";
+import { parseCoordinatorPid } from "../core/process/index.js";
 import { applyConfigArgs } from "./args.js";
 import { inspectServiceRuntime, serviceRuntimeProblems } from "./service-runtime.js";
 
@@ -17,7 +22,11 @@ export async function status(args = []) {
     console.log("coordinator: not running");
     return;
   }
-  const pid = parseInt(readFileSync(pidFile, "utf8").trim(), 10);
+  const pid = parseCoordinatorPid(readFileSync(pidFile, "utf8"));
+  if (!pid) {
+    console.log("coordinator: stale pid file (invalid pid)");
+    return;
+  }
   let alive = true;
   try { process.kill(pid, 0); } catch { alive = false; }
 

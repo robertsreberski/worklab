@@ -31,6 +31,11 @@ import { mountStaticUi } from "./coordinator/static-ui.js";
 import { createWatcherProxy } from "./coordinator/watcher-proxy.js";
 import { reconcileOrphanedAcpOperations } from "./coordinator/acp-operation-manager.js";
 import { createAcpUrlHandoffStore, createWorklabAcpControls } from "./core/index.js";
+import {
+  createCoordinatorClaim,
+  parseCoordinatorClaim,
+  parseCoordinatorPid,
+} from "./core/process/index.js";
 
 const DEFAULT_OPTIONAL_SERVICE_START_TIMEOUT_MS = 5000;
 const COORDINATOR_LOCK_FILE = ".coordinator.lock";
@@ -38,11 +43,6 @@ const COORDINATOR_PID_FILE = ".coordinator.pid";
 
 export { startDeferredService } from "./coordinator/service-registry.js";
 export { createWatcherProxy } from "./coordinator/watcher-proxy.js";
-
-function parseCoordinatorPid(value) {
-  const pid = Number.parseInt(String(value || "").trim(), 10);
-  return Number.isInteger(pid) && pid > 0 ? pid : null;
-}
 
 function coordinatorProcessAlive(pid) {
   if (!pid) return false;
@@ -89,7 +89,6 @@ function closeCoordinatorLock(lockDb) {
 function claimCoordinatorOwnership(dataDir) {
   const lockFile = join(dataDir, COORDINATOR_LOCK_FILE);
   const pidFile = join(dataDir, COORDINATOR_PID_FILE);
-  const pidContent = String(process.pid);
   const lockDb = new Database(lockFile, { timeout: 0 });
   lockDb.pragma("busy_timeout = 0");
   try {
@@ -104,8 +103,14 @@ function claimCoordinatorOwnership(dataDir) {
     throw error;
   }
   try {
-    const legacyPid = parseCoordinatorPid(readFileOrNull(pidFile));
-    if (coordinatorProcessAlive(legacyPid)) throw coordinatorActiveError(dataDir, legacyPid);
+    const previousClaim = parseCoordinatorClaim(readFileOrNull(pidFile));
+    // A numeric-only file can belong to a still-running pre-v2 coordinator,
+    // which did not hold the SQLite lock. A v2 claim cannot: acquiring the
+    // lifetime lock proves that incarnation is gone, even if its PID was reused.
+    if (previousClaim.format === "legacy" && coordinatorProcessAlive(previousClaim.pid)) {
+      throw coordinatorActiveError(dataDir, previousClaim.pid);
+    }
+    const pidContent = createCoordinatorClaim(process.pid);
     writeFileSync(pidFile, pidContent, { mode: 0o600 });
     return { lockDb, pidFile, pidContent };
   } catch (error) {

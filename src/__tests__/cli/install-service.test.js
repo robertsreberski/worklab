@@ -78,7 +78,7 @@ describe("launchd service controls", () => {
   it("signals the coordinator and waits before bootstrapping the macOS service on restart", async () => {
     const dataDir = tempDataDir();
     mkdirSync(dataDir, { recursive: true });
-    writeFileSync(join(dataDir, ".coordinator.pid"), "12345\n");
+    writeFileSync(join(dataDir, ".coordinator.pid"), "12345\nv2:install-service-test-incarnation");
     const calls = [];
     vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
       calls.push(["kill", pid, signal || "0"]);

@@ -1,5 +1,6 @@
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -11,6 +12,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startCoordinator, startDeferredService } from "../../coordinator.js";
 import { createAcpProfile } from "../../core/acp-profiles.js";
+import { createCoordinatorClaim, parseCoordinatorClaim } from "../../core/process/index.js";
 import { loadConfig } from "../../core/config.js";
 
 function lifecycleService(extra = {}) {
@@ -271,8 +273,8 @@ describe("coordinator startup services", () => {
     expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
     expect(rejected[0].reason?.message).toContain("Worklab is already running");
-    expect(readFileSync(join(config.dataDir, ".coordinator.pid"), "utf8"))
-      .toBe(String(process.pid));
+    expect(parseCoordinatorClaim(readFileSync(join(config.dataDir, ".coordinator.pid"), "utf8")))
+      .toMatchObject({ format: "v2", pid: process.pid });
     expect(existsSync(join(config.dataDir, ".coordinator.lock"))).toBe(true);
 
     await fulfilled[0].value.shutdown();
@@ -362,7 +364,7 @@ describe("coordinator startup services", () => {
     roots.push(root);
     const config = startupConfig(root);
     const pidFile = join(config.dataDir, ".coordinator.pid");
-    const replacement = "replacement-incarnation";
+    const replacement = createCoordinatorClaim(process.pid, "00000000-0000-4000-8000-000000000099");
     const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn() };
 
     await expect(startCoordinator({
@@ -378,6 +380,47 @@ describe("coordinator startup services", () => {
 
     expect(readFileSync(pidFile, "utf8")).toBe(replacement);
     expect(existsSync(join(config.dataDir, ".coordinator.lock"))).toBe(true);
+  });
+
+  it("replaces a stale v2 claim even when its PID belongs to a live process", async () => {
+    const root = mkdtempSync(join(tmpdir(), "worklab-startup-ownership-reused-pid-"));
+    roots.push(root);
+    const config = startupConfig(root);
+    const pidFile = join(config.dataDir, ".coordinator.pid");
+    const staleClaim = createCoordinatorClaim(process.pid, "00000000-0000-4000-8000-000000000098");
+    const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn() };
+    mkdirSync(config.dataDir, { recursive: true });
+    writeFileSync(pidFile, staleClaim);
+
+    const coordinator = await startCoordinator({
+      config,
+      logger,
+      services: startupServices(),
+    });
+    try {
+      const currentClaim = readFileSync(pidFile, "utf8");
+      expect(currentClaim).not.toBe(staleClaim);
+      expect(parseCoordinatorClaim(currentClaim)).toMatchObject({ format: "v2", pid: process.pid });
+    } finally {
+      await coordinator.shutdown();
+    }
+  });
+
+  it("conservatively rejects a live numeric-only legacy claim", async () => {
+    const root = mkdtempSync(join(tmpdir(), "worklab-startup-ownership-legacy-pid-"));
+    roots.push(root);
+    const config = startupConfig(root);
+    const pidFile = join(config.dataDir, ".coordinator.pid");
+    const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn() };
+    mkdirSync(config.dataDir, { recursive: true });
+    writeFileSync(pidFile, String(process.pid));
+
+    await expect(startCoordinator({
+      config,
+      logger,
+      services: startupServices(),
+    })).rejects.toThrow(`Worklab is already running for ${config.dataDir} (pid ${process.pid})`);
+    expect(readFileSync(pidFile, "utf8")).toBe(String(process.pid));
   });
 
   it("reclaims the lifetime lock and stale PID after the owning process is killed", async () => {
@@ -440,7 +483,8 @@ describe("coordinator startup services", () => {
         logger,
         services: startupServices(),
       });
-      expect(readFileSync(pidFile, "utf8")).toBe(String(process.pid));
+      expect(parseCoordinatorClaim(readFileSync(pidFile, "utf8")))
+        .toMatchObject({ format: "v2", pid: process.pid });
     } finally {
       if (child.exitCode === null && child.signalCode === null) {
         child.kill("SIGKILL");

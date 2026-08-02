@@ -163,10 +163,11 @@ describe("compact logs CLI helpers", () => {
     const dataDir = createDataDir();
     dirs.push(dataDir);
     seedDb(dataDir);
-    writeFileSync(join(dataDir, ".coordinator.pid"), String(process.pid));
+    const claim = `${process.pid}\nv2:compact-logs-test-incarnation`;
+    writeFileSync(join(dataDir, ".coordinator.pid"), claim);
 
     expect(() => compactLogs({ dataDir, apply: true, minAgeDays: 0, minBytes: 1 })).toThrow(/coordinator is running/i);
     expect(existsSync(join(dataDir, ".coordinator.pid"))).toBe(true);
-    expect(readFileSync(join(dataDir, ".coordinator.pid"), "utf8")).toBe(String(process.pid));
+    expect(readFileSync(join(dataDir, ".coordinator.pid"), "utf8")).toBe(claim);
   });
 });

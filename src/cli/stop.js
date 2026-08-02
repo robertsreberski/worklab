@@ -2,6 +2,7 @@
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "../core/index.js";
+import { parseCoordinatorPid } from "../core/process/index.js";
 import { stopUserService } from "./install-service.js";
 import { applyConfigArgs } from "./args.js";
 
@@ -21,7 +22,12 @@ export async function stop(args = []) {
     console.log("coordinator not running (no pid file)");
     return;
   }
-  const pid = parseInt(readFileSync(pidFile, "utf8").trim(), 10);
+  const pid = parseCoordinatorPid(readFileSync(pidFile, "utf8"));
+  if (!pid) {
+    console.log("coordinator not running (invalid pid file); cleaning stale pid file");
+    try { unlinkSync(pidFile); } catch {}
+    return;
+  }
   try {
     process.kill(pid, "SIGTERM");
     console.log(`sent SIGTERM to ${pid}`);

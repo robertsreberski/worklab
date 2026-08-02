@@ -119,7 +119,7 @@ const FORBID_API_DB_PREPARE = {
 // `ignore` package), which doesn't support extended-glob !(...) — we use
 // allow-listed re-includes instead.
 // Edge layers consume core/ via the public barrel (src/core/index.js).
-// Domain barrels under core/{workflow,runtime,content,platform}/index.js are
+// Domain barrels under core/{workflow,runtime,content,platform,process}/index.js are
 // also public seams for incremental modularization.
 // core/db/queries/* is explicitly allowed everywhere — the named query
 // helpers are the agreed cross-cutting DAL after PR-2..PR-6 migrated all
@@ -141,6 +141,8 @@ const FORBID_DEEP_CORE = {
     "!**/core/content/index*",
     "!**/core/platform",
     "!**/core/platform/index*",
+    "!**/core/process",
+    "!**/core/process/index*",
   ],
   message:
     "Import from a core public barrel; core/db/queries/* is the only non-barrel deep import allowed.",

@@ -13,6 +13,7 @@ import {
   compactEventsForSqlite,
   jsonByteLength,
 } from "../core/index.js";
+import { parseCoordinatorPid } from "../core/process/index.js";
 import { argValue, hasFlag } from "./args.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -52,11 +53,11 @@ function activeCoordinatorPid(dataDir) {
   if (!existsSync(pidPath)) return null;
   let pid = null;
   try {
-    pid = Number(String(readFileSync(pidPath, "utf8")).trim());
+    pid = parseCoordinatorPid(readFileSync(pidPath, "utf8"));
   } catch {
     return null;
   }
-  if (!Number.isInteger(pid) || pid <= 0) return null;
+  if (!pid) return null;
   try {
     process.kill(pid, 0);
     return pid;
