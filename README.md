@@ -139,11 +139,12 @@ Runtime data defaults to `~/.worklab`; task workspaces default to
 ## Native Runtime Capabilities
 
 Worklab leaves provider-native helpers available to supported runtimes. Claude
-can use its Agent/Task profiles and skills, Codex can use collaboration
-subagents with repository instructions, and Pi can create bounded inline
-read-only helpers. Their nested work is folded into the parent run's activity
-log. These ephemeral helpers are separate from a Worklab team roster: teams
-delegate durable child tasks, not runtime profiles.
+can use its Agent/Task profiles and skills, including inspecting or stopping
+helpers it launched in the background; Codex can use collaboration subagents
+with repository instructions, and Pi can create bounded inline read-only
+helpers. Their nested work is folded into the parent run's activity log. These
+ephemeral helpers are separate from a Worklab team roster: teams delegate
+durable child tasks, not runtime profiles or runtime-local task state.
 
 Claude user, project, and local settings are treated as trusted executable
 configuration. They may load native agents and skills, but also hooks and

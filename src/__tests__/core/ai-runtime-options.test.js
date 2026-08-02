@@ -336,7 +336,7 @@ describe("generateResponse Codex runtime options", () => {
       messages: [{ role: "user", content: "hi" }],
       allowedTools: [
         "Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch",
-        "Agent", "Task", "Skill", "SlashCommand", "NotebookEdit", "BashOutput", "KillShell",
+        "Agent", "Task", "TaskOutput", "TaskStop", "Skill", "SlashCommand", "NotebookEdit", "BashOutput", "KillShell",
       ],
       disallowedTools: [],
     });
@@ -353,7 +353,7 @@ describe("generateResponse Codex runtime options", () => {
       executionMode: "sdk",
       allowedTools: [
         "Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch",
-        "Agent", "Task", "Skill", "SlashCommand", "NotebookEdit", "BashOutput", "KillShell",
+        "Agent", "Task", "TaskOutput", "TaskStop", "Skill", "SlashCommand", "NotebookEdit", "BashOutput", "KillShell",
       ],
       disallowedTools: [],
     });

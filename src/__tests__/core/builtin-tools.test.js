@@ -8,9 +8,11 @@ describe("WORKLAB_BUILTIN_TOOLS", () => {
   // Claude Code hard-limits itself to that list. Dropping the subagent tool
   // therefore disabled every on-disk `.claude/agents` profile with no error and
   // no warning — the tool simply did not exist for the model.
-  it("grants both exact subagent tool names used by the supported runtimes", () => {
+  it("grants native subagent launch and background-control tools", () => {
     expect(WORKLAB_BUILTIN_TOOLS).toContain("Agent");
     expect(WORKLAB_BUILTIN_TOOLS).toContain("Task");
+    expect(WORKLAB_BUILTIN_TOOLS).toContain("TaskOutput");
+    expect(WORKLAB_BUILTIN_TOOLS).toContain("TaskStop");
   });
 
   it("grants the native skill tool", () => {
@@ -19,8 +21,12 @@ describe("WORKLAB_BUILTIN_TOOLS", () => {
 
   // Worklab owns run todos through core/run-todos.js and the agent MCP surface.
   // The native tool would keep a second list nothing reads.
-  it("does not grant the native todo tool", () => {
+  it("does not grant native tools that duplicate Worklab task state", () => {
     expect(WORKLAB_BUILTIN_TOOLS).not.toContain("TodoWrite");
+    expect(WORKLAB_BUILTIN_TOOLS).not.toContain("TaskCreate");
+    expect(WORKLAB_BUILTIN_TOOLS).not.toContain("TaskGet");
+    expect(WORKLAB_BUILTIN_TOOLS).not.toContain("TaskList");
+    expect(WORKLAB_BUILTIN_TOOLS).not.toContain("TaskUpdate");
   });
 
   it("has no duplicate entries", () => {
@@ -39,6 +45,8 @@ describe("WORKLAB_BUILTIN_TOOLS", () => {
       "WebSearch",
       "Agent",
       "Task",
+      "TaskOutput",
+      "TaskStop",
       "Skill",
       "SlashCommand",
       "NotebookEdit",

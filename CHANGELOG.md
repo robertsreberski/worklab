@@ -15,6 +15,10 @@
     `subagent_mode` choices no longer inject roster members or gate provider-
     native helpers; the physical database column remains temporarily as an
     inert downgrade tombstone and is never returned by the API or MCP tools.
+  - Claude all-mode agents retain `TaskOutput` and `TaskStop`, so they can
+    inspect or cancel native helpers launched in the background. Worklab still
+    excludes native todo and task-state tools that would duplicate its durable
+    task model.
   - Claude's native user/project/local settings are a trusted-code boundary:
     they may load hooks, plugins, and provider-native skills in addition to
     agent profiles. Worklab-managed Skills allowlists do not sandbox that
