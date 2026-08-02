@@ -118,6 +118,34 @@ describe("ACP API", () => {
       .not.toContain("resolved-secret");
   });
 
+  it("accepts only sourceId in mono profile import requests", async () => {
+    const cwd = workspace();
+    const resolveMonoSource = vi.fn(async () => ({
+      descriptor: monoDescriptor(cwd),
+      command: process.execPath,
+      args: [],
+      envKeys: [],
+    }));
+    const { agent } = makeTestServer({ acpControls: { resolveMonoSource } });
+
+    const response = await agent.post("/api/acp/profiles").send({
+      sourceId: "mono-primary",
+      displayName: "Caller Override",
+    }).expect(400);
+    expect(response.body).toEqual({
+      error: {
+        code: "validation",
+        message: "mono profile imports accept exactly one field: sourceId",
+      },
+    });
+    expect(resolveMonoSource).not.toHaveBeenCalled();
+
+    await agent.post("/api/acp/profiles").send({
+      source_id: "mono-primary",
+    }).expect(400);
+    expect(resolveMonoSource).not.toHaveBeenCalled();
+  });
+
   it("does not expose errors returned by injected discovery controls", async () => {
     const { agent } = makeTestServer({
       acpControls: {
@@ -327,5 +355,26 @@ describe("ACP API", () => {
     expect(JSON.stringify(response.body)).not.toMatch(/watcher-error-secret|request-form-secret/u);
     expect(server.db.prepare("SELECT state FROM acp_interactions WHERE id = ?").get(interactionId).state)
       .toBe("pending");
+  });
+
+  it("does not expose errors returned by an injected operation manager", async () => {
+    const cwd = workspace();
+    const { agent } = makeTestServer({
+      acpOperationManager: {
+        start: () => {
+          throw Object.assign(new Error("operation failed with manager-control-secret"), {
+            code: "secret_code_manager-control-secret",
+            status: 418,
+          });
+        },
+        isProfileActive: () => false,
+      },
+    });
+    const profile = (await createGeneric(agent, cwd)).body.profile;
+    const response = await agent.post(`/api/acp/profiles/${profile.id}/probe`).expect(400);
+    expect(response.body).toEqual({
+      error: { code: "validation", message: "Request failed" },
+    });
+    expect(JSON.stringify(response.body)).not.toContain("manager-control-secret");
   });
 });

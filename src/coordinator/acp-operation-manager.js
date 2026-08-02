@@ -46,7 +46,7 @@ const INTERACTION_KIND_ALIASES = Object.freeze({
 });
 
 function managerError(message, { code = "invalid_state", status = 409 } = {}) {
-  return Object.assign(new Error(message), { code, status });
+  return Object.assign(new Error(message), { code, status, safeMessage: message });
 }
 
 function boundedIdentifier(value, name, max = 1000) {

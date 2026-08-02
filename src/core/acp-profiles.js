@@ -47,7 +47,12 @@ const DEFAULT_PERMISSIONS_POLICY = Object.freeze({
 });
 
 function acpError(message, { code = "validation", status = 400, details } = {}) {
-  return Object.assign(new Error(message), { code, status, ...(details ? { details } : {}) });
+  return Object.assign(new Error(message), {
+    code,
+    status,
+    safeMessage: message,
+    ...(details ? { details } : {}),
+  });
 }
 
 function isPlainObject(value) {
