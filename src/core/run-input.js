@@ -33,6 +33,8 @@ import { buildDelegationContext } from "./delegation.js";
 import { buildNativeSubagentContext } from "./native-subagents.js";
 import { formatWorklabResultText } from "./worklab-result/contract.js";
 import { renderResumeSnapshot } from "@mono-agent/agent-runtime/agent/transcript.js";
+import { getAcpProfileForAgent } from "./acp-profiles.js";
+import { buildAgentOwnedAcpTaskInput } from "./acp-task-input.js";
 
 function runInputError(status, code, message) {
   return Object.assign(new Error(message), { status, code });
@@ -761,6 +763,8 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
 
 export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, priorRunId = null, contextCache = null, worklabToolSurfaceMarkdown = "", now = Date.now() }) {
   const setup = loadTaskRunSetup({ config, db, taskId, agentName, runId, mode });
+  const acpProfile = getAcpProfileForAgent({ db, agentName });
+  const agentOwnsAcpConfiguration = acpProfile?.configurationOwner === "agent";
   const { agent, task, skills, memory, learningMemories, learningMemoryContext, journalTail, commentRows, pinnedKb, mcpServers, delegation, nativeSubagents } = setup;
   const capabilityPolicy = applyPlanningToolPolicy({
     mode,
@@ -786,6 +790,19 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
 
   if (mode === "plan" || mode === "execute") {
     const priorRuns = loadPriorRunSummaries(db, taskId, runId);
+    if (agentOwnsAcpConfiguration) {
+      return buildAgentOwnedAcpTaskInput({
+        setup,
+        acpProfile,
+        mode,
+        runtimeDateContext,
+        currentRunComments,
+        priorRuns,
+        taskArtifacts,
+        resolvedBlockers,
+        dataDir: config.dataDir,
+      });
+    }
     const promptInput = {
       agent, task, project: setup.project, effectiveWorkdir: setup.effectiveWorkdir, qaOutputDir: setup.qaOutputDir, skills, memory, learningMemoryContext, journalTail,
       workspaceMode: setup.workspaceMode, sourceWorkdir: setup.sourceWorkdir, worktree: setup.worktree,
@@ -832,6 +849,20 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const priorLog = getAgentLogByRunId(db, priorRun.id);
     const priorEvents = priorLog ? parseEvents(priorLog.events) : [];
     const execution = extractExecutionFromEvents(priorEvents, priorRun);
+    if (agentOwnsAcpConfiguration) {
+      return buildAgentOwnedAcpTaskInput({
+        setup,
+        acpProfile,
+        mode,
+        runtimeDateContext,
+        currentRunComments,
+        priorRun,
+        execution,
+        taskArtifacts,
+        resolvedBlockers,
+        dataDir: config.dataDir,
+      });
+    }
     const cached = cache.get(cacheKey);
     const prompt = cached || buildSystemPrompt({
       agent, task, skills, memory, learningMemoryContext, journalTail,
