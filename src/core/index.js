@@ -240,6 +240,7 @@ export { logger, createLogger } from "./logger.js";
 export {
   decrypt,
   encrypt,
+  getAcpSessionTokenKey,
   getKeyFingerprint,
   getKeySource,
 } from "./crypto.js";

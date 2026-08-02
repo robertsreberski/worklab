@@ -8,6 +8,7 @@ const IV_BYTES = 12;
 const TAG_BYTES = 16;
 const KEY_BYTES = 32;
 const HKDF_INFO = "worklab/provider-credentials/v1";
+const ACP_SESSION_TOKEN_HKDF_INFO = "worklab/acp-session-tokens/v2";
 const KEY_FILE = ".provider-encryption-key";
 
 let cached = null;
@@ -34,30 +35,50 @@ function loadOrCreateMasterKey(dataDir) {
 
   const raw = randomBytes(KEY_BYTES);
   mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, raw);
-  try { chmodSync(filePath, 0o600); } catch { /* best-effort on non-POSIX */ }
-  return { raw, source: "generated" };
+  try {
+    writeFileSync(filePath, raw, { flag: "wx", mode: 0o600 });
+    try { chmodSync(filePath, 0o600); } catch { /* best-effort on non-POSIX */ }
+    return { raw, source: "generated" };
+  } catch (error) {
+    if (error?.code !== "EEXIST") throw error;
+    const winner = readFileSync(filePath);
+    if (winner.length < KEY_BYTES) throw new Error(`provider encryption key file too short: ${filePath}`);
+    return { raw: winner, source: "file" };
+  }
+}
+
+function getDerivedKeys(dataDir = loadConfig().dataDir) {
+  const envKey = process.env.PROVIDER_ENCRYPTION_KEY?.trim() || "";
+  const cacheKey = `${dataDir}:${envKey}`;
+  if (cached?.cacheKey === cacheKey) return cached;
+  const { raw, source } = loadOrCreateMasterKey(dataDir);
+  const providerKey = Buffer.from(hkdfSync("sha256", raw, Buffer.alloc(0), HKDF_INFO, KEY_BYTES));
+  const acpSessionTokenKey = Buffer.from(hkdfSync(
+    "sha256",
+    raw,
+    Buffer.alloc(0),
+    ACP_SESSION_TOKEN_HKDF_INFO,
+    KEY_BYTES,
+  ));
+  const fingerprint = createHash("sha256").update(providerKey).digest("hex").slice(0, 12);
+  cached = { cacheKey, providerKey, acpSessionTokenKey, source, fingerprint };
+  return cached;
 }
 
 function getDerivedKey(dataDir = loadConfig().dataDir) {
-  const envKey = process.env.PROVIDER_ENCRYPTION_KEY?.trim() || "";
-  const cacheKey = `${dataDir}:${envKey}`;
-  if (cached?.cacheKey === cacheKey) return cached.key;
-  const { raw, source } = loadOrCreateMasterKey(dataDir);
-  const key = Buffer.from(hkdfSync("sha256", raw, Buffer.alloc(0), HKDF_INFO, KEY_BYTES));
-  const fingerprint = createHash("sha256").update(key).digest("hex").slice(0, 12);
-  cached = { cacheKey, key, source, fingerprint };
-  return key;
+  return getDerivedKeys(dataDir).providerKey;
 }
 
 export function getKeyFingerprint(options = {}) {
-  getDerivedKey(options.dataDir);
-  return cached.fingerprint;
+  return getDerivedKeys(options.dataDir).fingerprint;
 }
 
 export function getKeySource(options = {}) {
-  getDerivedKey(options.dataDir);
-  return cached.source;
+  return getDerivedKeys(options.dataDir).source;
+}
+
+export function getAcpSessionTokenKey(options = {}) {
+  return Buffer.from(getDerivedKeys(options.dataDir).acpSessionTokenKey);
 }
 
 export function encrypt(plaintext, options = {}) {
