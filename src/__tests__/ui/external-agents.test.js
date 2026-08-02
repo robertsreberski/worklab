@@ -4,6 +4,7 @@ import {
   acpProfileForAgent,
   externalAgentDraft,
   externalAgentKind,
+  externalAgentMutationPayload,
   externalAgentPayload,
   externalAgentVolatileState,
   normalizeMonoDiscovery,
@@ -90,6 +91,39 @@ describe("external agent UI helpers", () => {
       .toThrow("Configuration policy must be a JSON object");
   });
 
+  it("keeps agent-owned and mono-managed launch policy out of ordinary patches", () => {
+    const draft = {
+      displayName: "Managed",
+      description: "External",
+      enabled: true,
+      command: "/private/managed-agent",
+      argsText: "--secret-shape",
+      envKeysText: "SECRET_KEY",
+      configurationOwner: "agent",
+      workspaceOwner: "agent",
+      mcpOwner: "agent",
+      configPolicyText: "{}",
+      sessionPolicyText: "{}",
+    };
+
+    const generic = externalAgentMutationPayload(draft, { driver: "generic" });
+    expect(generic).toEqual({
+      displayName: "Managed",
+      description: "External",
+      enabled: true,
+      configurationOwner: "agent",
+      workspaceOwner: "agent",
+      mcpOwner: "agent",
+      canonicalWorkspace: null,
+    });
+    expect(generic).not.toHaveProperty("command");
+    expect(externalAgentMutationPayload(draft, { driver: "mono" })).toEqual({
+      displayName: "Managed",
+      description: "External",
+      enabled: true,
+    });
+  });
+
   it("projects mono discovery onto its public sanitized contract", () => {
     const normalized = normalizeMonoDiscovery({
       schema: "mono-agent.acp-discovery.v1",
@@ -102,7 +136,8 @@ describe("external agent UI helpers", () => {
         baseUrl: "http://127.0.0.1:5555",
         configPath: "/private/mono-agent.config.json",
         config: { provider: "secret-provider" },
-        capabilities: { sessions: true, clientMcp: false },
+        capabilities: { sessions: true, clientMcp: false, clientFilesystem: false, clientTerminal: false },
+        constraints: { promptContent: ["text", "resource_link"], attachments: false },
       }],
     });
 
@@ -114,7 +149,8 @@ describe("external agent UI helpers", () => {
         health: "running",
         ready: true,
         imported: false,
-        capabilities: { sessions: true, clientMcp: false, filesystem: undefined, terminal: undefined },
+        capabilities: { sessions: true, clientMcp: false, filesystem: false, terminal: false },
+        constraints: { promptContent: ["text", "resource_link"], attachments: false },
       }],
     });
     const displayed = JSON.stringify(normalized);
