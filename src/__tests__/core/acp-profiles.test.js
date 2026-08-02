@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -241,12 +241,17 @@ describe("ACP profile persistence", () => {
       input: { sourceId: "personal-agent" },
       mono: { descriptor: discovery.sources[0], command: process.execPath, args: ["bridge", "acp"] },
     });
+    const canonicalWorkspace = realpathSync(workspace);
+    const importedDescriptor = {
+      ...descriptor,
+      workspace: { ...descriptor.workspace, path: canonicalWorkspace },
+    };
     expect(profile).toMatchObject({
       driver: "mono",
       monoSourceId: "personal-agent",
-      monoSource: descriptor,
-      cwd: workspace,
-      canonicalWorkspace: workspace,
+      monoSource: importedDescriptor,
+      cwd: canonicalWorkspace,
+      canonicalWorkspace,
       configurationOwner: "agent",
       workspaceOwner: "agent",
       mcpOwner: "agent",
@@ -254,7 +259,7 @@ describe("ACP profile persistence", () => {
       configPolicy: descriptor.constraints,
     });
     const stored = db.prepare("SELECT mono_source_json FROM acp_profiles WHERE id = ?").get(profile.id);
-    expect(stored.mono_source_json).toBe(JSON.stringify(descriptor));
+    expect(stored.mono_source_json).toBe(JSON.stringify(importedDescriptor));
 
     expect(() => updateAcpProfileRecord({
       db,
@@ -287,16 +292,18 @@ describe("ACP profile persistence", () => {
     });
   });
 
-  it("keeps legacy mono sources visible but rejects their import", () => {
+  it("keeps stale legacy mono sources with missing workspaces visible but rejects their import", () => {
     const db = makeTestDb();
-    const workspace = tempDir("legacy-mono-workspace");
+    const workspace = tempDir("mono-workspace");
+    const missingWorkspace = join(workspace, "removed-legacy-workspace");
     const compatible = monoDescriptor(workspace);
-    const legacy = monoDescriptor(workspace, {
+    const legacy = monoDescriptor(missingWorkspace, {
       bridgeVersion: 0,
       protocolVersion: 0,
       installedVersion: "unknown",
       sourceId: "legacy-agent",
       label: "Legacy Agent",
+      health: "stale",
       compatible: false,
       warnings: ["bridge_metadata_missing_or_invalid"],
     });
@@ -411,11 +418,21 @@ describe("ACP profile persistence", () => {
 
     const workspace = join(base, "workspace");
     mkdirSync(workspace);
-    expect(() => createAcpProfile({
+    const workspaceLink = join(base, "workspace-link");
+    symlinkSync(workspace, workspaceLink);
+    const profile = createAcpProfile({
       db,
       input: { sourceId: "personal-agent" },
+      mono: { descriptor: monoDescriptor(workspaceLink), command: process.execPath },
+    });
+    expect(profile.canonicalWorkspace).toBe(realpathSync(workspace));
+    expect(profile.monoSource.workspace.path).toBe(realpathSync(workspace));
+
+    expect(() => createAcpProfile({
+      db,
+      input: { sourceId: "legacy-agent" },
       mono: {
-        descriptor: monoDescriptor(workspace, { compatible: false }),
+        descriptor: monoDescriptor(workspace, { sourceId: "legacy-agent", compatible: false }),
         command: process.execPath,
       },
     })).toThrow(/not ACP-compatible/i);

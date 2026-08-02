@@ -234,14 +234,15 @@ function normalizeExecutable(value, name = "command") {
   return canonical;
 }
 
-function normalizeDirectory(value, name, { required = false, preservePath = false } = {}) {
+function normalizeDirectory(value, name, { required = false, requireExisting = true } = {}) {
   const directory = boundedString(value, name, { required });
   if (!directory) return null;
   if (!isAbsolute(directory)) throw acpError(`${name} must be an absolute path`);
+  if (!requireExisting) return directory;
   try {
     const canonical = realpathSync(directory);
     if (!statSync(canonical).isDirectory()) throw new Error("not a directory");
-    return preservePath ? directory : canonical;
+    return canonical;
   } catch {
     throw acpError(`${name} must resolve to a directory`);
   }
@@ -294,7 +295,7 @@ function normalizeMonoDiscoverySource(value) {
   }
   const workspacePath = normalizeDirectory(value.workspace.path, "mono workspace.path", {
     required: true,
-    preservePath: true,
+    requireExisting: false,
   });
   const ownership = value.ownership;
   if (!isPlainObject(ownership)
@@ -353,7 +354,13 @@ export function normalizeMonoSourceDescriptor(value) {
   if (!descriptor.compatible) {
     throw acpError("mono source is not ACP-compatible", { code: "incompatible_source" });
   }
-  return descriptor;
+  const workspacePath = normalizeDirectory(descriptor.workspace.path, "mono workspace.path", {
+    required: true,
+  });
+  return {
+    ...descriptor,
+    workspace: { ...descriptor.workspace, path: workspacePath },
+  };
 }
 
 export function normalizeMonoDiscovery(value) {
