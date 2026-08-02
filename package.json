@@ -71,12 +71,11 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@mono-agent/agent-runtime": "0.17.1",
+    "@mono-agent/agent-runtime": "0.18.1",
     "@slack/bolt": "^4.7.1",
     "@worklab-ai/webhooks": "0.1.10",
     "better-sqlite3": "^11.7.0",
     "chokidar": "^4.0.0",
-    "cors": "^2.8.5",
     "express": "^4.21.0",
     "jszip": "^3.10.1",
     "nanoid": "^5.0.9",

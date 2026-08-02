@@ -15,13 +15,14 @@ import { join } from "node:path";
 import { generateResponse } from "../../core/ai.js";
 import { WORKLAB_BUILTIN_TOOLS } from "../../core/builtin-tools.js";
 
-function writeMinimalCodexAppServer(dir) {
+function writeMinimalCodexAppServer(dir, { hangThreadStart = false } = {}) {
   const script = join(dir, "fake-codex-tool-policy.cjs");
   writeFileSync(script, `#!/usr/bin/env node
 const fs = require("node:fs");
 const readline = require("node:readline");
 const rl = readline.createInterface({ input: process.stdin });
 const logPath = process.env.FAKE_CODEX_REQUEST_LOG;
+const hangThreadStart = ${JSON.stringify(hangThreadStart)};
 function send(value) { process.stdout.write(JSON.stringify(value) + "\\n"); }
 function record(value) { if (logPath) fs.appendFileSync(logPath, JSON.stringify(value) + "\\n"); }
 function resultText() {
@@ -44,7 +45,7 @@ rl.on("line", (line) => {
   if (request.method === "initialize") {
     send({ id: request.id, result: { userAgent: "fake", codexHome: "/tmp/codex", platformFamily: "unix", platformOs: "linux" } });
   } else if (request.method === "thread/start") {
-    send({ id: request.id, result: { thread: { id: "thread1", status: { type: "idle" }, cwd: request.params.cwd, modelProvider: "openai", cliVersion: "fake" }, model: request.params.model, modelProvider: "openai", serviceTier: "fast", cwd: request.params.cwd } });
+    if (!hangThreadStart) send({ id: request.id, result: { thread: { id: "thread1", status: { type: "idle" }, cwd: request.params.cwd, modelProvider: "openai", cliVersion: "fake" }, model: request.params.model, modelProvider: "openai", serviceTier: "fast", cwd: request.params.cwd } });
   } else if (request.method === "turn/start") {
     send({ id: request.id, result: { turn: { id: "turn1", items: [], status: "inProgress", error: null, startedAt: 1, completedAt: null, durationMs: null } } });
     send({ method: "turn/started", params: { threadId: "thread1", turn: { id: "turn1", items: [], status: "inProgress", error: null, startedAt: 1, completedAt: null, durationMs: null } } });
@@ -135,7 +136,17 @@ describe("codex tool policy projection", () => {
     try {
       const result = await runCodex(dir, {
         // The shape applyPlanningToolPolicy produces for read_only_shell_allowlist.
-        allowedTools: ["Read", "Glob", "Grep", "WebFetch", "WebSearch", "Bash"],
+        allowedTools: [
+          "Read",
+          "Glob",
+          "Grep",
+          "WebFetch",
+          "WebSearch",
+          "Agent",
+          "Task",
+          "Skill",
+          "Bash",
+        ],
         disallowedTools: ["Write", "Edit"],
         toolPolicy: { planning: true, policy: "read_only_shell_allowlist" },
       }, { events });
@@ -167,6 +178,55 @@ describe("codex tool policy projection", () => {
 
       expect(result.failureKind).toBe("skipped_capability_mismatch");
       expect(result.diagnostics?.codex_error_code).toBe("codex_tool_policy_unsupported");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 20000);
+
+  it("keeps Worklab's named tools on a Claude fallback from Codex", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-codex-policy-fallback-"));
+    const claudeCalls = [];
+    try {
+      const result = await generateResponse("system", {
+        model: "codex:gpt-5.5",
+        executionMode: "cli",
+        effort: "low",
+        fastMode: false,
+        messages: [{ role: "user", content: "do work" }],
+        cwd: dir,
+        dataDir: dir,
+        settings: {},
+        allowedTools: [...WORKLAB_BUILTIN_TOOLS],
+        disallowedTools: [],
+        codexAppServerCommand: writeMinimalCodexAppServer(dir, { hangThreadStart: true }),
+        codexAppServerArgs: [],
+        codexThreadStartTimeoutMs: 50,
+        codexThreadStartAttempts: 1,
+        fallbackChain: [{
+          model: { sdk: "claude", model: "claude-sonnet-4-6" },
+          executionMode: "sdk",
+        }],
+        claudeAgentQuery: (params) => {
+          claudeCalls.push(params);
+          return {
+            async *[Symbol.asyncIterator]() {
+              yield {
+                type: "result",
+                result: "fallback ok",
+                usage: {},
+                duration_ms: 1,
+                num_turns: 1,
+              };
+            },
+            close: () => {},
+          };
+        },
+      });
+
+      expect(result.error).toBeFalsy();
+      expect(result.text).toBe("fallback ok");
+      expect(claudeCalls).toHaveLength(1);
+      expect(claudeCalls[0].options.allowedTools).toEqual(WORKLAB_BUILTIN_TOOLS);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

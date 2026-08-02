@@ -13,11 +13,20 @@ import { getAutomationById } from "../core/db/queries/automations.js";
 import { createSdkEventCoalescer } from "./event-coalescer.js";
 import { maxTurnsForModel } from "./util.js";
 
+const ACP_TASK_ONLY_MESSAGE = "external ACP agents currently support task runs only";
+
+function isAcpAgent(agent) {
+  return agent?.sdk === "acp"
+    || String(agent?.model || "").startsWith("acp:")
+    || agent?.execution_mode === "acp";
+}
+
 function loadAutomationSetup({ config, db, automationId, agentName, runId }) {
   const automation = getAutomationById(db, automationId);
   if (!automation) return { error: `automation ${automationId} not found` };
   const agent = getAgentByName(db, agentName);
   if (!agent) return { error: `agent ${agentName} not found` };
+  if (isAcpAgent(agent)) return { error: ACP_TASK_ONLY_MESSAGE };
   const settings = readSettings(db);
 
   const { memory, journalTail } = readAgentMemoryContext({

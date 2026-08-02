@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import supertest from "supertest";
 import { makeTestDb } from "../helpers/test-db.js";
 import { createServer } from "../../api/server.js";
+import { sameOriginTestAgent } from "../helpers/test-server.js";
 
 describe("mcp config", () => {
   const dirs = [];
@@ -33,7 +34,7 @@ await server.connect(new StdioServerTransport());
     writeFileSync(join(d, "config/mcp.json"), JSON.stringify({ mcpServers: {} }));
     const db = makeTestDb();
     const { app } = createServer({ db, logger: undefined, watcher: undefined, dataDir: d });
-    return { agent: supertest(app), dataDir: d };
+    return { agent: sameOriginTestAgent(app), dataDir: d };
   }
 
   it("GET returns empty mcpServers when default", async () => {

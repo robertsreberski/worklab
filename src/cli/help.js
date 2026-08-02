@@ -97,7 +97,15 @@ const COMMANDS = [
   {
     name: "backup",
     usage: "worklab backup [options]",
-    summary: "Create a tar.gz backup of the active data directory.",
+    summary: "Create a credential-scrubbed tar.gz backup of the active data directory.",
+    description: [
+      "Known credentials, keys, MCP config, webhook IDs, browser push subscriptions,",
+      "runtime logs, and process files are omitted. Reconfigure those integrations",
+      "after restoring. Task, comment, knowledge, attachment, and run content remains",
+      "and may be sensitive; this is not general content redaction.",
+      "The output directory and archive use private 0700 and 0600 permissions.",
+      "The output directory must be outside the active Worklab data directory.",
+    ],
     options: [
       ["--out DIR", "Write the backup archive to DIR. Defaults to ~/worklab-backups."],
     ],

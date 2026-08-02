@@ -114,8 +114,50 @@ describe("projectToolPolicy", () => {
       planning: true,
     });
 
-    expect(projected.permissionMode).toBe("plan");
+    expect(projected.permissionMode).toBeUndefined();
     expect(projected.droppedNetworkTools).toEqual([]);
+    expect(projected.unenforceable).toBe(true);
+  });
+
+  it.each(ALLOW_ALL_ONLY)("fails closed instead of widening no-shell planning for %s", (sdk) => {
+    const projected = projectToolPolicy({ sdk }, {
+      allowedTools: ["Read", "Glob", "Grep", "WebFetch", "WebSearch"],
+      disallowedTools: ["Write", "Edit", "Bash"],
+      planning: true,
+      permissionMode: "bypassPermissions",
+    });
+
+    expect(projected.allowedTools).toEqual(["Read", "Glob", "Grep", "WebFetch", "WebSearch"]);
+    expect(projected.disallowedTools).toEqual(["Write", "Edit", "Bash"]);
+    expect(projected.permissionMode).toBe("bypassPermissions");
+    expect(projected.unenforceable).toBe(true);
+  });
+
+  it("fails closed instead of widening a custom planning subset", () => {
+    const projected = projectToolPolicy({ sdk: "codex" }, {
+      allowedTools: ["Read", "Grep"],
+      disallowedTools: ["Write", "Edit"],
+      planning: true,
+    });
+
+    expect(projected.allowedTools).toEqual(["Read", "Grep"]);
+    expect(projected.disallowedTools).toEqual(["Write", "Edit"]);
+    expect(projected.permissionMode).toBeUndefined();
+    expect(projected.unenforceable).toBe(true);
+  });
+
+  it("does not infer native plan mode from prompt-only planning metadata", () => {
+    const projected = projectToolPolicy({ sdk: "codex" }, {
+      allowedTools: ALL_BUILTINS,
+      disallowedTools: [],
+      planning: true,
+      permissionMode: "bypassPermissions",
+    });
+
+    expect(projected.allowedTools).toEqual(["*"]);
+    expect(projected.disallowedTools).toEqual([]);
+    expect(projected.permissionMode).toBe("bypassPermissions");
+    expect(projected.unenforceable).toBe(false);
   });
 
   it("does not translate a non-planning subset to plan mode", () => {

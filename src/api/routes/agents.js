@@ -1,5 +1,6 @@
 import {
   buildModelCapabilities,
+  getAcpProfileForAgent,
   getBuiltinModelByReference,
   getBuiltinProviderAvailability,
   getMcpServerStatuses,
@@ -124,6 +125,18 @@ function rejectRemovedSubagentMode(body) {
   return body && Object.prototype.hasOwnProperty.call(body, "subagent_mode")
     ? REMOVED_SUBAGENT_MODE_MESSAGE
     : null;
+}
+
+function acpProfileManagedError(db, agentName) {
+  const profile = getAcpProfileForAgent({ db, agentName });
+  if (!profile) return null;
+  const profileRoute = `/api/acp/profiles/${encodeURIComponent(profile.id)}`;
+  return {
+    code: "acp_profile_managed",
+    message: `agent is managed by an ACP profile; use ${profileRoute}`,
+    profile_id: profile.id,
+    profile_route: profileRoute,
+  };
 }
 
 function normalizeExecutionMode(value, fallback = "sdk") {
@@ -578,6 +591,8 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
   app.patch("/api/agents/:name", (req, res) => {
     const existing = getAgentByName(db, req.params.name);
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
+    const ownershipError = acpProfileManagedError(db, req.params.name);
+    if (ownershipError) return res.status(409).json({ error: ownershipError });
 
     const removedFieldError = rejectRemovedSubagentMode(req.body);
     if (removedFieldError) {
@@ -807,6 +822,8 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
   });
 
   app.delete("/api/agents/:name", (req, res) => {
+    const ownershipError = acpProfileManagedError(db, req.params.name);
+    if (ownershipError) return res.status(409).json({ error: ownershipError });
     if (agentHasRunningRun(db, req.params.name) || consolidation?.isActive?.(req.params.name)) {
       return res.status(409).json({ error: { code: "agent_running", message: "wait for active runs to finish before deleting this agent" } });
     }

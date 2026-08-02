@@ -30,16 +30,6 @@ export const COMPACTION_OVERRIDE_KEYS = [
   "agent_compaction_min_savings_tokens",
 ];
 
-// Seed values shown when an operator switches adaptive off — the runtime's own
-// adaptive result for its 128k fallback window, so toggling off starts from
-// what was already in effect rather than an arbitrary number.
-export const COMPACTION_OVERRIDE_SEED = {
-  agent_compaction_trigger_ratio: 0.7,
-  agent_compaction_keep_recent_tokens: 12800,
-  agent_compaction_summary_max_tokens: 5120,
-  agent_compaction_min_savings_tokens: 12800,
-};
-
 export function compactionIsAdaptive(settings = {}) {
   return COMPACTION_OVERRIDE_KEYS.every((key) => settings[key] == null);
 }
@@ -264,7 +254,7 @@ export function runtimePayload(runtimeDraft = {}) {
 }
 
 function nullableNumber(value) {
-  return value == null ? null : Number(value);
+  return value === "" || value == null ? null : Number(value);
 }
 
 export function settingsPayload(settings = {}) {

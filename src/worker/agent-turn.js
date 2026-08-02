@@ -1,6 +1,7 @@
 import { estimateFirstTurnInput } from "../core/first-turn-estimate.js";
 import {
   buildTaskRunInput,
+  createWorklabAcpProfileResolver,
   generateResponse,
   resolveModel,
 } from "../core/index.js";
@@ -27,7 +28,18 @@ export async function runTaskAgentTurn(ctx, {
   outputSchema,
   priorRunId = null,
 } = {}) {
-  const { db, config, ac, emit, liveInput, approvalChannel, agentName, runId, taskId } = ctx;
+  const {
+    db,
+    config,
+    ac,
+    emit,
+    liveInput,
+    approvalChannel,
+    acpInteractionChannel,
+    agentName,
+    runId,
+    taskId,
+  } = ctx;
 
   let input;
   try {
@@ -57,6 +69,23 @@ export async function runTaskAgentTurn(ctx, {
     messages,
   } = input;
   const model = resolveModel(agent.model);
+  const isAcpAgent = agent.sdk === "acp";
+  const acpRuntimeOptions = isAcpAgent
+    ? {
+      resolveAcpProfile: createWorklabAcpProfileResolver({
+        db,
+        urlHandoffAvailable: acpInteractionChannel?.urlHandoffAvailable === true,
+      }),
+      onAcpInteractionRequest: async (request, context) => {
+        if (typeof acpInteractionChannel?.request === "function") {
+          return acpInteractionChannel.request(request, context);
+        }
+        return request?.kind === "permission"
+          ? { outcome: { outcome: "cancelled" } }
+          : { action: "cancel" };
+      },
+    }
+    : {};
   const sdkEvents = createSdkEventCoalescer((event) => emit({ type: "sdk_event", event }));
   // HITL approval wiring — see Phase 3 of the agent-runtime usage uplift.
   // When the agent opts in (`require_human_approval = 1`), we install
@@ -119,6 +148,7 @@ export async function runTaskAgentTurn(ctx, {
       abortSignal: ac.signal,
       liveInput,
       onEvent: sdkEvents.emit,
+      ...acpRuntimeOptions,
       ...(approvalEnabled
         ? {
           onToolApprovalRequest: (payload) => approvalChannel.request(payload),

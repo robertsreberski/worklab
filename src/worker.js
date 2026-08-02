@@ -1,11 +1,17 @@
 import { parseArgs } from "node:util";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { writeSync } from "node:fs";
 
-import { createLiveInputQueue, loadConfig, normalizeLiveInputBody, openDb } from "./core/index.js";
+import {
+  WORKLAB_RUNTIME_BRAND,
+  createLiveInputQueue,
+  loadConfig,
+  normalizeLiveInputBody,
+  openDb,
+} from "./core/index.js";
 import { renderToolSurfaceMarkdown } from "./mcp/agent/tools/index.js";
 import { configureToolRuntime } from "@mono-agent/agent-runtime/agent/tools/shared/runtime-context.js";
-import { WORKLAB_RUNTIME_BRAND } from "./core/runtime-brand.js";
 
 const WORKLAB_TOOL_SURFACE_MARKDOWN = renderToolSurfaceMarkdown(null);
 
@@ -14,15 +20,49 @@ import { runAutomation } from "./worker/automation-runner.js";
 import { runTask } from "./worker/task-runner.js";
 import { runReview } from "./worker/review-runner.js";
 import { runLeadCycle } from "./worker/lead-cycle-runner.js";
-import { emitFinalResult } from "./worker/result-emitter.js";
+import { emitCancelledEvent, emitFinalResult } from "./worker/result-emitter.js";
 import { createApprovalChannel } from "./worker/approval-channel.js";
+import {
+  createAcpInteractionChannel,
+  createAcpPrivateOutputRedactor,
+  protectAcpPrivateOutput,
+} from "./worker/acp-interaction-channel.js";
 
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
 }
 
+function emitPrivateUrlHandoff(frame) {
+  if (process.env.WORKLAB_ACP_URL_HANDOFF_FD !== "3") return false;
+  try {
+    const payload = Buffer.from(`${JSON.stringify(frame)}\n`, "utf8");
+    if (payload.length > 16 * 1024) return false;
+    let offset = 0;
+    while (offset < payload.length) {
+      const written = writeSync(3, payload, offset, payload.length - offset);
+      if (!Number.isInteger(written) || written <= 0) return false;
+      offset += written;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const liveInput = createLiveInputQueue();
 const approvalChannel = createApprovalChannel({ emit });
+const acpPrivateOutput = createAcpPrivateOutputRedactor();
+protectAcpPrivateOutput({
+  profileId: process.env.WORKLAB_ACP_PROFILE_ID,
+  stream: process.stderr,
+  redactor: acpPrivateOutput,
+});
+const acpInteractionChannel = createAcpInteractionChannel({
+  emit,
+  emitPrivateUrlHandoff,
+  runId: process.env.WORKLAB_RUN_ID,
+  rememberPrivateValues: acpPrivateOutput.remember,
+});
 
 // R5: graceful drain protocol. The coordinator sends `{type:"worklab_drain"}`
 // on shutdown so the worker can finish the in-flight tool call instead of
@@ -30,7 +70,7 @@ const approvalChannel = createApprovalChannel({ emit });
 // in-flight provider streams unwind cleanly, and emit a `drained` event on
 // stdout so the coordinator can persist a resume snapshot tagged
 // `resume_kind: "drained"`.
-function createControlReaderState({ ac, emit }) {
+function createControlReaderState({ ac, emit, acpInteractionChannel }) {
   let drainRequested = false;
   return {
     isDraining() { return drainRequested; },
@@ -45,6 +85,7 @@ function createControlReaderState({ ac, emit }) {
         ...(deadlineAt ? { deadline_at: deadlineAt } : {}),
         ts: Date.now(),
       });
+      acpInteractionChannel.cancelAllPending("coordinator_shutdown");
       try { ac.abort(); } catch { /* already aborted */ }
     },
   };
@@ -67,6 +108,17 @@ function startControlReader({ controlState }) {
     }
     if (message?.type === "approval_decision") {
       approvalChannel.acceptDecision(message);
+      return;
+    }
+    if (message?.type === "acp_interaction_response") {
+      acpInteractionChannel.acceptResponse(message);
+      return;
+    }
+    if (message?.type === "acp_interaction_cancel") {
+      acpInteractionChannel.cancel(message.interaction_id || message.interactionId, {
+        deliveryId: message.delivery_id || message.deliveryId || null,
+        reason: "client_cancelled",
+      });
       return;
     }
     if (message?.type !== "live_user_message") return;
@@ -124,10 +176,14 @@ async function main() {
   const db = openDb(join(config.dataDir, "worklab.db"));
 
   const ac = new AbortController();
-  process.on("SIGTERM", () => { ac.abort(); });
-  process.on("SIGINT", () => { ac.abort(); });
+  const abortRun = () => {
+    acpInteractionChannel.cancelAllPending("run_aborted");
+    ac.abort();
+  };
+  process.on("SIGTERM", abortRun);
+  process.on("SIGINT", abortRun);
 
-  const controlState = createControlReaderState({ ac, emit });
+  const controlState = createControlReaderState({ ac, emit, acpInteractionChannel });
   startControlReader({ controlState });
 
   const ctx = {
@@ -137,6 +193,7 @@ async function main() {
     emit,
     liveInput,
     approvalChannel,
+    acpInteractionChannel,
     agentName,
     runId,
     taskId,
@@ -166,11 +223,16 @@ async function main() {
   if (controlState.isDraining()) {
     if (!result || result.cancelled || result.error) {
       approvalChannel.denyAllPending("coordinator_shutdown");
-      emit({ type: "cancelled", initiator: "coordinator_shutdown", drained: true });
+      acpInteractionChannel.cancelAllPending("coordinator_shutdown");
+      emitCancelledEvent(emit, result, {
+        initiator: "coordinator_shutdown",
+        drained: true,
+      });
       process.exit(0);
     }
   }
   approvalChannel.denyAllPending("run_terminated");
+  acpInteractionChannel.cancelAllPending("run_terminated");
 
   const exitCode = emitFinalResult(ctx, result);
   process.exit(exitCode);

@@ -49,6 +49,8 @@ export function Select({
   placeholder = "Select",
   disabled = false,
   ariaLabel,
+  ariaDescribedBy,
+  invalid = false,
   id,
   class: className = "",
 }) {
@@ -142,10 +144,13 @@ export function Select({
     const hasEmptyOption = flat.some((o) => o.value === "");
     return (
       <select
+        id={autoId.current}
         class={`input ${className}`.trim()}
         value={value ?? ""}
         disabled={disabled}
         aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={invalid ? "true" : undefined}
         onChange={(e) => onChange?.(e.target.value)}
       >
         {placeholder && !value && !hasEmptyOption && <option value="" disabled>{placeholder}</option>}
@@ -167,12 +172,15 @@ export function Select({
       style={menuWidth ? { "--select-menu-width": `${menuWidth}px` } : undefined}
     >
       <button
+        id={autoId.current}
         type="button"
         class="select-trigger"
         role="combobox"
         aria-controls={`${autoId.current}-listbox`}
         aria-expanded={open}
         aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={invalid ? "true" : undefined}
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
         onKeyDown={onKeyDown}

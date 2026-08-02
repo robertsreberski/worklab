@@ -101,6 +101,14 @@ export async function runTask(ctx) {
     decision: "advance",
     summary: result.text ? String(result.text).trim().slice(0, 500) : "Run completed",
   });
+  if (input.agent?.sdk === "acp" && parsedResult.result) {
+    const validation = validateWorklabResultSemantics(parsedResult.result, { allowDelegation: false });
+    if (!validation.ok) {
+      parsedResult.result = null;
+      parsedResult.error = validation.error;
+      parsedResult.fatal = true;
+    }
+  }
   return {
     kind: "task",
     text: result.text,

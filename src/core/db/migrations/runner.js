@@ -1,5 +1,9 @@
-import { SCHEMA_SQL, SCHEMA_VERSION } from "../schema/current.js";
+import { ACP_SCHEMA_SQL, SCHEMA_SQL, SCHEMA_VERSION } from "../schema/current.js";
 import { ensureCurrentSchemaColumnsBeforeSchema } from "./preflight.js";
+import {
+  compactLegacyAcpTaskRunData,
+  scrubLegacyAcpSessionData,
+} from "./acp-legacy-privacy.js";
 import { STAGES } from "../../state-machine.js";
 import { backfillTaskKeys } from "../../task-keys.js";
 import {
@@ -47,6 +51,88 @@ function getColumn(db, table, column) {
 
 function tableExists(db, table) {
   return !!db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','virtual table') AND name = ?").get(table);
+}
+
+function indexExists(db, index) {
+  return !!db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?").get(index);
+}
+
+function reconcileDuplicateAcpOperationsBeforeActiveProfileIndex(db) {
+  if (!tableExists(db, "acp_operations")
+    || indexExists(db, "idx_acp_operations_one_active_profile")) return;
+
+  const completedAt = Date.now();
+  const errorJson = JSON.stringify({
+    code: "duplicate_active_operations",
+    message: "Multiple active ACP operations existed for the same profile during schema migration.",
+  });
+  const reconcile = db.transaction(() => {
+    const duplicateProfiles = db.prepare(`
+      SELECT profile_id
+      FROM acp_operations
+      WHERE state IN ('queued', 'running', 'waiting_for_interaction')
+      GROUP BY profile_id
+      HAVING COUNT(*) > 1
+      ORDER BY profile_id
+    `).all();
+    const terminalize = db.prepare(`
+      UPDATE acp_operations
+      SET state = 'failed', error_json = ?, updated_at = ?, completed_at = ?
+      WHERE profile_id = ?
+        AND state IN ('queued', 'running', 'waiting_for_interaction')
+    `);
+    const expireInteractions = tableExists(db, "acp_interactions")
+      ? db.prepare(`
+        UPDATE acp_interactions
+        SET state = 'expired', disposition = 'operation_ended',
+            updated_at = ?, resolved_at = ?
+        WHERE resolved_at IS NULL
+          AND state IN ('pending', 'submitted')
+          AND operation_id IN (
+            SELECT id FROM acp_operations
+            WHERE profile_id = ?
+              AND state IN ('queued', 'running', 'waiting_for_interaction')
+          )
+      `)
+      : null;
+    for (const { profile_id: profileId } of duplicateProfiles) {
+      expireInteractions?.run(completedAt, completedAt, profileId);
+      terminalize.run(errorJson, completedAt, completedAt, profileId);
+    }
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_acp_operations_one_active_profile
+      ON acp_operations(profile_id)
+      WHERE state IN ('queued', 'running', 'waiting_for_interaction')
+    `);
+  });
+  reconcile.immediate();
+}
+
+function assertSupportedSchemaVersion(db) {
+  if (!tableExists(db, "schema_meta")) return;
+  const row = db.prepare("SELECT value FROM schema_meta WHERE key = 'version'").get();
+  if (!row) return;
+  const stored = String(row.value);
+  const version = Number(stored);
+  if (!/^(?:0|[1-9]\d*)$/u.test(stored) || !Number.isSafeInteger(version)) {
+    const error = new Error(
+      "Worklab database schema metadata is invalid. "
+        + "Upgrade Worklab or restore a backup created by a compatible version; the database was not changed.",
+    );
+    error.code = "schema_version_invalid";
+    error.supportedSchemaVersion = SCHEMA_VERSION;
+    throw error;
+  }
+  if (version <= SCHEMA_VERSION) return;
+
+  const error = new Error(
+    `Worklab database schema v${version} is newer than this binary supports (v${SCHEMA_VERSION}). `
+      + "Upgrade Worklab or restore a backup created by a compatible version; the database was not changed.",
+  );
+  error.code = "schema_too_new";
+  error.databaseSchemaVersion = version;
+  error.supportedSchemaVersion = SCHEMA_VERSION;
+  throw error;
 }
 
 function ensureEmbeddingVectorPresentColumn(db, { backfill = false } = {}) {
@@ -817,6 +903,16 @@ function canonicalizeProviderModelRefs(db) {
 }
 
 export function runMigrations(db) {
+  // This check must stay before every migration write. Otherwise an older
+  // binary can partially rewrite a newer database and then relabel its
+  // schema_meta row with the older SCHEMA_VERSION at the end of this function.
+  assertSupportedSchemaVersion(db);
+  // Capture this before SCHEMA_SQL creates the ACP tables. An existing ACP
+  // schema is durable evidence that deleted raw sessions may remain in SQLite
+  // free pages even when every live ACP row has since been removed.
+  const legacyAcpSchemaPresent = ["acp_profiles", "acp_operations", "acp_interactions"]
+    .some((table) => tableExists(db, table));
+
   // Existing pre-v8 databases may have `tasks` but not `stage`; SCHEMA_SQL
   // creates an index on stage, so add the column before executing the full
   // schema block.
@@ -870,6 +966,11 @@ export function runMigrations(db) {
   }
   ensureCurrentSchemaColumnsBeforeSchema(db);
   ensureEmbeddingVectorPresentColumn(db);
+  // v50 adds a partial unique index enforcing one live management operation
+  // per ACP profile. Migration runners are not necessarily coordinators, so a
+  // singleton active row may still have a live owner. Only impossible legacy
+  // duplicate groups are terminalized before creating the index.
+  reconcileDuplicateAcpOperationsBeforeActiveProfileIndex(db);
   db.exec(SCHEMA_SQL);
   ensureCurrentLeadCycleColumns(db);
   ensureNullableTaskRunsTaskId(db);
@@ -1132,6 +1233,14 @@ export function runMigrations(db) {
   backfillTeamGoalContracts(db);
   backfillNativeGoals(db);
   backfillNativeLeadCycles(db);
+  // Keep the ACP slice explicit in the idempotent upgrade path as well as in
+  // SCHEMA_SQL. The tables depend only on current agents/task_runs tables.
+  db.exec(ACP_SCHEMA_SQL);
+  const acpPrivacy = scrubLegacyAcpSessionData(db);
+  compactLegacyAcpTaskRunData(db, {
+    ...acpPrivacy,
+    legacyFootprint: legacyAcpSchemaPresent || acpPrivacy.legacyFootprint,
+  });
   db.prepare(
     "INSERT INTO schema_meta (key, value) VALUES ('version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
   ).run(String(SCHEMA_VERSION));

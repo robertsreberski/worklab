@@ -152,6 +152,110 @@ plugins outside Worklab's capability tiles. Worklab's Skills allowlist governs
 Worklab-managed prompt packs; it does not sandbox provider-native settings. Run
 Claude against only repositories and settings you trust.
 
+## External Agents Over ACP
+
+Worklab can run external agents through ACP v1 over stdio. Open **Agents**,
+choose **New agent**, then either import a discovered mono-agent source or add a
+generic ACP process manually. Imported mono-agents keep their configuration,
+workspace, MCP, and session policy agent-owned; Worklab stores only the
+sanitized discovery descriptor and launches the exact bridge argv without a
+shell. Set `WORKLAB_MONO_AGENT_BIN` when the `mono-agent` executable is not on
+the Worklab service `PATH`.
+
+Discovery lists compatible running sources and leaves older, incompatible
+sources visible as **Upgrade required**. A mono-agent process advertises its
+bridge contract when that source starts, so a legacy source must be upgraded
+and restarted before Worklab can import it. Worklab does not restart or alter
+the discovered source. Import is also blocked for stopped or unhealthy
+sources.
+
+A generic profile stores an absolute executable path, argv, working directory,
+environment-variable names, ownership choices, session resume strategy, and a
+bounded probe timeout. It never stores environment values and launches the
+executable directly rather than through a shell. Obvious secret-bearing argv
+flags are rejected, but positional arguments are not a credential store;
+provide credentials through named environment variables instead.
+
+The launch and session identity of a generic profile is immutable after
+creation. Change its display name, description, enabled state, or probe timeout
+in place; recreate the profile to change its executable, arguments, working
+directory, environment names, ownership, workspace, permissions, configuration
+policy, or session policy. Imported mono-agent runtime identity remains owned
+by its discovery descriptor rather than Worklab.
+
+The ACP client lives in the shared `@mono-agent/agent-runtime` package. Worklab
+owns profile persistence, task scheduling, and the browser interaction inbox.
+Permission choices, non-secret elicitation forms, and browser continuation URLs
+appear globally while a task or profile operation is waiting. Submitted form
+values travel only to the waiting worker process; they are not stored in the
+database, run events, logs, or backups.
+
+An exact browser continuation URL is likewise never persisted or broadcast.
+Worklab retains it only in bounded process memory, bound to the interaction and
+its owning task run or profile operation. The UI opens it through an owner-
+checked, one-use redirect; it expires and is removed on use, successful
+response or cancellation, terminal owner state, or process shutdown. Public
+interaction data contains only a fixed Worklab-owned availability marker, not
+the destination origin or any other URL-derived text, so credentials or tokens
+in URL hosts, paths, queries, and fragments do not enter SQLite, events, logs,
+the DOM, or backups.
+
+Agent-owned ACP turns receive task-owned context and file attachments as
+`resource_link` blocks. Worklab instructions, memory, knowledge, skills, MCP
+servers, tools, repository instructions, and delegation policy are withheld so
+the external agent remains authoritative for its own runtime. The current
+Worklab client does not provide ACP filesystem, terminal, network, or
+client-MCP services, and a generic profile that requests them is rejected.
+This is an ACP client-service policy, not an operating-system sandbox: the
+external process still has the filesystem, network, and process access granted
+to the user account that runs Worklab. ACP profiles currently support task runs
+only. An agent-owned workspace must exactly match its canonical workspace and
+cannot use a Worklab-created per-run worktree.
+
+The mono-agent integration is an ACP v1 core-session profile: initialization,
+sessions, prompts, typed updates, cancellation, text, resource links, and
+elicitation are supported. Client-supplied MCP servers remain unsupported, so
+the bridge is not described as a generally conformant ACP Agent.
+
+Probe, authentication, logout, session-list, and session-delete controls run as
+asynchronous operations, with at most one active operation per profile. The
+profile timeout bounds startup and active operation work; it pauses while the
+operation is waiting for a browser interaction and is rearmed when work
+resumes. Cancellation aborts the operation and uses a bounded cleanup wait. On
+startup, Worklab marks queued, running, or interaction-waiting operations left
+by the previous process as failed with `coordinator_restarted` and expires
+their unresolved interactions instead of silently resuming them.
+
+Provider session identifiers are opaque, profile-bound handles. Worklab may
+persist and return the opaque handle for resume, listing, and deletion, but raw
+remote session IDs are removed from operation results, task-run events, logs,
+and backups. Handles and pagination cursors use authenticated encrypted v2
+envelopes backed by a Worklab-owned key derived from the local provider
+encryption master key. Legacy reversible v1 values are scrubbed but never
+accepted for normal operations. A handle from one profile cannot be used
+against another, and tampered or wrong-key handles fail before the external
+agent is launched.
+
+Backups intentionally omit the provider encryption master key. They therefore
+remove ACP handles and cursors as well as raw session identifiers; restoring a
+backup starts new external-agent sessions instead of carrying resumable remote
+session authority onto another host.
+
+### Browser And Network Boundary
+
+State-changing `/api` requests, plus the process-starting mono-agent discovery
+read, must come from the Worklab browser UI with a trusted `Origin`/`Referer` or
+use the local service bearer token. If a reverse proxy or split UI needs an
+additional browser origin, set `WORKLAB_ACP_ALLOWED_ORIGINS` to a comma-separated
+list of exact HTTP(S) origins, including scheme and port when non-default. Paths
+and wildcard origins are not supported.
+
+This check is CSRF and browser-source protection, not network authentication or
+a user login. It does not make a non-loopback Worklab listener safe for public
+exposure, and read-only API routes are not made private by the absence of CORS
+headers. Keep the service on loopback or enforce the intended users and devices
+at a trusted reverse proxy or tailnet boundary.
+
 ## Daily Use
 
 - Use **Tasks** as the active work queue.
@@ -186,8 +290,32 @@ worklab mcp
 | `worklab doctor performance` | Measure endpoint timings, response sizes, database size, and large event logs. |
 | `worklab mcp` | Run the full-access Worklab admin MCP bridge over stdio. |
 | `worklab update --apply --version <latest>` | Apply a supported global npm update and restart the service. |
-| `worklab backup` | Create a tar.gz backup of the active data directory. |
+| `worklab backup` | Create a credential-scrubbed tar.gz backup of the active data directory. |
 | `worklab compact-logs --apply` | Compact old large SQLite run logs while preserving raw JSONL logs. |
+
+### Backups And Credentials
+
+`worklab backup` preserves application state while deliberately leaving known
+credentials out of the portable archive. It excludes
+`.env`, `pi-auth.json`, the legacy `auth.json`, `.provider-encryption-key`,
+`mcp-token`, `push-vapid.json`, and `config/mcp.json` (which can contain inline
+environment variables, headers, or arguments). It also removes encrypted
+custom-provider API keys, browser push subscriptions, inbound webhook IDs, and
+legacy raw ACP session identifiers from the database copy. Restored webhook
+automations are disabled and marked for reconfiguration. Runtime `logs`,
+`.coordinator.pid`, and SQLite WAL/SHM files remain excluded as before.
+
+This is credential scrubbing, not general content redaction. Tasks, comments,
+instructions, knowledge, agent memory, attachments, run results, and other
+application content remain in the archive and may be sensitive. Treat every
+backup as private data.
+
+The backup directory is mode `0700` and each archive is mode `0600`. After a
+restore, reconfigure provider/API and Pi OAuth credentials, MCP servers,
+inbound webhook automations, and browser notifications before restarting
+Worklab; Worklab will generate a new service token, provider-encryption key,
+and VAPID key as needed. The output directory must be outside the active
+Worklab data directory.
 
 ## Configuration
 
@@ -202,6 +330,8 @@ WORKLAB_HOST=127.0.0.1
 WORKLAB_DATA_DIR=/tmp/worklab-dev
 WORKLAB_WORKSPACE=/tmp/worklab-workspace
 WORKLAB_LOG_LEVEL=info
+WORKLAB_MONO_AGENT_BIN=/absolute/path/to/mono-agent
+WORKLAB_ACP_ALLOWED_ORIGINS=https://worklab.example.ts.net
 ```
 
 CLI flags are passed after the command:
@@ -246,6 +376,13 @@ tailscale serve status
 
 Use the MagicDNS URL shown by `tailscale serve status`. Raw Tailscale IP
 requests can return a Serve 404 because Serve routes by hostname.
+
+Tailscale Serve changes how Worklab is reached; it does not add a Worklab user
+authentication layer. A browser that can open the same-origin MagicDNS UI can
+also submit Worklab mutations, including starting tool-capable local or ACP
+agents. Restrict access with Tailscale ACLs/grants and device/user controls, and
+do not treat `WORKLAB_ACP_ALLOWED_ORIGINS` as a substitute for that access
+policy.
 
 Disable the proxy with:
 

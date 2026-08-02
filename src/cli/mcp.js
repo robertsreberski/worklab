@@ -12,14 +12,6 @@ import { loadConfig, readMcpToken, worklabBaseUrl } from "../core/index.js";
 import { adminToolDefinitions, createAdminToolHandlers } from "../mcp/admin/tools/index.js";
 import { applyConfigArgs } from "./args.js";
 
-function authFetch(token) {
-  return (url, init = {}) => {
-    const headers = new Headers(init.headers || {});
-    headers.set("authorization", `Bearer ${token}`);
-    return fetch(url, { ...init, headers });
-  };
-}
-
 export async function mcp(args = []) {
   applyConfigArgs(args);
   const config = loadConfig();
@@ -27,7 +19,7 @@ export async function mcp(args = []) {
   const handlers = createAdminToolHandlers({
     baseUrl: worklabBaseUrl(config),
     config,
-    fetchImpl: authFetch(token),
+    token,
   });
 
   const server = new Server(

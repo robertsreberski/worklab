@@ -11,12 +11,23 @@ import { getAgentByName } from "../core/db/queries/agents.js";
 import { createSdkEventCoalescer } from "./event-coalescer.js";
 import { maxTurnsForModel } from "./util.js";
 
+const ACP_TASK_ONLY_MESSAGE = "external ACP agents currently support task runs only";
+
+function isAcpAgent(agent) {
+  return agent?.sdk === "acp"
+    || String(agent?.model || "").startsWith("acp:")
+    || agent?.execution_mode === "acp";
+}
+
 export async function runConsolidate(ctx) {
   const { db, config, ac, emit, agentName } = ctx;
 
   const agent = getAgentByName(db, agentName);
   if (!agent) {
     return { kind: "consolidate", error: `agent ${agentName} not found` };
+  }
+  if (isAcpAgent(agent)) {
+    return { kind: "consolidate", error: ACP_TASK_ONLY_MESSAGE };
   }
   const memory = readAgentMemoryContent({ dataDir: config.dataDir, agent: agentName });
   const journal = readFullJournal({ dataDir: config.dataDir, agent: agentName });

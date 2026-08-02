@@ -35,6 +35,22 @@ describe("resource list helpers", () => {
     ]);
   });
 
+  it("filters external agents without changing active, enabled, and disabled grouping", () => {
+    const now = Date.parse("2026-08-02T12:00:00Z");
+    const groups = buildAgentResourceGroups([
+      { name: "local", kind: "local", enabled: true, last_run_at: null },
+      { name: "external-active", kind: "external", enabled: true, last_run_at: now - 1000 },
+      { name: "external-idle", sdk: "acp", enabled: true, last_run_at: null },
+      { name: "external-disabled", execution_mode: "acp", enabled: false, last_run_at: null },
+    ], { kind: "external", state: "all", now });
+
+    expect(groups.map((group) => [group.key, group.items.map((agent) => agent.name)])).toEqual([
+      ["active", ["external-active"]],
+      ["enabled", ["external-idle"]],
+      ["disabled", ["external-disabled"]],
+    ]);
+  });
+
   it("keeps archived teams discoverable only when the status filter asks for them", () => {
     const teams = [
       { slug: "active-team", name: "Active Team", status: "active", lead_agent: "lead", schedule_enabled: true, updated_at: 3 },

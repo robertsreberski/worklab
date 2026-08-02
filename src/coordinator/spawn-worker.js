@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
 import { appendFileSync } from "node:fs";
 import { newAgentLogId } from "../core/ids.js";
 // Compat for the legacy task_runs.status column (kept alongside process_status
@@ -37,7 +36,6 @@ import {
 } from "../core/db/queries/runs.js";
 import {
   expirePendingApprovalsForRun,
-  insertApprovalRequest,
   recordApprovalDecision,
 } from "../core/db/queries/task-run-approvals.js";
 import { buildTranscriptTailSnapshot } from "@mono-agent/agent-runtime/agent/transcript.js";
@@ -52,6 +50,13 @@ import {
   makeRawLogPath,
   truncateDisplayEvent,
 } from "./spawn-worker/log-events.js";
+import {
+  createAcpInteractionControls,
+  createTaskRunAcpUrlHandoffReceiver,
+  createTaskRunAcpEventBoundary,
+  expireAcpInteractionsForRun,
+} from "./spawn-worker/acp-interactions.js";
+import { createAcpAwareStdoutPipeline } from "./spawn-worker/stdout-pipeline.js";
 
 const FINALISATION_COMPLETION_TOOL_NAMES = new Set(["journal_summary", "worktree_sync", "todo_write"]);
 
@@ -105,6 +110,7 @@ export function spawnWorker({
   exitCloseGraceMs = 1000,
   stderrTailLimit = 8 * 1024,
   diagnosticsSeed = null,
+  acpUrlHandoffStore = null,
 }) {
   const startedAt = Date.now();
   const workspaceArtifactSnapshot = env.WORKLAB_WORKSPACE
@@ -114,8 +120,12 @@ export function spawnWorker({
     ? captureGitArtifactState(env.WORKLAB_WORKSPACE)
     : null;
   const child = spawn("node", [binary, ...args], {
-    env: { ...process.env, ...env },
-    stdio: ["pipe", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      ...env,
+      ...(env.WORKLAB_ACP_PROFILE_ID ? { WORKLAB_ACP_URL_HANDOFF_FD: "3" } : {}),
+    },
+    stdio: ["pipe", "pipe", "pipe", "pipe"],
     detached: canSignalProcessGroup(),
   });
 
@@ -129,6 +139,7 @@ export function spawnWorker({
   let errorMessage = null;
   let resultError = null;
   let workerDiagnostics = null;
+  let terminalProviderSessionId = null;
   let explicitFailureKind = null;
   let errorDetails = null;
   let exitCode = null;
@@ -139,6 +150,7 @@ export function spawnWorker({
   let cancelReason = null;
   let sigkillTimer = null;
   let finalized = false;
+  let finalizationQueued = false;
   let exitFallbackTimer = null;
   let exitWatchdogFired = false;
   let cleanupSigkillTimer = null;
@@ -156,6 +168,20 @@ export function spawnWorker({
   let timedOut = false;
   let finalisationIdleFailed = false;
   let finalisationIdleLastTool = null;
+  const stdoutState = {
+    get promptDiagnostics() { return promptDiagnostics; }, set promptDiagnostics(value) { promptDiagnostics = value; },
+    get finalPayload() { return finalPayload; }, set finalPayload(value) { finalPayload = value; },
+    get structuredOutputResult() { return structuredOutputResult; }, set structuredOutputResult(value) { structuredOutputResult = value; },
+    get errorMessage() { return errorMessage; }, set errorMessage(value) { errorMessage = value; },
+    get resultError() { return resultError; }, set resultError(value) { resultError = value; },
+    get terminalProviderSessionId() { return terminalProviderSessionId; }, set terminalProviderSessionId(value) { terminalProviderSessionId = value; },
+    get explicitFailureKind() { return explicitFailureKind; }, set explicitFailureKind(value) { explicitFailureKind = value; },
+    get errorDetails() { return errorDetails; }, set errorDetails(value) { errorDetails = value; },
+    get workerCancelSignal() { return workerCancelSignal; }, set workerCancelSignal(value) { workerCancelSignal = value; },
+    get cancelInitiator() { return cancelInitiator; }, set cancelInitiator(value) { cancelInitiator = value; },
+    get cancelReason() { return cancelReason; }, set cancelReason(value) { cancelReason = value; },
+    get drainAcknowledged() { return drainAcknowledged; }, set drainAcknowledged(value) { drainAcknowledged = value; },
+  };
   const logId = newAgentLogId();
   let rawLogPath = null;
   const toolUseNames = new Map();
@@ -176,6 +202,24 @@ export function spawnWorker({
     softWarningEmitted: false,
     hardCancelTriggered: false,
   };
+  const acpEventBoundary = createTaskRunAcpEventBoundary({
+    profileId: env.WORKLAB_ACP_PROFILE_ID || null,
+  });
+  const acpInteractionControls = createAcpInteractionControls({
+    db,
+    runId,
+    writeControlMessage,
+    emitEvent,
+    urlHandoffStore: acpUrlHandoffStore,
+  });
+  const acpUrlHandoffReceiver = createTaskRunAcpUrlHandoffReceiver({
+    stream: child.stdio[3],
+    store: acpUrlHandoffStore,
+    runId,
+    profileId: env.WORKLAB_ACP_PROFILE_ID || null,
+    onInvalid: (reason) => logger?.warn?.({ runId, reason }, "ACP private URL handoff channel rejected"),
+    onRetained: (handoff) => acpInteractionControls.registerUrlHandoff(handoff) === true,
+  });
   // Trailing-edge debounce window for the in-flight events JSON. Long-running
   // agents emit hundreds of events; rewriting the whole JSON each line is
   // O(N²) bytes written, which can stall WAL on a small disk. The final UPDATE
@@ -550,9 +594,24 @@ export function spawnWorker({
     try { child.kill(signal); } catch { /* already gone */ }
   }
 
+  function signalWorkerProcess(signal = "SIGTERM") {
+    try { child.kill(signal); } catch { /* already gone */ }
+  }
+
   function terminateChild() {
     try { child.stdin?.end?.(); } catch { /* already closed */ }
-    signalWorkerProcessTree("SIGTERM");
+    if (env.WORKLAB_ACP_PROFILE_ID) {
+      // Give an ACP worker a chance to translate the abort into session/cancel
+      // and pending-interaction cleanup. Killing its provider bridge at the
+      // same instant would race that semantic cleanup. Descendants remain
+      // bounded by the process-group SIGKILL ceiling below and by finalize().
+      signalWorkerProcess("SIGTERM");
+    } else {
+      // Non-ACP workers have no provider-side cancellation handshake to
+      // preserve. Stop their whole process group immediately so tools and dev
+      // servers cannot keep performing side effects after cancellation.
+      signalWorkerProcessTree("SIGTERM");
+    }
     if (!sigkillTimer) {
       sigkillTimer = setTimeout(() => {
         signalWorkerProcessTree("SIGKILL");
@@ -596,67 +655,27 @@ export function spawnWorker({
   }
   resetIdleTimer();
 
-  const rl = createInterface({ input: child.stdout });
-  rl.on("line", (line) => {
-    if (!line.trim()) return;
-    let parsed;
-    try {
-      parsed = JSON.parse(line);
-    } catch (err) {
-      logger?.warn?.({ line, err: err.message }, "worker emitted malformed stdout");
-      return;
-    }
-    const { rawEvent } = emitEvent(parsed);
-    mergeWorkerDiagnostics(rawEvent.diagnostics);
-    const recoveredStructuredResult = worklabResultFromStructuredOutputEvent(rawEvent);
-    if (recoveredStructuredResult) structuredOutputResult = recoveredStructuredResult;
-    if (rawEvent.type === "final") finalPayload = rawEvent;
-    if (rawEvent.type === "error") {
-      errorMessage = rawEvent.message;
-      explicitFailureKind = rawEvent.failureKind || rawEvent.failure_kind || explicitFailureKind;
-      if (rawEvent.details) errorDetails = rawEvent.details;
-    }
-    if (rawEvent.type === "cancelled") {
-      cancelInitiator = cancelInitiator || rawEvent.initiator || rawEvent.cancel_initiator || null;
-      cancelReason = cancelReason || rawEvent.reason || rawEvent.cancel_reason || null;
-      workerCancelSignal = workerCancelSignal || rawEvent.signal || null;
-      if (rawEvent.drained === true) drainAcknowledged = true;
-    }
-    if (rawEvent.type === "drained") {
-      drainAcknowledged = true;
-    }
-    if (rawEvent.type === "worklab_result_error") {
-      resultError = rawEvent.message || "invalid worklab_result";
-      explicitFailureKind = "invalid_result";
-    }
-    if (rawEvent.type === "approval_requested" && rawEvent.request_id) {
-      try {
-        insertApprovalRequest(db, {
-          taskRunId: runId,
-          requestId: String(rawEvent.request_id),
-          toolName: rawEvent.tool_name || rawEvent.toolName || "",
-          toolUseId: rawEvent.tool_use_id || rawEvent.toolUseId || null,
-          argumentsSummary: rawEvent.arguments_summary || rawEvent.argumentsSummary || "",
-          riskTier: rawEvent.risk_tier || rawEvent.riskTier || "medium",
-          model: rawEvent.model || null,
-        });
-        broker.broadcast(runId, {
-          type: "approval_requested",
-          request_id: String(rawEvent.request_id),
-          tool_name: rawEvent.tool_name || rawEvent.toolName || "",
-          risk_tier: rawEvent.risk_tier || rawEvent.riskTier || "medium",
-        });
-      } catch (err) {
-        logger?.warn?.({ err: err.message, runId }, "failed to persist approval request");
-      }
-    }
-    if (rawEvent.type === "prompt_built" && rawEvent.diagnostics) {
-      promptDiagnostics = { ...(promptDiagnostics || {}), ...rawEvent.diagnostics };
-    }
+  const stdoutPipeline = createAcpAwareStdoutPipeline({
+    stream: child.stdout,
+    acpProfileId: env.WORKLAB_ACP_PROFILE_ID || null,
+    runId,
+    db,
+    broker,
+    logger,
+    acpUrlHandoffStore,
+    acpUrlHandoffReceiver,
+    acpInteractionControls,
+    acpEventBoundary,
+    emitEvent,
+    mergeWorkerDiagnostics,
+    writeControlMessage,
+    state: stdoutState,
   });
 
   child.stderr.on("data", (chunk) => {
-    const text = chunk.toString();
+    const text = acpInteractionControls.redactText(
+      acpEventBoundary.redactText(chunk.toString()),
+    );
     stderrTail.push(text);
     logger?.info?.({ runId, stderr: text }, "worker stderr");
   });
@@ -781,8 +800,15 @@ export function spawnWorker({
 
   const done = new Promise((resolve) => {
     function finalize(code, signal = null) {
+      if (finalized || finalizationQueued) return;
+      finalizationQueued = true;
+      void stdoutPipeline.whenIdle().then(() => finalizeAfterStdout(code, signal));
+    }
+
+    function finalizeAfterStdout(code, signal = null) {
       if (finalized) return;
       finalized = true;
+      acpUrlHandoffReceiver.close();
       if (exitFallbackTimer) {
         clearTimeout(exitFallbackTimer);
         exitFallbackTimer = null;
@@ -822,7 +848,10 @@ export function spawnWorker({
       const allWarnings = [...warnings, ...finalWarnings];
       const todoStateJson = currentTodoStateJson();
       if (result && !resultError) {
-        const validation = validateWorklabResultSemantics(result, { todoState: todoStateJson });
+        const validation = validateWorklabResultSemantics(result, {
+          todoState: todoStateJson,
+          allowDelegation: env.WORKLAB_ACP_PROFILE_ID ? false : true,
+        });
         if (!validation.ok) {
           resultError = validation.error || "invalid worklab_result";
           explicitFailureKind = "invalid_result";
@@ -851,11 +880,15 @@ export function spawnWorker({
             resultParseError: !!resultError,
             hint: explicitFailureKind,
           }) || "spawn");
-      const providerSessionId = finalPayload?.provider_session_id
-        || finalPayload?.providerSessionId
-        || workerDiagnostics?.provider_session_id
-        || errorDetails?.provider_session_id
-        || null;
+      const providerSessionId = [
+        finalPayload?.provider_session_id,
+        finalPayload?.providerSessionId,
+        terminalProviderSessionId,
+        workerDiagnostics?.provider_session_id,
+        workerDiagnostics?.providerSessionId,
+        errorDetails?.provider_session_id,
+        errorDetails?.providerSessionId,
+      ].map((value) => acpEventBoundary.validateProviderSessionId(value)).find(Boolean) || null;
       const fileEditArtifacts = extractRunArtifacts(rawEvents, {
         includePending: false,
         includeFailed: false,
@@ -1072,6 +1105,9 @@ export function spawnWorker({
       // exited mid-prompt). Pending rows would otherwise hang forever.
       try { expirePendingApprovalsForRun(db, runId, { reason: "run_terminated" }); }
       catch { /* best effort */ }
+      try { expireAcpInteractionsForRun(db, runId, { urlHandoffStore: acpUrlHandoffStore }); }
+      catch { /* best effort */ }
+      acpInteractionControls.close();
 
       broker.broadcast(runId, { type: "done", exitCode: code });
 
@@ -1135,34 +1171,14 @@ export function spawnWorker({
     drain,
     sendLiveMessage,
     sendApprovalDecision,
+    sendAcpInteractionResponse: acpInteractionControls.respond,
+    sendAcpInteractionCancel: acpInteractionControls.cancel,
     get warnings() { return [...warnings]; },
     get exitWatchdogFired() { return exitWatchdogFired; },
     get drainRequested() { return drainRequested; },
     get drainAcknowledged() { return drainAcknowledged; },
     get drainTimedOut() { return drainTimedOut; },
   };
-}
-
-function isPlainObject(value) {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function isWorklabResult(value) {
-  return isPlainObject(value)
-    && value.schema === "worklab.v2"
-    && typeof value.decision === "string";
-}
-
-function worklabResultFromStructuredOutputEvent(rawEvent) {
-  const event = rawEvent?.type === "sdk_event" && rawEvent.event ? rawEvent.event : rawEvent;
-  if (event?.type !== "structured_output") return null;
-  const candidates = [
-    event.worklab_result,
-    event.value,
-    event.value?.worklab_result,
-    rawEvent?.worklab_result,
-  ];
-  return candidates.find(isWorklabResult) || null;
 }
 
 function finalTextFromWorklabResult(result) {

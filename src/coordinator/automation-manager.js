@@ -20,6 +20,13 @@ import { getAutomationById, listEnabledAutomations } from "../core/db/queries/au
 import { insertAutomationRun } from "../core/db/queries/automation-audit.js";
 
 const TICK_MS = 60_000;
+const ACP_TASK_ONLY_MESSAGE = "external ACP agents currently support task runs only";
+
+function isAcpAgent(agent) {
+  return agent?.sdk === "acp"
+    || String(agent?.model || "").startsWith("acp:")
+    || agent?.execution_mode === "acp";
+}
 
 function refreshEnabledAutomations(db, now = Date.now()) {
   const rows = listEnabledAutomations(db);
@@ -54,6 +61,7 @@ export function createAutomationManager({
     const agent = getAgentByName(db, agentName);
     if (!agent) throw new Error(`agent not found: ${agentName}`);
     if (!agent.enabled) throw new Error(`agent disabled: ${agentName}`);
+    if (isAcpAgent(agent)) return { agent, providerKind: "acp" };
     try {
       return { agent, providerKind: parseModelReference(agent.model).sdk };
     } catch (err) {
@@ -288,6 +296,7 @@ export function createAutomationManager({
       return runTaskAutomation(automation, { triggerType, now, webhookPayload });
     }
     const { providerKind } = assertAgentRunnable(automation.agent_name);
+    if (providerKind === "acp") throw new Error(ACP_TASK_ONLY_MESSAGE);
 
     const tx = db.transaction(() => {
       const run = createAutomationRunRows({ db, automation, triggerType, providerKind, now });

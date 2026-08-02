@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawnWorker } from "../../coordinator/spawn-worker.js";
+import { structuralAcpProviderSessionId } from "../helpers/acp-tokens.js";
 import { makeTestDb } from "../helpers/test-db.js";
 import { newRunId, newTaskId } from "../../core/ids.js";
 
@@ -34,6 +35,37 @@ function seedTaskAndRun(db, { mode = "execute" } = {}) {
 }
 
 describe("spawnWorker", () => {
+  it("preserves deeply nested non-ACP worker events", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    let nested = { marker: "deep-leaf" };
+    for (let depth = 0; depth < 30; depth += 1) nested = { child: nested };
+    const script = {
+      events: [
+        { type: "sdk_event", event: { type: "custom", payload: nested } },
+        { type: "final", text: "done", usage: {}, durationMs: 1, numTurns: 1 },
+      ],
+      exitCode: 0,
+    };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId,
+      taskId,
+      broker,
+      db,
+      persistDebounceMs: 10,
+    });
+
+    await handle.done;
+    const sdkEvent = broker.broadcasts.find(({ ch, p }) => ch === runId && p.type === "sdk_event").p;
+    let cursor = sdkEvent.event.payload;
+    for (let depth = 0; depth < 30; depth += 1) cursor = cursor.child;
+    expect(cursor).toEqual({ marker: "deep-leaf" });
+  });
+
   it("streams fake-worker stdout events through broker and resolves on clean exit", async () => {
     const db = makeTestDb();
     const broker = stubBroker();
@@ -971,6 +1003,39 @@ describe("spawnWorker", () => {
     const diag = JSON.parse(run.diagnostics_json);
     expect(diag.provider_session_id).toBe("failed-session");
     expect(run.provider_session_id).toBe("failed-session");
+  });
+
+  it.each([
+    ["provider error", { type: "error", message: "provider failed", failureKind: "provider_error" }, 1],
+    ["structured result error", { type: "worklab_result_error", message: "invalid result" }, 1],
+    ["cancellation", { type: "cancelled", initiator: "worker_signal" }, 130],
+  ])("persists provider_session_id from terminal %s events", async (_label, terminalEvent, exitCode) => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const providerSessionId = structuralAcpProviderSessionId("external", `remote-${runId}`);
+    const script = {
+      events: [{ ...terminalEvent, provider_session_id: providerSessionId }],
+      exitCode,
+    };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId,
+      taskId,
+      broker,
+      db,
+      runIdleWarningMs: 0,
+    });
+
+    const result = await handle.done;
+    const run = db.prepare("SELECT diagnostics_json, provider_session_id FROM task_runs WHERE id = ?").get(runId);
+
+    expect(result.providerSessionId).toBe(providerSessionId);
+    expect(run.provider_session_id).toBe(providerSessionId);
+    expect(JSON.parse(run.diagnostics_json).provider_session_id).toBe(providerSessionId);
+    expect(JSON.stringify(run)).not.toContain(`remote-${runId}`);
   });
 
   it("persists final usage cost without applying hidden per-agent cost budgets", async () => {

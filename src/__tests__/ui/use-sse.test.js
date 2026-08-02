@@ -88,4 +88,25 @@ describe("shared SSE subscriptions", () => {
     vi.advanceTimersByTime(500);
     expect(FakeEventSource.instances).toHaveLength(3);
   });
+
+  it("notifies subscribers after each connection so clients can reconcile missed state", () => {
+    globalThis.EventSource = FakeEventSource;
+    const callback = vi.fn();
+    subscribeSSE("global", callback);
+
+    FakeEventSource.instances[0].onopen?.();
+    expect(callback).toHaveBeenCalledWith({
+      type: "worklab_stream_connected",
+      streamKey: "sse:global",
+    });
+  });
+
+  it("does not inject connection metadata into run event streams", () => {
+    globalThis.EventSource = FakeEventSource;
+    const callback = vi.fn();
+    subscribeSSE("run:run-1", callback);
+
+    FakeEventSource.instances[0].onopen?.();
+    expect(callback).not.toHaveBeenCalled();
+  });
 });

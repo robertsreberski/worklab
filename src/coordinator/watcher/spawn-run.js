@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 
 import { parseModelReference } from "../../core/ai.js";
 import { getAgentByName } from "../../core/db/queries/agents.js";
+import { getAcpProfileByAgentName } from "../../core/db/queries/acp-profiles.js";
 import {
   getRunTodoStateRow,
   setRunDiagnostics,
@@ -18,6 +19,8 @@ import { resolveRunArtifactDir } from "../../core/run-artifact-paths.js";
 import { buildRunLifecycleEvent } from "../../core/run-events.js";
 import { readSettings } from "../../core/settings.js";
 import { inspectWorktreeSupport, prepareRunWorktree } from "../../core/worktrees.js";
+import { assertAcpTaskRunPreflight } from "../../core/acp-preflight.js";
+import { validateAcpProviderSessionId } from "../../core/acp-privacy.js";
 
 const WORKTREE_TASK_MODES = new Set(["plan", "execute", "review"]);
 const PI_CODEX_TRANSPORTS = new Set(["sse", "auto", "websocket", "websocket-cached"]);
@@ -32,6 +35,9 @@ function assertAgentRunnable(db, agentName) {
   const agent = getAgentByName(db, agentName);
   if (!agent) throw new Error(`agent not found: ${agentName}`);
   if (!agent.enabled) throw new Error(`agent disabled: ${agentName}`);
+  if (agent.sdk === "acp" || String(agent.model || "").startsWith("acp:") || agent.execution_mode === "acp") {
+    return { agent, providerKind: "acp" };
+  }
   try {
     return { agent, providerKind: parseModelReference(agent.model).sdk };
   } catch (err) {
@@ -64,7 +70,7 @@ export function spawnTaskRun({
   kind = "task",
   teamId = null,
 }) {
-  const { providerKind } = assertAgentRunnable(db, agentName);
+  const { agent, providerKind } = assertAgentRunnable(db, agentName);
   const settings = readSettings(db);
   const runId = newRunId();
   const projectRunContext = resolveTaskProjectRunContext({
@@ -72,14 +78,22 @@ export function spawnTaskRun({
     config: { workspace, repoRoot },
     task,
   });
+  const sourceWorkspace = projectRunContext.effectiveWorkdir || workspace || repoRoot || "";
+  const wantsProjectWorktree = shouldUseProjectWorktree(mode, projectRunContext.project);
+  const acpPreflight = assertAcpTaskRunPreflight({
+    agent,
+    profile: providerKind === "acp" ? getAcpProfileByAgentName(db, agentName) : null,
+    runKind: kind,
+    workspace: sourceWorkspace,
+    willUseWorktree: wantsProjectWorktree,
+  });
   if (projectRunContext.project?.workdir) {
     mkdirSync(projectRunContext.project.workdir, { recursive: true });
   }
-  const sourceWorkspace = projectRunContext.effectiveWorkdir || workspace || repoRoot || "";
   let workspaceMode = "direct";
   let sourceWorkdir = null;
   let worktreeMetadata = null;
-  if (shouldUseProjectWorktree(mode, projectRunContext.project)) {
+  if (wantsProjectWorktree) {
     const support = inspectWorktreeSupport(sourceWorkspace);
     if (!support.supported) {
       if (projectRunContext.project.worktree_mode === "required") {
@@ -190,7 +204,12 @@ export function spawnTaskRun({
       ].filter(Boolean);
       for (const sourceRunId of sessionSourceIds) {
         const parent = db.prepare("SELECT provider_session_id FROM task_runs WHERE id = ?").get(sourceRunId);
-        if (parent?.provider_session_id) return parent.provider_session_id;
+        const reusable = providerKind === "acp"
+          ? validateAcpProviderSessionId(parent?.provider_session_id, acpPreflight?.profileId)
+          : typeof parent?.provider_session_id === "string" && parent.provider_session_id.length > 0
+            ? parent.provider_session_id
+            : null;
+        if (reusable) return reusable;
       }
       return null;
     } catch {
@@ -214,6 +233,7 @@ export function spawnTaskRun({
     } : {}),
     ...(execenvPath ? { WORKLAB_EXECENV_PATH: execenvPath } : {}),
     ...(reusableSessionId ? { WORKLAB_PROVIDER_SESSION_ID: reusableSessionId } : {}),
+    ...(acpPreflight ? { WORKLAB_ACP_PROFILE_ID: acpPreflight.profileId } : {}),
     ...(PI_CODEX_TRANSPORTS.has(diagnosticsSeed?.pi_transport_override)
       ? { WORKLAB_PI_CODEX_TRANSPORT: diagnosticsSeed.pi_transport_override }
       : {}),

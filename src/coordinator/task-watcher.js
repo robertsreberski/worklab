@@ -60,10 +60,12 @@ import {
 } from "./watcher/run-handler.js";
 import { checkBudget, recordPerRunBudgetOverage } from "./watcher/budget.js";
 import { spawnTaskRun } from "./watcher/spawn-run.js";
+import { createAcpRunInteractionDispatcher } from "./watcher/acp-interactions.js";
 import { findDrainedResumeCandidates, reconcileStaleRunningRuns } from "./watcher/stale-runs.js";
 import { createLeadCycleCoordinator } from "./watcher/lead-cycle-coordinator.js";
 import { createWorktreeReconciler } from "./watcher/worktree-reconciler.js";
 import { createRecoveryContinuation } from "./watcher/recovery-continuation.js";
+import { validateWorklabResultSemantics } from "../core/worklab-result/contract.js";
 import { buildDelegationContextBlock } from "./watcher/delegation-context.js";
 import { planBodySideEffect } from "./watcher/plan-body.js";
 import {
@@ -935,7 +937,7 @@ export function createTaskWatcher({
     const run = getRunById(db, runId);
     if (!run) return;
 
-    const processStatus = runProcessStatus(res);
+    let processStatus = runProcessStatus(res);
 
     if (run.kind === "lead_cycle") {
       leadCycle.handleLeadCycleExit(taskId, runId, res, task, run);
@@ -952,11 +954,47 @@ export function createTaskWatcher({
       return;
     }
 
+    const result = res.worklabResult || safeParseJson(run.result_json, null);
+    let resultForLearning = result;
+    let runForLearning = run;
+    const acpResultValidation = run.provider_kind === "acp" && result
+      ? validateWorklabResultSemantics(result, { allowDelegation: false })
+      : { ok: true };
+    if (!acpResultValidation.ok) {
+      db.prepare(`
+        UPDATE task_runs
+        SET status = 'error', process_status = 'failed', failure_kind = 'invalid_result',
+            error_text = ?, result_json = NULL, decision = NULL, summary = NULL, details = NULL
+        WHERE id = ?
+      `).run(acpResultValidation.error, runId);
+      res = {
+        ...res,
+        status: "error",
+        processStatus: "failed",
+        worklabResult: null,
+        error: acpResultValidation.error,
+        failureKind: "invalid_result",
+      };
+      resultForLearning = null;
+      runForLearning = {
+        ...run,
+        status: "error",
+        process_status: "failed",
+        failure_kind: "invalid_result",
+        error_text: acpResultValidation.error,
+        result_json: null,
+        decision: null,
+        summary: null,
+        details: null,
+      };
+      processStatus = "failed";
+    }
+
     try {
       const recorded = recordRunResultLearning(db, {
         task,
-        run: { ...run, process_status: processStatus, status: res.status || run.status },
-        result: res.worklabResult || safeParseJson(run.result_json, null),
+        run: { ...runForLearning, process_status: processStatus, status: res.status || runForLearning.status },
+        result: resultForLearning,
         settings: readSettings(db),
       });
       if (recorded.memories?.length) {
@@ -1020,7 +1058,6 @@ export function createTaskWatcher({
     }
     return entry.handle.sendLiveMessage(message);
   }
-
   async function sendRunApprovalDecision(runId, payload) {
     const entry = activeByRunId.get(runId);
     if (!entry) return { ok: false, code: "run_not_active", message: "run is not active" };
@@ -1029,7 +1066,6 @@ export function createTaskWatcher({
     }
     return entry.handle.sendApprovalDecision(payload);
   }
-
   async function shutdown({ drainTimeoutMs: overrideDrainMs } = {}) {
     leadCycle.shutdown();
     for (const timer of recoveryTimers) clearTimeout(timer);
@@ -1188,6 +1224,7 @@ export function createTaskWatcher({
     isActive: (taskId) => active.has(taskId),
     isRunActive: (runId) => activeByRunId.has(runId),
     sendRunApprovalDecision,
+    ...createAcpRunInteractionDispatcher(activeByRunId),
     getRunLiveInputState,
     sendRunMessage,
     maybeAutoStart: maybeAutoStartTask,

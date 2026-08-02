@@ -1,0 +1,248 @@
+import {
+  createMonoAcpDiscoveryControls,
+  createWorklabAcpProfileResolver,
+} from "./acp-runtime-profile.js";
+import {
+  normalizeAcpSessionCursor,
+  sanitizeAcpInteractionRequest,
+} from "./acp-operations.js";
+import {
+  ACP_PRIVATE_URL_HANDOFF,
+  createAcpUrlPublicRequest,
+  inspectAcpUrlHandoff,
+} from "./acp-url-handoff.js";
+import { getAcpSessionTokenKey } from "./crypto.js";
+
+function controlError(code, message) {
+  return Object.assign(new Error(message), {
+    code,
+    publicMessage: message,
+    safeMessage: message,
+  });
+}
+
+function profileId(profile) {
+  if (typeof profile?.id !== "string" || !profile.id) {
+    throw controlError("profile_invalid", "ACP profile id is missing");
+  }
+  return profile.id;
+}
+
+function interactionKind(request) {
+  if (request?.kind === "permission") return "permission";
+  return request?.payload?.mode === "url" ? "url" : "form";
+}
+
+function protocolRequestId(request, context) {
+  const value = context?.requestId
+    ?? request?.payload?.requestId
+    ?? request?.payload?.elicitationId;
+  if (value == null || String(value).length === 0) {
+    throw controlError("protocol_request_invalid", "ACP interaction request id is missing");
+  }
+  return String(value);
+}
+
+function permissionResponse(response) {
+  if (response?.outcome?.outcome === "selected" && typeof response.outcome.optionId === "string") {
+    return { outcome: { outcome: "selected", optionId: response.outcome.optionId } };
+  }
+  const optionId = response?.optionId || response?.option_id;
+  if (typeof optionId === "string" && optionId) {
+    return { outcome: { outcome: "selected", optionId } };
+  }
+  return { outcome: { outcome: "cancelled" } };
+}
+
+function elicitationResponse(response) {
+  const action = response?.action || response?.disposition;
+  if (action === "accept") {
+    const content = Object.hasOwn(response || {}, "content")
+      ? response.content
+      : response?.values;
+    return content === undefined ? { action: "accept" } : { action: "accept", content };
+  }
+  if (action === "decline") return { action: "decline" };
+  return { action: "cancel" };
+}
+
+function interactionAdapter(onInteraction, { urlHandoffAvailable = false } = {}) {
+  if (typeof onInteraction !== "function") return undefined;
+  return async (request, context = {}) => {
+    const kind = interactionKind(request);
+    const rawUrl = kind === "url" ? request?.payload?.url : null;
+    const privateUrl = kind === "url" ? inspectAcpUrlHandoff(rawUrl) : null;
+    if (kind === "url" && (!urlHandoffAvailable || !privateUrl)) {
+      throw controlError(
+        "url_handoff_unavailable",
+        "ACP URL interaction cannot be handed off safely",
+      );
+    }
+    const safeRequest = sanitizeAcpInteractionRequest({
+      source: { request, context },
+      protocolRequestId: protocolRequestId(request, context),
+      requestSchema: kind === "url"
+        ? createAcpUrlPublicRequest(rawUrl)
+        : request?.payload,
+      privateValues: privateUrl?.privateValues,
+    });
+    const callbackRequest = {
+      kind,
+      ...safeRequest,
+    };
+    if (privateUrl) {
+      Object.defineProperty(callbackRequest, ACP_PRIVATE_URL_HANDOFF, {
+        value: rawUrl,
+        enumerable: false,
+        configurable: false,
+        writable: false,
+      });
+    }
+    const response = await onInteraction(callbackRequest);
+    return kind === "permission"
+      ? permissionResponse(response)
+      : elicitationResponse(response);
+  };
+}
+
+async function defaultRuntimeLoader() {
+  return import("@mono-agent/agent-runtime");
+}
+
+function requiredRuntimeMethod(runtime, name) {
+  if (typeof runtime?.[name] !== "function") {
+    throw controlError(
+      "runtime_incompatible",
+      `Installed @mono-agent/agent-runtime does not provide ${name}`,
+    );
+  }
+  return runtime[name];
+}
+
+function throwIfAborted(signal) {
+  if (!signal?.aborted) return;
+  throw signal.reason instanceof Error
+    ? signal.reason
+    : controlError("cancelled", "ACP operation was cancelled");
+}
+
+function copySessionTokenKey(value) {
+  if (!(value instanceof Uint8Array) || value.byteLength !== 32) {
+    throw controlError(
+      "runtime_configuration_invalid",
+      "ACP session token key must be exactly 32 bytes",
+    );
+  }
+  return Buffer.from(value);
+}
+
+/**
+ * Compose Worklab's persisted ACP profiles and mono-agent discovery with the
+ * shared @mono-agent/agent-runtime ACP client. Runtime loading is lazy so the
+ * coordinator can still boot and report an actionable compatibility error
+ * while an older package is installed.
+ */
+export function createWorklabAcpControls({
+  db,
+  dataDir,
+  env = process.env,
+  agentRuntime = null,
+  loadAgentRuntime = defaultRuntimeLoader,
+  monoDiscoveryControls = null,
+  urlHandoffAvailable = false,
+  acpSessionTokenKey = null,
+} = {}) {
+  const resolveAcpProfile = createWorklabAcpProfileResolver({ db, env, urlHandoffAvailable });
+  const discovery = monoDiscoveryControls || createMonoAcpDiscoveryControls({ env });
+  const sessionTokenKey = copySessionTokenKey(
+    acpSessionTokenKey ?? getAcpSessionTokenKey({ dataDir }),
+  );
+  let runtimePromise = agentRuntime ? Promise.resolve(agentRuntime) : null;
+  const runtime = () => {
+    runtimePromise ||= Promise.resolve().then(() => loadAgentRuntime());
+    return runtimePromise;
+  };
+  const runtimeOptions = ({ signal, onInteraction } = {}) => {
+    const onAcpInteractionRequest = interactionAdapter(onInteraction, { urlHandoffAvailable });
+    return {
+      resolveAcpProfile,
+      acpSessionTokenKey: sessionTokenKey,
+      signal,
+      ...(onAcpInteractionRequest ? { onAcpInteractionRequest } : {}),
+    };
+  };
+
+  return {
+    ...discovery,
+
+    async probe({ profile, signal, onInteraction } = {}) {
+      const client = await runtime();
+      throwIfAborted(signal);
+      const result = await requiredRuntimeMethod(client, "probeAcpProfile")(
+        profileId(profile),
+        runtimeOptions({ signal, onInteraction }),
+      );
+      return {
+        ...result,
+        ok: true,
+        status: "ready",
+        capabilities: result?.agentCapabilities || result?.capabilities || {},
+      };
+    },
+
+    async authenticate({ profile, authMethodId, signal, onInteraction } = {}) {
+      const client = await runtime();
+      throwIfAborted(signal);
+      return requiredRuntimeMethod(client, "authenticateAcpProfile")(
+        profileId(profile),
+        authMethodId,
+        runtimeOptions({ signal, onInteraction }),
+      );
+    },
+
+    async logout({ profile, signal, onInteraction } = {}) {
+      const client = await runtime();
+      throwIfAborted(signal);
+      const result = await requiredRuntimeMethod(client, "logoutAcpProfile")(
+        profileId(profile),
+        runtimeOptions({ signal, onInteraction }),
+      );
+      return { ...result, status: result?.loggedOut === false ? "logout_failed" : "logged_out" };
+    },
+
+    async listSessions({ profile, cursor, signal, onInteraction } = {}) {
+      const id = profileId(profile);
+      const sessionCursor = normalizeAcpSessionCursor(cursor, id);
+      const client = await runtime();
+      throwIfAborted(signal);
+      const boundProfile = await resolveAcpProfile(id, { operation: "list_sessions" });
+      throwIfAborted(signal);
+      const sessionCwd = boundProfile.workspaceOwner === "agent"
+        ? boundProfile.workspacePath
+        : null;
+      return requiredRuntimeMethod(client, "listAcpSessions")(
+        id,
+        {
+          ...(sessionCwd ? { cwd: sessionCwd } : {}),
+          ...(sessionCursor ? { cursor: sessionCursor } : {}),
+        },
+        runtimeOptions({ signal, onInteraction }),
+      );
+    },
+
+    async deleteSession({ profile, providerSessionId, remoteSessionId, signal, onInteraction } = {}) {
+      const client = await runtime();
+      throwIfAborted(signal);
+      const opaqueSessionId = providerSessionId || remoteSessionId;
+      requiredRuntimeMethod(client, "validateAcpProviderSessionId")(
+        opaqueSessionId,
+        profileId(profile),
+        sessionTokenKey,
+      );
+      return requiredRuntimeMethod(client, "deleteAcpSession")(
+        opaqueSessionId,
+        runtimeOptions({ signal, onInteraction }),
+      );
+    },
+  };
+}

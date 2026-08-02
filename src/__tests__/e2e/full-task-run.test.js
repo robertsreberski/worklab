@@ -17,6 +17,7 @@ import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
 import { createTaskWatcher } from "../../coordinator/task-watcher.js";
 import { spawnWorker } from "../../coordinator/spawn-worker.js";
+import { sameOriginFetch } from "../helpers/test-server.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fakeBinary = resolve(__dirname, "../helpers/fake-worker.js");
@@ -38,7 +39,7 @@ async function pollTask(baseUrl, taskId, predicate, { timeoutMs = 5000, stepMs =
   const deadline = Date.now() + timeoutMs;
   let last = null;
   while (Date.now() < deadline) {
-    last = await fetch(`${baseUrl}/api/tasks/${taskId}`).then((r) => r.json());
+    last = await sameOriginFetch(`${baseUrl}/api/tasks/${taskId}`).then((r) => r.json());
     if (predicate(last)) return last;
     await new Promise((r) => setTimeout(r, stepMs));
   }
@@ -46,7 +47,7 @@ async function pollTask(baseUrl, taskId, predicate, { timeoutMs = 5000, stepMs =
 }
 
 async function createAgent(baseUrl, name) {
-  const res = await fetch(`${baseUrl}/api/agents`, {
+  const res = await sameOriginFetch(`${baseUrl}/api/agents`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, display_name: name, sdk: "claude", model: "claude:claude-sonnet-4-6" }),
@@ -61,7 +62,7 @@ async function createTask(baseUrl, body) {
   const withInstructions = body?.instructions
     ? body
     : { ...body, instructions: body?.instructions ?? "End-to-end harness brief: drive the fake worker through the configured script and assert lifecycle bookkeeping." };
-  const res = await fetch(`${baseUrl}/api/tasks`, {
+  const res = await sameOriginFetch(`${baseUrl}/api/tasks`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(withInstructions),
@@ -71,7 +72,7 @@ async function createTask(baseUrl, body) {
 }
 
 async function requestRun(baseUrl, taskId) {
-  const res = await fetch(`${baseUrl}/api/tasks/${taskId}/run`, { method: "POST" });
+  const res = await sameOriginFetch(`${baseUrl}/api/tasks/${taskId}/run`, { method: "POST" });
   expect(res.status).toBe(200);
   return (await res.json()).runId;
 }
@@ -155,7 +156,7 @@ describe("e2e: full task lifecycle regressions", () => {
     expect(after.task.last_failure_kind).toBeTruthy();
 
     // A second run can still be requested — the audit's "retry dead end".
-    const second = await fetch(`${harness.baseUrl}/api/tasks/${task.id}/run`, { method: "POST" });
+    const second = await sameOriginFetch(`${harness.baseUrl}/api/tasks/${task.id}/run`, { method: "POST" });
     expect(second.status).toBe(200);
   }, 30000);
 
@@ -188,7 +189,7 @@ describe("e2e: full task lifecycle regressions", () => {
 
     const finalTask = await pollTask(harness.baseUrl, task.id, (t) => t.task.stage === "done");
     expect(finalTask.task.stage).toBe("done");
-    const runRes = await fetch(`${harness.baseUrl}/api/runs/${runId}`).then((r) => r.json());
+    const runRes = await sameOriginFetch(`${harness.baseUrl}/api/runs/${runId}`).then((r) => r.json());
     expect(runRes.run.status).toBe("complete");
     expect(runRes.log.input_tokens).toBe(7);
     expect(runRes.log.output_tokens).toBe(3);
@@ -212,10 +213,10 @@ describe("e2e: full task lifecycle regressions", () => {
 
     // Wait until the run row reflects the running worker, then cancel.
     await pollTask(harness.baseUrl, task.id, async () => {
-      const run = await fetch(`${harness.baseUrl}/api/runs/${runId}`).then((r) => r.json());
+      const run = await sameOriginFetch(`${harness.baseUrl}/api/runs/${runId}`).then((r) => r.json());
       return run?.run?.worker_pid;
     }, { timeoutMs: 3000, stepMs: 50 });
-    const cancelRes = await fetch(`${harness.baseUrl}/api/tasks/${task.id}/cancel`, { method: "POST" });
+    const cancelRes = await sameOriginFetch(`${harness.baseUrl}/api/tasks/${task.id}/cancel`, { method: "POST" });
     expect([200, 204]).toContain(cancelRes.status);
 
     const after = await pollTask(harness.baseUrl, task.id, (t) => {

@@ -1,9 +1,7 @@
-// src/cli/stop.js
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
 import { loadConfig } from "../core/index.js";
 import { stopUserService } from "./install-service.js";
 import { applyConfigArgs } from "./args.js";
+import { gracefulStopCoordinator } from "./service-drain.js";
 
 export async function stop(args = []) {
   applyConfigArgs(args);
@@ -16,17 +14,16 @@ export async function stop(args = []) {
     console.log(`service stop unavailable; falling back to pid file: ${err.message}`);
   }
 
-  const pidFile = join(config.dataDir, ".coordinator.pid");
-  if (!existsSync(pidFile)) {
+  const result = await gracefulStopCoordinator({ config, timeoutMs: 0 });
+  if (result.status === "timed_out" || result.status === "exited") {
+    console.log(result.method === "control"
+      ? `requested authenticated shutdown from coordinator ${result.pid}`
+      : `sent SIGTERM to legacy coordinator ${result.pid}`);
+  } else if (result.status === "not_running") {
     console.log("coordinator not running (no pid file)");
-    return;
-  }
-  const pid = parseInt(readFileSync(pidFile, "utf8").trim(), 10);
-  try {
-    process.kill(pid, "SIGTERM");
-    console.log(`sent SIGTERM to ${pid}`);
-  } catch (err) {
-    console.log(`process ${pid} not found; cleaning stale pid file`);
-    try { unlinkSync(pidFile); } catch {}
+  } else if (result.status === "stale_pid") {
+    console.log(`coordinator not running (stale pid${result.pid ? ` ${result.pid}` : ""}); cleaned stale pid file`);
+  } else {
+    console.log("coordinator ownership is active but its PID claim is not stable; no signal sent");
   }
 }

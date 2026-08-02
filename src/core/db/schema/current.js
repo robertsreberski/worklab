@@ -1,4 +1,101 @@
-export const SCHEMA_VERSION = 49;
+export const SCHEMA_VERSION = 50;
+
+export const ACP_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS acp_profiles (
+  id TEXT PRIMARY KEY,
+  agent_name TEXT NOT NULL UNIQUE REFERENCES agents(name) ON DELETE CASCADE,
+  driver TEXT NOT NULL CHECK(driver IN ('generic', 'mono')),
+  command TEXT NOT NULL,
+  args_json TEXT NOT NULL DEFAULT '[]',
+  cwd TEXT,
+  env_keys_json TEXT NOT NULL DEFAULT '[]',
+  mono_source_id TEXT,
+  mono_source_json TEXT NOT NULL DEFAULT '{}',
+  configuration_owner TEXT NOT NULL DEFAULT 'client' CHECK(configuration_owner IN ('client', 'agent')),
+  workspace_owner TEXT NOT NULL DEFAULT 'client' CHECK(workspace_owner IN ('client', 'agent')),
+  mcp_owner TEXT NOT NULL DEFAULT 'client' CHECK(mcp_owner IN ('client', 'agent')),
+  canonical_workspace TEXT,
+  permissions_policy_json TEXT NOT NULL DEFAULT '{}',
+  config_policy_json TEXT NOT NULL DEFAULT '{}',
+  session_policy_json TEXT NOT NULL DEFAULT '{}',
+  probe_timeout_ms INTEGER NOT NULL DEFAULT 30000 CHECK(probe_timeout_ms BETWEEN 1000 AND 300000),
+  last_probe_state TEXT CHECK(last_probe_state IS NULL OR last_probe_state IN ('succeeded', 'failed')),
+  last_probe_at INTEGER,
+  last_probe_result_json TEXT NOT NULL DEFAULT '{}',
+  last_probe_error_json TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  CHECK(driver = 'mono' OR mono_source_id IS NULL),
+  CHECK(driver = 'mono' OR mono_source_json = '{}'),
+  CHECK(driver = 'generic' OR (
+    mono_source_id IS NOT NULL
+    AND configuration_owner = 'agent'
+    AND workspace_owner = 'agent'
+    AND mcp_owner = 'agent'
+    AND canonical_workspace IS NOT NULL
+  ))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_acp_profiles_mono_source
+  ON acp_profiles(mono_source_id) WHERE mono_source_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_acp_profiles_driver_updated
+  ON acp_profiles(driver, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS acp_operations (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL REFERENCES acp_profiles(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK(kind IN ('probe', 'authenticate', 'logout', 'list_sessions', 'delete_session')),
+  state TEXT NOT NULL DEFAULT 'queued'
+    CHECK(state IN ('queued', 'running', 'waiting_for_interaction', 'succeeded', 'failed', 'cancelled')),
+  remote_session_id TEXT,
+  request_json TEXT NOT NULL DEFAULT '{}',
+  result_json TEXT NOT NULL DEFAULT '{}',
+  error_json TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  started_at INTEGER,
+  completed_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_acp_operations_profile_created
+  ON acp_operations(profile_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_acp_operations_active
+  ON acp_operations(state, created_at ASC)
+  WHERE state IN ('queued', 'running', 'waiting_for_interaction');
+CREATE UNIQUE INDEX IF NOT EXISTS idx_acp_operations_one_active_profile
+  ON acp_operations(profile_id)
+  WHERE state IN ('queued', 'running', 'waiting_for_interaction');
+
+CREATE TABLE IF NOT EXISTS acp_interactions (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL REFERENCES acp_profiles(id) ON DELETE CASCADE,
+  task_run_id TEXT REFERENCES task_runs(id) ON DELETE CASCADE,
+  operation_id TEXT REFERENCES acp_operations(id) ON DELETE CASCADE,
+  protocol_request_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('permission', 'form', 'url')),
+  request_schema_json TEXT NOT NULL DEFAULT '{}',
+  state TEXT NOT NULL DEFAULT 'pending'
+    CHECK(state IN ('pending', 'submitted', 'cancelled', 'expired')),
+  disposition TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  resolved_at INTEGER,
+  CHECK (
+    (task_run_id IS NOT NULL AND operation_id IS NULL)
+    OR (task_run_id IS NULL AND operation_id IS NOT NULL)
+  )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_acp_interactions_pending_run_request
+  ON acp_interactions(task_run_id, protocol_request_id)
+  WHERE task_run_id IS NOT NULL AND state = 'pending';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_acp_interactions_pending_operation_request
+  ON acp_interactions(operation_id, protocol_request_id)
+  WHERE operation_id IS NOT NULL AND state = 'pending';
+CREATE INDEX IF NOT EXISTS idx_acp_interactions_pending_profile
+  ON acp_interactions(profile_id, created_at ASC) WHERE state = 'pending';
+CREATE INDEX IF NOT EXISTS idx_acp_interactions_run_created
+  ON acp_interactions(task_run_id, created_at ASC) WHERE task_run_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_acp_interactions_operation_created
+  ON acp_interactions(operation_id, created_at ASC) WHERE operation_id IS NOT NULL;
+`;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -685,4 +782,6 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+${ACP_SCHEMA_SQL}
 `;

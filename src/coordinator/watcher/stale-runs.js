@@ -17,6 +17,7 @@
 
 import { buildTranscriptTailSnapshot } from "@mono-agent/agent-runtime/agent/transcript.js";
 import { readJsonlEventsFromFile } from "../../core/index.js";
+import { expireUnresolvedAcpInteractionsForTerminalRuns } from "../../core/db/queries/acp-interactions.js";
 
 function unwrapSdkEvent(event) {
   return event?.type === "sdk_event" && event.event ? event.event : event;
@@ -64,7 +65,6 @@ export function reconcileStaleRunningRuns(db, logger, { dataDir = null } = {}) {
       `SELECT id, task_id, stage, raw_output_path FROM task_runs
        WHERE process_status = 'running' OR status = 'running'`,
     ).all();
-    if (stale.length === 0) return { abandoned: 0, recoveredDrained: 0 };
     const markAbandonedRun = db.prepare(
       `UPDATE task_runs
        SET process_status = 'abandoned', status = 'error', ended_at = ?,
@@ -111,14 +111,28 @@ export function reconcileStaleRunningRuns(db, logger, { dataDir = null } = {}) {
         abandoned += 1;
       }
     }
-    return { abandoned, recoveredDrained };
+    const expiredInteractions = expireUnresolvedAcpInteractionsForTerminalRuns(db, {
+      disposition: "run_ended",
+      resolvedAt: now,
+    }).changes;
+    return { abandoned, recoveredDrained, expiredInteractions };
   });
   const counts = reconcile();
   const count = counts.abandoned + counts.recoveredDrained;
   if (count > 0) {
     logger?.warn?.(
-      { count, abandoned: counts.abandoned, recovered_drained: counts.recoveredDrained },
+      {
+        count,
+        abandoned: counts.abandoned,
+        recovered_drained: counts.recoveredDrained,
+        expired_interactions: counts.expiredInteractions,
+      },
       "reconciled stale running runs at boot",
+    );
+  } else if (counts.expiredInteractions > 0) {
+    logger?.warn?.(
+      { expired_interactions: counts.expiredInteractions },
+      "expired unresolved ACP interactions for terminal runs at boot",
     );
   }
   return count;

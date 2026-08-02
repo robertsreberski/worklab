@@ -156,7 +156,374 @@ function normalizeWorktreeReconcileEvent(ev) {
 }
 
 function eventTarget(ev) {
-  return ev?.type === "sdk_event" && ev.event ? ev.event : ev;
+  let target = ev;
+  while (target?.type === "sdk_event" && target.event) target = target.event;
+  return target;
+}
+
+const ACP_PLAN_UPDATE_TYPES = new Set(["plan", "plan_update", "plan_removed"]);
+const ACP_PROVIDER_EVENT_TYPES = new Set([
+  "provider_request_started",
+  "provider_request_completed",
+  "provider_failover_started",
+  "provider_failover_completed",
+  "provider_status",
+]);
+
+function boundedAcpText(value, max = 500) {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, "")
+    .slice(0, max);
+}
+
+function acpIdentifier(value, max = 128) {
+  return boundedAcpText(value, max).replace(/[^a-zA-Z0-9._:-]/gu, "");
+}
+
+function acpUpdateBody(event) {
+  const target = eventTarget(event);
+  const candidate = target?.update;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return {};
+  if (candidate.sessionUpdate) return candidate;
+  if (candidate.update?.sessionUpdate) return candidate.update;
+  return candidate;
+}
+
+function acpUpdateType(event) {
+  const target = eventTarget(event);
+  const body = acpUpdateBody(target);
+  return acpIdentifier(body.sessionUpdate || target?.updateType || target?.update_type) || "unknown";
+}
+
+function acpUpdateLabel(value) {
+  const identifier = acpIdentifier(value) || "unknown";
+  return identifier.replaceAll("_", " ").replace(/\b\w/gu, (letter) => letter.toUpperCase());
+}
+
+function finiteAcpNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function acpCost(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return { amount: value };
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const amount = finiteAcpNumber(value.amount);
+  if (amount == null) return null;
+  const currency = acpIdentifier(value.currency, 16);
+  return { amount, ...(currency ? { currency } : {}) };
+}
+
+function acpPlanEntries(update) {
+  const candidates = Array.isArray(update?.entries)
+    ? update.entries
+    : Array.isArray(update?.plan?.entries)
+      ? update.plan.entries
+      : Array.isArray(update?.plan)
+        ? update.plan
+        : update?.entry
+          ? [update.entry]
+          : [];
+  return candidates.slice(0, 50).map((entry) => {
+    const content = boundedAcpText(entry?.content, 2_000);
+    const priority = acpIdentifier(entry?.priority, 32);
+    const status = acpIdentifier(entry?.status, 32);
+    return {
+      ...(content ? { content } : {}),
+      ...(priority ? { priority } : {}),
+      ...(status ? { status } : {}),
+    };
+  }).filter((entry) => Object.keys(entry).length > 0);
+}
+
+function normalizeAcpPlan(update, fallbackType = "plan") {
+  const action = ACP_PLAN_UPDATE_TYPES.has(update?.sessionUpdate)
+    ? update.sessionUpdate
+    : ACP_PLAN_UPDATE_TYPES.has(fallbackType)
+      ? fallbackType
+      : "plan";
+  const titles = {
+    plan: "ACP plan updated",
+    plan_update: "ACP plan updated",
+    plan_removed: "ACP plan removed",
+  };
+  return {
+    type: "acp_plan",
+    action,
+    title: titles[action],
+    entries: acpPlanEntries(update),
+  };
+}
+
+function normalizeAcpContextUsage(event) {
+  const source = event?.sessionUpdate === "usage_update" ? event : event?.context || {};
+  const used = finiteAcpNumber(source.used);
+  const window = finiteAcpNumber(source.window ?? source.size);
+  const cost = acpCost(event?.cost);
+  return {
+    type: "acp_context_usage",
+    ...(used != null ? { used } : {}),
+    ...(window != null ? { window } : {}),
+    ...(cost ? { cost } : {}),
+  };
+}
+
+function acpDisplayItems(entries) {
+  return entries
+    .filter((entry) => entry?.label)
+    .slice(0, 50)
+    .map((entry) => ({
+      label: boundedAcpText(entry.label, 160),
+      ...(entry.detail ? { detail: boundedAcpText(entry.detail, 500) } : {}),
+    }));
+}
+
+function normalizeRawAcpSessionUpdate(event) {
+  const body = acpUpdateBody(event);
+  const updateType = acpUpdateType(event);
+  if (ACP_PLAN_UPDATE_TYPES.has(updateType)) return normalizeAcpPlan(body, updateType);
+  if (updateType === "usage_update") return normalizeAcpContextUsage(body);
+
+  if (updateType === "agent_message_chunk") {
+    const text = body.content?.type === "text" ? boundedAcpText(body.content.text, 10_000) : "";
+    if (text) return { type: "text", text };
+    return {
+      type: "acp_session_update",
+      updateType,
+      title: "ACP agent message updated",
+      detail: "Non-text message content was not displayed.",
+    };
+  }
+  if (updateType === "agent_thought_chunk") {
+    return {
+      type: "acp_session_update",
+      updateType,
+      title: "ACP agent reasoning updated",
+      detail: "Private reasoning content was not displayed.",
+    };
+  }
+  if (updateType === "user_message_chunk") {
+    return {
+      type: "acp_session_update",
+      updateType,
+      title: "ACP user message updated",
+      detail: "User message content was not repeated in the event log.",
+    };
+  }
+  if (updateType === "tool_call" || updateType === "tool_call_update") {
+    const toolTitle = boundedAcpText(body.title || body.name, 200);
+    const kind = acpIdentifier(body.kind, 64);
+    const status = acpIdentifier(body.status, 64);
+    return {
+      type: "acp_session_update",
+      updateType,
+      title: updateType === "tool_call" ? "ACP tool call started" : "ACP tool call updated",
+      items: acpDisplayItems([
+        toolTitle ? { label: "Tool", detail: toolTitle } : null,
+        kind ? { label: "Kind", detail: acpUpdateLabel(kind) } : null,
+        status ? { label: "Status", detail: acpUpdateLabel(status) } : null,
+      ]),
+    };
+  }
+  if (updateType === "available_commands_update") {
+    const commands = Array.isArray(body.availableCommands)
+      ? body.availableCommands
+      : Array.isArray(body.commands)
+        ? body.commands
+        : [];
+    return {
+      type: "acp_session_update",
+      updateType,
+      title: "ACP commands updated",
+      items: acpDisplayItems(commands.map((command) => ({
+        label: boundedAcpText(command?.name, 160),
+        detail: [
+          boundedAcpText(command?.description, 300),
+          boundedAcpText(command?.input?.hint || command?.inputHint, 160),
+        ].filter(Boolean).join(" · "),
+      }))),
+    };
+  }
+  if (updateType === "current_mode_update") {
+    const mode = acpIdentifier(body.currentModeId || body.modeId, 160);
+    return {
+      type: "acp_session_update",
+      updateType,
+      title: "ACP session mode updated",
+      ...(mode ? { detail: `Mode: ${mode}` } : {}),
+    };
+  }
+  if (updateType === "config_option_update") {
+    const options = Array.isArray(body.configOptions) ? body.configOptions : [];
+    return {
+      type: "acp_session_update",
+      updateType,
+      title: "ACP configuration options updated",
+      items: acpDisplayItems(options.map((option) => ({
+        label: boundedAcpText(option?.name || option?.label || option?.id, 160),
+        detail: acpIdentifier(option?.type, 32),
+      }))),
+    };
+  }
+  if (updateType === "session_info_update") {
+    const title = boundedAcpText(body.title, 300);
+    const updatedAt = boundedAcpText(body.updatedAt, 80);
+    return {
+      type: "acp_session_update",
+      updateType,
+      title: "ACP session information updated",
+      items: acpDisplayItems([
+        { label: "Title", detail: title },
+        { label: "Updated", detail: updatedAt },
+      ]),
+    };
+  }
+  return {
+    type: "acp_session_update",
+    updateType,
+    title: `ACP session update: ${acpUpdateLabel(updateType)}`,
+  };
+}
+
+function providerReference(value) {
+  if (typeof value === "string") return boundedAcpText(value, 256);
+  if (!value || typeof value !== "object") return "";
+  return boundedAcpText(value.reference || value.model || value.id, 256);
+}
+
+function isAcpProviderEvent(event) {
+  if (!ACP_PROVIDER_EVENT_TYPES.has(event?.type)) return false;
+  if (event.source === "acp" || event.sdk === "acp" || event.runtime === "acp-stdio") return true;
+  return [event.model, event.from, event.to].some((value) => providerReference(value).startsWith("acp:"));
+}
+
+function normalizeAcpProviderEvent(event) {
+  const type = event.type;
+  const durationMs = finiteAcpNumber(event.durationMs);
+  const model = providerReference(event.model);
+  if (type === "provider_status") {
+    const kind = acpIdentifier(event.kind, 64) || "unknown";
+    if (kind === "request_started" || kind === "request_completed") {
+      return {
+        type: `provider_${kind}`,
+        sdk: "acp",
+        ...(model ? { model } : {}),
+        ...(kind === "request_completed" && durationMs != null ? { durationMs } : {}),
+        ...(kind === "request_completed" ? { cancelled: event.cancelled === true } : {}),
+      };
+    }
+    if (kind === "failover_started" || kind === "failover_completed") {
+      const from = providerReference(event.from);
+      const to = providerReference(event.to || event.model);
+      return {
+        type: `provider_${kind}`,
+        ...(from ? { from: { model: from } } : {}),
+        ...(to ? { to: { model: to } } : {}),
+      };
+    }
+    return {
+      type: "acp_provider_status",
+      status: kind,
+      title: kind === "retry_started" ? "Retrying ACP provider" : `ACP provider: ${acpUpdateLabel(kind)}`,
+      ...(finiteAcpNumber(event.retryIndex) != null ? { retryIndex: event.retryIndex } : {}),
+      ...(finiteAcpNumber(event.attemptIndex) != null ? { attemptIndex: event.attemptIndex } : {}),
+    };
+  }
+  if (type === "provider_failover_started" || type === "provider_failover_completed") {
+    const from = providerReference(event.from);
+    const to = providerReference(event.to || event.model);
+    return {
+      type,
+      ...(from ? { from: { model: from } } : {}),
+      ...(to ? { to: { model: to } } : {}),
+    };
+  }
+  return {
+    type,
+    sdk: "acp",
+    ...(model ? { model } : {}),
+    ...(type === "provider_request_completed" && durationMs != null ? { durationMs } : {}),
+    ...(type === "provider_request_completed" ? { cancelled: event.cancelled === true } : {}),
+  };
+}
+
+function normalizeAcpInteractionEvent(event) {
+  const suffix = acpIdentifier(event.type, 128).replace(/^acp_interaction_/, "") || "updated";
+  const titles = {
+    requested: "ACP interaction requested",
+    acknowledged: "ACP interaction acknowledged",
+    submitted: "ACP interaction submitted",
+    resolved: "ACP interaction resolved",
+    cancelled: "ACP interaction cancelled",
+  };
+  const detail = [event.interaction_kind, event.state, event.disposition, event.outcome]
+    .map((value) => acpIdentifier(value, 64))
+    .filter(Boolean)
+    .map(acpUpdateLabel)
+    .join(" · ");
+  return {
+    type: "acp_interaction",
+    action: suffix,
+    title: titles[suffix] || `ACP interaction: ${acpUpdateLabel(suffix)}`,
+    ...(detail ? { detail } : {}),
+  };
+}
+
+function isAcpTimelineEvent(event) {
+  const target = eventTarget(event);
+  if (!target) return false;
+  if (target.type === "acp_session_update" || String(target.type || "").startsWith("acp_interaction_")) return true;
+  if (target.type === "plan" && target.source === "acp") return true;
+  if (target.type === "context_usage" && target.source === "acp") return true;
+  if (target.type === "capabilities_resolved" && target.sdk === "acp") return true;
+  if (isAcpProviderEvent(target)) return true;
+  return String(target.type || "").startsWith("acp_");
+}
+
+export function normalizeAcpTimelineEvent(event) {
+  const target = eventTarget(event);
+  if (target.type === "acp_session_update") return normalizeRawAcpSessionUpdate(target);
+  if (target.type === "plan" && target.source === "acp") return normalizeAcpPlan(target.update || {}, target.update?.sessionUpdate);
+  if (target.type === "context_usage" && target.source === "acp") return normalizeAcpContextUsage(target);
+  if (isAcpProviderEvent(target)) return normalizeAcpProviderEvent(target);
+  if (String(target.type || "").startsWith("acp_interaction_")) return normalizeAcpInteractionEvent(target);
+  if (target.type === "capabilities_resolved" && target.sdk === "acp") {
+    return {
+      type: "acp_session_update",
+      updateType: "capabilities_resolved",
+      title: "ACP capabilities negotiated",
+    };
+  }
+  const updateType = acpIdentifier(target.type, 128) || "unknown";
+  return {
+    type: "acp_session_update",
+    updateType,
+    title: `ACP event: ${acpUpdateLabel(updateType)}`,
+  };
+}
+
+function isAcpNormalizedCompanion(events, index) {
+  const previous = eventTarget(events[index - 1]);
+  const current = eventTarget(events[index]);
+  if (previous?.type !== "acp_session_update" || !current) return false;
+  const body = acpUpdateBody(previous);
+  const updateType = acpUpdateType(previous);
+  const content = current.message?.content || current.content;
+  if (updateType === "agent_message_chunk") return current.type === "assistant" && Array.isArray(content);
+  if (updateType === "agent_thought_chunk") return current.type === "assistant" && Array.isArray(content);
+  if (updateType === "tool_call") {
+    return current.type === "assistant"
+      && Array.isArray(content)
+      && content.some((block) => block?.type === "tool_use" && block.id === body.toolCallId);
+  }
+  if (updateType === "tool_call_update" && ["completed", "failed"].includes(body.status)) {
+    return current.type === "user"
+      && Array.isArray(content)
+      && content.some((block) => block?.type === "tool_result" && block.tool_use_id === body.toolCallId);
+  }
+  if (updateType === "usage_update") return current.type === "context_usage" && current.source === "acp";
+  if (ACP_PLAN_UPDATE_TYPES.has(updateType)) return current.type === "plan" && current.source === "acp";
+  return false;
 }
 
 function followedByMatchingStructuredOutput(events, index) {
@@ -300,6 +667,7 @@ function normalizeCliEvent(ev) {
 function normalizeWorklabEvent(ev, { compactFinal = false } = {}) {
   if (!ev) return null;
   if (ev.type === "sdk_event") return normalizeWorklabEvent(ev.event, { compactFinal });
+  if (isAcpTimelineEvent(ev)) return normalizeAcpTimelineEvent(ev);
   if (ev.type === "live_user_message") {
     return {
       type: "live_user_message",
@@ -382,6 +750,10 @@ export function normalizeWorklabEvents(events = []) {
       thinkingTokens = tokens;
       return null;
     }
+    // ACP emits a raw protocol update followed by a convenience event. Keep
+    // the strict display projection of the protocol update and discard the
+    // companion, which can carry raw tool input/output or private reasoning.
+    if (isAcpNormalizedCompanion(events, index)) return null;
     if (followedByMatchingStructuredOutput(events, index)) return null;
     const rawFinalText = String(event?.text || "").trim();
     const normalizedFinalText = normalizeCommentText(rawFinalText);
@@ -398,9 +770,11 @@ export function normalizeWorklabEvents(events = []) {
       normalized = attachThinkingTokens(normalized, thinkingTokens);
       thinkingTokens = 0;
     }
-    const visibleText = normalizeCommentText(visibleTextFromEvent(event));
+    const originalVisibleText = visibleTextFromEvent(event);
+    const visibleSource = originalVisibleText ? event : normalized;
+    const visibleText = normalizeCommentText(originalVisibleText || visibleTextFromEvent(normalized));
     if (visibleText) {
-      visibleTextTail = isVisibleTextEvent(event)
+      visibleTextTail = isVisibleTextEvent(visibleSource)
         ? mergeVisibleText(visibleTextTail, visibleText)
         : visibleText;
       visibleTexts.add(visibleText);

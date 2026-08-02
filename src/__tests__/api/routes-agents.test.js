@@ -122,6 +122,45 @@ describe("agents CRUD", () => {
     await agent.get("/api/agents?view=nope").expect(400);
   });
 
+  it("annotates full and summary agent lists with safe ACP binding metadata", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "worklab-agent-acp-summary-"));
+    tempDirs.push(cwd);
+    const { agent } = makeTestServer();
+    const created = await agent.post("/api/acp/profiles").send({
+      agentName: "external-summary",
+      displayName: "External Summary",
+      command: process.execPath,
+      cwd,
+      envKeys: ["ACP_PRIVATE_TOKEN"],
+    }).expect(201);
+
+    for (const path of ["/api/agents", "/api/agents?view=summary"]) {
+      const response = await agent.get(path).expect(200);
+      const external = response.body.agents.find((row) => row.name === "external-summary");
+      expect(external).toMatchObject({
+        kind: "external",
+        acp_profile_id: created.body.profile.id,
+        driver: "generic",
+      });
+      expect(external).not.toHaveProperty("command");
+      expect(external).not.toHaveProperty("envKeys");
+      expect(JSON.stringify(external)).not.toContain("ACP_PRIVATE_TOKEN");
+    }
+
+    const local = await agent.post("/api/agents").send({
+      name: "local-summary",
+      display_name: "Local Summary",
+      model: "claude:claude-sonnet-4-6",
+    }).expect(201);
+    expect(local.body.agent.kind).toBeUndefined();
+    const listed = await agent.get("/api/agents?view=summary").expect(200);
+    expect(listed.body.agents.find((row) => row.name === "local-summary")).toMatchObject({
+      kind: "local",
+      acp_profile_id: null,
+      driver: null,
+    });
+  });
+
   it("POST /api/agents creates with required fields", async () => {
     const { agent } = makeTestServer();
     const res = await agent.post("/api/agents").send({ name: "coder", display_name: "Coder", sdk: "claude", model: "claude:claude-sonnet-4-6" }).expect(201);
@@ -760,6 +799,47 @@ describe("agents CRUD", () => {
     await agent.post("/api/agents").send({ name: "coder", display_name: "Coder", sdk: "claude", model: "claude:claude-sonnet-4-6" });
     await agent.delete("/api/agents/coder").expect(204);
     await agent.get("/api/agents/coder").expect(404);
+  });
+
+  it("rejects generic PATCH and DELETE for ACP-bound agents before changing the binding", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "worklab-agent-acp-owned-"));
+    tempDirs.push(cwd);
+    const { agent, db } = makeTestServer();
+    const created = await agent.post("/api/acp/profiles").send({
+      agentName: "external-owned",
+      displayName: "External Owned",
+      description: "Profile-owned description",
+      command: process.execPath,
+      cwd,
+    }).expect(201);
+    const profileId = created.body.profile.id;
+    const profileRoute = `/api/acp/profiles/${profileId}`;
+    const before = db.prepare("SELECT * FROM agents WHERE name = ?").get("external-owned");
+
+    const patched = await agent.patch("/api/agents/external-owned").send({
+      display_name: "Hijacked",
+      description: "Generic route must not write this",
+      enabled: false,
+    }).expect(409);
+    expect(patched.body.error).toMatchObject({
+      code: "acp_profile_managed",
+      profile_id: profileId,
+      profile_route: profileRoute,
+    });
+    expect(patched.body.error.message).toContain(profileRoute);
+    expect(db.prepare("SELECT * FROM agents WHERE name = ?").get("external-owned")).toEqual(before);
+
+    const deleted = await agent.delete("/api/agents/external-owned").expect(409);
+    expect(deleted.body.error).toMatchObject({
+      code: "acp_profile_managed",
+      profile_id: profileId,
+      profile_route: profileRoute,
+    });
+    expect(db.prepare("SELECT * FROM agents WHERE name = ?").get("external-owned")).toEqual(before);
+    expect(db.prepare("SELECT id, agent_name FROM acp_profiles WHERE id = ?").get(profileId)).toEqual({
+      id: profileId,
+      agent_name: "external-owned",
+    });
   });
 
   it("POST /api/agents/:name/consolidate delegates to consolidation manager", async () => {

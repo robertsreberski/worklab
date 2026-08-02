@@ -44,6 +44,14 @@ function providerSessionPayload(result) {
   return result?.providerSessionId ? { provider_session_id: result.providerSessionId } : {};
 }
 
+export function emitCancelledEvent(emit, result, fields = {}) {
+  emit({
+    type: "cancelled",
+    ...fields,
+    ...providerSessionPayload(result),
+  });
+}
+
 // Fields the agent runtime surfaces on every successful run that we want the
 // coordinator to persist on task_runs (capabilitiesUsed, failoverHistory) or
 // surface in the UI (observerSnapshot is also picked up here so the coordinator
@@ -62,7 +70,7 @@ export function emitFinalResult(ctx, result) {
   const { emit } = ctx;
 
   if (result.cancelled) {
-    emit({ type: "cancelled" });
+    emitCancelledEvent(emit, result);
     return 130;
   }
   emitRuntimeWarnings(emit, result);
@@ -73,6 +81,7 @@ export function emitFinalResult(ctx, result) {
       failureKind: result.failureKind,
       ...(result.errorDetails ? { details: result.errorDetails } : {}),
       ...(result.diagnostics && typeof result.diagnostics === "object" ? { diagnostics: result.diagnostics } : {}),
+      ...providerSessionPayload(result),
     });
     return 1;
   }
@@ -131,6 +140,7 @@ export function emitFinalResult(ctx, result) {
         type: "worklab_result_error",
         message: result.parsedResultFatalMessage || result.parsedResultError || "Invalid worklab_result",
         ...(result.diagnostics && typeof result.diagnostics === "object" ? { diagnostics: result.diagnostics } : {}),
+        ...providerSessionPayload(result),
       });
       return 1;
     }
@@ -170,6 +180,7 @@ export function emitFinalResult(ctx, result) {
         type: "worklab_result_error",
         message: result.parsedResultFatalMessage || result.parsedResultError || "Reviewer did not return a valid worklab_result or verdict",
         ...(result.diagnostics && typeof result.diagnostics === "object" ? { diagnostics: result.diagnostics } : {}),
+        ...providerSessionPayload(result),
       });
       return 1;
     }
@@ -204,6 +215,7 @@ export function emitFinalResult(ctx, result) {
         type: "worklab_result_error",
         message: result.parsedResultError || "Lead cycle did not return a valid worklab.lead_cycle.v1 result",
         ...(result.diagnostics && typeof result.diagnostics === "object" ? { diagnostics: result.diagnostics } : {}),
+        ...providerSessionPayload(result),
       });
       return 1;
     }
@@ -222,6 +234,10 @@ export function emitFinalResult(ctx, result) {
     return 0;
   }
 
-  emit({ type: "error", message: `unknown runner kind: ${result.kind}` });
+  emit({
+    type: "error",
+    message: `unknown runner kind: ${result.kind}`,
+    ...providerSessionPayload(result),
+  });
   return 1;
 }

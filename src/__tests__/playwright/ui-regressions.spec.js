@@ -2272,6 +2272,51 @@ test("settings dense layout controls stay grouped and unclipped", async ({ page 
   await expectNoHorizontalOverflow(page, "settings dense controls mobile");
 });
 
+test("partial compaction overrides stay visibly adaptive and persist as null", async ({ page }) => {
+  const adaptiveOverrides = {
+    agent_compaction_trigger_ratio: 0.7,
+    agent_compaction_keep_recent_tokens: null,
+    agent_compaction_summary_max_tokens: null,
+    agent_compaction_min_savings_tokens: null,
+  };
+  await requestJson("/api/settings", { method: "PATCH", body: adaptiveOverrides });
+
+  try {
+    await page.goto(`${baseUrl}/#/settings`);
+    await expect(page.locator(".settings-sections")).toBeVisible();
+    await page.locator("#settings-assistant summary", { hasText: "Budgets and recovery" }).click();
+
+    const triggerRatio = page.getByRole("textbox", { name: "Compaction trigger ratio", exact: true });
+    const keepTokens = page.getByRole("textbox", { name: "Keep recent tokens", exact: true });
+    const summaryTokens = page.getByRole("textbox", { name: "Compaction summary tokens", exact: true });
+    const minSavings = page.getByRole("textbox", { name: "Minimum compaction savings tokens", exact: true });
+    await expect(triggerRatio).toHaveValue("0.7");
+    await expect(keepTokens).toHaveValue("");
+    await expect(summaryTokens).toHaveValue("");
+    await expect(minSavings).toHaveValue("");
+
+    await keepTokens.focus();
+    await keepTokens.blur();
+    await expect(keepTokens).toHaveValue("");
+    await triggerRatio.fill("0.71");
+    const saved = page.waitForResponse((response) => response.url().endsWith("/api/settings")
+      && response.request().method() === "PATCH");
+    await page.getByRole("button", { name: "Save", exact: true }).first().click();
+    await saved;
+
+    const current = await requestJson("/api/settings");
+    expect(current.settings.agent_compaction_trigger_ratio).toBe(0.71);
+    expect(current.settings.agent_compaction_keep_recent_tokens).toBeNull();
+    expect(current.settings.agent_compaction_summary_max_tokens).toBeNull();
+    expect(current.settings.agent_compaction_min_savings_tokens).toBeNull();
+  } finally {
+    await requestJson("/api/settings", {
+      method: "PATCH",
+      body: Object.fromEntries(Object.keys(adaptiveOverrides).map((key) => [key, null])),
+    });
+  }
+});
+
 test("destructive pane actions stay behind disclosure", async ({ page }) => {
 	  for (const hash of [
 	    "#/library/agents/regression-agent",

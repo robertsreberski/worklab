@@ -1,3 +1,5 @@
+import { externalAgentKind } from "./externalAgents.js";
+
 const RECENT_AGENT_MS = 10 * 60_000;
 
 function timestamp(value) {
@@ -50,6 +52,7 @@ export function buildAgentResourceGroups(agents = [], {
   query = "",
   state = "all",
   activity = "all",
+  kind = "all",
   model = "all",
   effort = "all",
   now = Date.now(),
@@ -58,13 +61,14 @@ export function buildAgentResourceGroups(agents = [], {
     .filter((agent) => {
       const enabled = agent?.enabled !== false;
       const recent = agentIsRecent(agent, now);
+      if (kind !== "all" && externalAgentKind(agent) !== kind) return false;
       if (state === "enabled" && !enabled) return false;
       if (state === "disabled" && enabled) return false;
       if (activity === "recent" && !recent) return false;
       if (activity === "idle" && recent) return false;
       if (model !== "all" && agent?.model !== model) return false;
       if (effort !== "all" && (agent?.effort || "") !== effort) return false;
-      return matchesQuery([agent?.name, agent?.display_name, agent?.description, agent?.model, agent?.effort, agent?.context_window], query);
+      return matchesQuery([agent?.name, agent?.display_name, agent?.description, agent?.model, agent?.effort, agent?.context_window, agent?.driver, agent?.external_driver], query);
     })
     .sort((left, right) => {
       const leftRecent = agentIsRecent(left, now);

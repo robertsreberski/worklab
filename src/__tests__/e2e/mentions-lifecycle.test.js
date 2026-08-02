@@ -17,6 +17,7 @@ import { createServer } from "../../api/server.js";
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
 import { expandMentionsForLlm } from "../../core/index.js";
+import { sameOriginFetch } from "../helpers/test-server.js";
 
 const silentLogger = { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} };
 const noopWatcher = {
@@ -77,7 +78,7 @@ describe("mentions end-to-end", () => {
       seedTask(ctx.db, { id: "task-1", task_key: "T-1", title: "Fix login" });
 
       // 1) Picker fetches the agent token.
-      const search = await fetch(`${ctx.baseUrl}/api/mentions/search?q=triag&types=agent`).then((r) => r.json());
+      const search = await sameOriginFetch(`${ctx.baseUrl}/api/mentions/search?q=triag&types=agent`).then((r) => r.json());
       expect(search.results[0]).toMatchObject({
         token: "@agent/triager",
         href: "#/library/agents/triager",
@@ -86,7 +87,7 @@ describe("mentions end-to-end", () => {
       const token = search.results[0].token;
 
       // 2) Author a comment that uses the token.
-      const post = await fetch(`${ctx.baseUrl}/api/tasks/task-1/comments`, {
+      const post = await sameOriginFetch(`${ctx.baseUrl}/api/tasks/task-1/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body: `Hand off to ${token}` }),
@@ -95,7 +96,7 @@ describe("mentions end-to-end", () => {
 
       // 3) GET /api/tasks/:id includes a mentions sidecar that the UI
       //    can render directly into a clickable badge.
-      const detail = await fetch(`${ctx.baseUrl}/api/tasks/task-1`).then((r) => r.json());
+      const detail = await sameOriginFetch(`${ctx.baseUrl}/api/tasks/task-1`).then((r) => r.json());
       const stored = detail.comments.find((c) => c.body.includes("Hand off"));
       expect(stored.body).toBe("Hand off to @agent/triager");
       expect(detail.mentions["@agent/triager"]).toMatchObject({
@@ -112,7 +113,7 @@ describe("mentions end-to-end", () => {
       // 5) Rename the agent. The stored prose is untouched but the next
       //    sidecar / expansion picks up the new label automatically.
       ctx.db.prepare("UPDATE agents SET display_name = ? WHERE name = 'triager'").run("Triage Lead");
-      const detail2 = await fetch(`${ctx.baseUrl}/api/tasks/task-1`).then((r) => r.json());
+      const detail2 = await sameOriginFetch(`${ctx.baseUrl}/api/tasks/task-1`).then((r) => r.json());
       const stillStored = detail2.comments.find((c) => c.body.includes("Hand off"));
       expect(stillStored.body).toBe("Hand off to @agent/triager");
       expect(detail2.mentions["@agent/triager"].label).toBe("Triage Lead");
@@ -129,7 +130,7 @@ describe("mentions end-to-end", () => {
     try {
       seedAgent(ctx.db, "triager", "Triager Bot");
       seedTask(ctx.db, { id: "task-1", task_key: "T-1", title: "Fix login" });
-      await fetch(`${ctx.baseUrl}/api/tasks/task-1/comments`, {
+      await sameOriginFetch(`${ctx.baseUrl}/api/tasks/task-1/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body: "Defer to @agent/triager" }),
@@ -138,7 +139,7 @@ describe("mentions end-to-end", () => {
       // Delete the agent.
       ctx.db.prepare("DELETE FROM agents WHERE name = 'triager'").run();
 
-      const detail = await fetch(`${ctx.baseUrl}/api/tasks/task-1`).then((r) => r.json());
+      const detail = await sameOriginFetch(`${ctx.baseUrl}/api/tasks/task-1`).then((r) => r.json());
       expect(detail.mentions["@agent/triager"]).toMatchObject({
         exists: false,
         href: null,

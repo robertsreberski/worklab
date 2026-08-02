@@ -12,6 +12,13 @@ import { createProvider, upsertModel } from "../../core/providers.js";
 import { kbList, kbRead } from "../../core/kb.js";
 import { slugify } from "../../core/slugs.js";
 import { syncRunWorktreeFromSource } from "../../core/worktrees.js";
+import { createAcpProfile } from "../../core/acp-profiles.js";
+import {
+  claimAcpInteractionResponse,
+  expireUnresolvedAcpInteractionsForTerminalRuns,
+  finalizeAcpInteractionResponse,
+  insertAcpInteractionRequest,
+} from "../../core/db/queries/acp-interactions.js";
 
 function stubBroker() {
   const broadcasts = [];
@@ -1037,6 +1044,67 @@ describe("task-watcher", () => {
 
     const child = db.prepare("SELECT project_id, title FROM tasks WHERE parent_task_id = ?").get(taskId);
     expect(child).toMatchObject({ project_id: project.id, title: "Child work" });
+  });
+
+  it("rejects ACP delegation before creating child tasks", async () => {
+    const db = makeTestDb();
+    const profile = createAcpProfile({
+      db,
+      input: {
+        agentName: "no-delegation-acp",
+        displayName: "No delegation ACP",
+        command: process.execPath,
+        cwd: process.cwd(),
+      },
+    });
+    const taskId = seedTask(db, { owner: profile.agentName });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((resolve) => { resolveDone = resolve; }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      workspace: process.cwd(),
+      repoRoot: process.cwd(),
+    });
+    const { runId } = await watcher.handleRunRequested(taskId);
+
+    const rejectedMemory = "Never persist this invalid ACP delegation memory";
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      worklabResult: {
+        schema: "worklab.v2",
+        stage: "execute",
+        decision: "delegate",
+        summary: "Create an unauthorized child.",
+        details: "",
+        artifacts: {},
+        blocking_issues: [],
+        pending_actions: [],
+        subtasks: [{ title: "Unauthorized child", instructions: "Do work." }],
+        memory_candidates: [{
+          kind: "fact",
+          scope: "agent",
+          content: rejectedMemory,
+          confidence: 1,
+        }],
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(db.prepare("SELECT id FROM tasks WHERE parent_task_id = ?").all(taskId)).toEqual([]);
+    expect(db.prepare("SELECT process_status, failure_kind FROM task_runs WHERE id = ?").get(runId))
+      .toMatchObject({ process_status: "failed", failure_kind: "invalid_result" });
+    expect(db.prepare("SELECT stage, error_text FROM tasks WHERE id = ?").get(taskId))
+      .toMatchObject({ stage: "execute", error_text: "delegation is unavailable for this agent runtime" });
+    expect(db.prepare("SELECT id FROM agent_memories WHERE content = ?").get(rejectedMemory)).toBeUndefined();
   });
 
   it("adds delegated acceptance criteria and expected artifact to child instructions", async () => {
@@ -2150,9 +2218,164 @@ describe("task-watcher", () => {
     expect(comments.some((c) => c.author_type === "system" && c.body.includes("invalid worklab_result"))).toBe(true);
   });
 
+  it("expires only unresolved ACP interactions whose runs are terminal", () => {
+    const db = makeTestDb();
+    const profile = createAcpProfile({
+      db,
+      input: {
+        agentName: "terminal-query-acp",
+        displayName: "Terminal query ACP",
+        command: process.execPath,
+        cwd: process.cwd(),
+      },
+    });
+    const taskId = seedTask(db);
+    const now = Date.now();
+    const insertRun = db.prepare(`
+      INSERT INTO task_runs (
+        id, task_id, mode, stage, agent_name, provider_kind, status,
+        process_status, started_at, ended_at
+      ) VALUES (?, ?, 'execute', 'execute', 'terminal-query-acp', 'acp', ?, ?, ?, ?)
+    `);
+    insertRun.run("terminal-query-run", taskId, "complete", "succeeded", now - 2_000, now - 1_000);
+    insertRun.run("active-query-run", taskId, "running", "running", now - 500, null);
+    for (const [id, runId] of [
+      ["terminal-pending", "terminal-query-run"],
+      ["terminal-submitted", "terminal-query-run"],
+      ["terminal-resolved", "terminal-query-run"],
+      ["active-pending", "active-query-run"],
+      ["active-submitted", "active-query-run"],
+    ]) {
+      insertAcpInteractionRequest(db, {
+        id,
+        profileId: profile.id,
+        taskRunId: runId,
+        protocolRequestId: `request-${id}`,
+        kind: "permission",
+        requestSchemaJson: "{}",
+        createdAt: now - 400,
+        updatedAt: now - 400,
+      });
+    }
+    for (const id of ["terminal-submitted", "terminal-resolved", "active-submitted"]) {
+      claimAcpInteractionResponse(db, id, { disposition: "selected", updatedAt: now - 300 });
+    }
+    finalizeAcpInteractionResponse(db, "terminal-resolved", { resolvedAt: now - 200 });
+
+    expect(expireUnresolvedAcpInteractionsForTerminalRuns(db, { resolvedAt: now }).changes).toBe(2);
+    const first = db.prepare(`
+      SELECT id, state, disposition, resolved_at
+      FROM acp_interactions ORDER BY id
+    `).all();
+    expect(first).toEqual([
+      { id: "active-pending", state: "pending", disposition: null, resolved_at: null },
+      { id: "active-submitted", state: "submitted", disposition: "selected", resolved_at: null },
+      { id: "terminal-pending", state: "expired", disposition: "run_ended", resolved_at: now },
+      { id: "terminal-resolved", state: "submitted", disposition: "selected", resolved_at: now - 200 },
+      { id: "terminal-submitted", state: "expired", disposition: "run_ended", resolved_at: now },
+    ]);
+    expect(expireUnresolvedAcpInteractionsForTerminalRuns(db, { resolvedAt: now + 1 }).changes).toBe(0);
+    expect(db.prepare(`
+      SELECT id, state, disposition, resolved_at
+      FROM acp_interactions ORDER BY id
+    `).all()).toEqual(first);
+  });
+
+  it("reconciles unresolved ACP interactions for already-terminal runs at boot", () => {
+    const db = makeTestDb();
+    const profile = createAcpProfile({
+      db,
+      input: {
+        agentName: "terminal-boot-acp",
+        displayName: "Terminal boot ACP",
+        command: process.execPath,
+        cwd: process.cwd(),
+      },
+    });
+    const taskId = seedTask(db);
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO task_runs (
+        id, task_id, mode, stage, agent_name, provider_kind, status,
+        process_status, started_at, ended_at
+      ) VALUES ('terminal-boot-run', ?, 'execute', 'execute', 'terminal-boot-acp',
+        'acp', 'complete', 'succeeded', ?, ?)
+    `).run(taskId, now - 2_000, now - 1_000);
+    for (const id of ["terminal-boot-pending", "terminal-boot-submitted"]) {
+      insertAcpInteractionRequest(db, {
+        id,
+        profileId: profile.id,
+        taskRunId: "terminal-boot-run",
+        protocolRequestId: `request-${id}`,
+        kind: "permission",
+        requestSchemaJson: "{}",
+        createdAt: now - 500,
+        updatedAt: now - 500,
+      });
+    }
+    claimAcpInteractionResponse(db, "terminal-boot-submitted", {
+      disposition: "selected",
+      updatedAt: now - 300,
+    });
+
+    const warn = vi.fn();
+    createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn: vi.fn(),
+      workerBinary: "/fake",
+      logger: { warn, info: vi.fn() },
+    });
+    const first = db.prepare(`
+      SELECT id, state, disposition, resolved_at
+      FROM acp_interactions WHERE task_run_id = 'terminal-boot-run' ORDER BY id
+    `).all();
+    expect(first).toEqual([
+      {
+        id: "terminal-boot-pending",
+        state: "expired",
+        disposition: "run_ended",
+        resolved_at: expect.any(Number),
+      },
+      {
+        id: "terminal-boot-submitted",
+        state: "expired",
+        disposition: "run_ended",
+        resolved_at: expect.any(Number),
+      },
+    ]);
+    expect(warn).toHaveBeenCalledWith(
+      { expired_interactions: 2 },
+      "expired unresolved ACP interactions for terminal runs at boot",
+    );
+
+    const secondWarn = vi.fn();
+    createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn: vi.fn(),
+      workerBinary: "/fake",
+      logger: { warn: secondWarn, info: vi.fn() },
+    });
+    expect(db.prepare(`
+      SELECT id, state, disposition, resolved_at
+      FROM acp_interactions WHERE task_run_id = 'terminal-boot-run' ORDER BY id
+    `).all()).toEqual(first);
+    expect(secondWarn).not.toHaveBeenCalled();
+  });
+
   it("reconciles stale running runs at boot", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
+    const profile = createAcpProfile({
+      db,
+      input: {
+        agentName: "stale-acp",
+        displayName: "Stale ACP",
+        command: process.execPath,
+        cwd: process.cwd(),
+      },
+    });
     const taskId = seedTask(db, { owner: "coder" });
     const now = Date.now();
     db.prepare(
@@ -2162,6 +2385,30 @@ describe("task-watcher", () => {
       `INSERT INTO task_runs (id, task_id, mode, agent_name, status, started_at)
        VALUES ('stale1', ?, 'execute', 'coder', 'running', ?)`,
     ).run(taskId, now - 1000);
+    insertAcpInteractionRequest(db, {
+      id: "interaction-stale-run",
+      profileId: profile.id,
+      taskRunId: "stale1",
+      protocolRequestId: "permission-1",
+      kind: "permission",
+      requestSchemaJson: "{}",
+      createdAt: now - 500,
+      updatedAt: now - 500,
+    });
+    insertAcpInteractionRequest(db, {
+      id: "interaction-stale-run-submitted",
+      profileId: profile.id,
+      taskRunId: "stale1",
+      protocolRequestId: "permission-2",
+      kind: "permission",
+      requestSchemaJson: "{}",
+      createdAt: now - 400,
+      updatedAt: now - 400,
+    });
+    claimAcpInteractionResponse(db, "interaction-stale-run-submitted", {
+      disposition: "selected",
+      updatedAt: now - 300,
+    });
 
     const warn = vi.fn();
     createTaskWatcher({
@@ -2181,7 +2428,28 @@ describe("task-watcher", () => {
     expect(task.stage).toBe("execute");
     expect(task.stage_reason).toBe("abandoned");
     expect(task.error_text).toBe("Previous run did not finish");
-    expect(warn).toHaveBeenCalled();
+    expect(db.prepare(`
+      SELECT id, state, disposition, resolved_at
+      FROM acp_interactions
+      WHERE task_run_id = 'stale1'
+      ORDER BY id
+    `).all()).toEqual([
+      {
+        id: "interaction-stale-run",
+        state: "expired",
+        disposition: "run_ended",
+        resolved_at: expect.any(Number),
+      },
+      {
+        id: "interaction-stale-run-submitted",
+        state: "expired",
+        disposition: "run_ended",
+        resolved_at: expect.any(Number),
+      },
+    ]);
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({
+      expired_interactions: 2,
+    }), "reconciled stale running runs at boot");
   });
 
   it("cancel() signals the active worker for that task", async () => {
