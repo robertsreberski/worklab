@@ -736,7 +736,7 @@ describe("backup command", () => {
       expect(manager.get(operation.id)?.state).toBe("succeeded");
       expect(manager.isActive(operation.id)).toBe(false);
     });
-    expect(delivered.values.password).toBe("backup-form-answer-secret");
+    expect(delivered.content.password).toBe("backup-form-answer-secret");
     sourceDb.prepare(`
       INSERT INTO custom_providers
         (id, name, provider_type, base_url, api_key_encrypted, trust_public_url,
