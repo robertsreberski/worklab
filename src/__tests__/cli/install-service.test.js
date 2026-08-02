@@ -75,20 +75,12 @@ describe("launchd service controls", () => {
     ]);
   });
 
-  it("signals the coordinator and waits before bootstrapping the macOS service on restart", async () => {
+  it("reclaims a stale v2 claim without signaling its reused PID before restart", async () => {
     const dataDir = tempDataDir();
     mkdirSync(dataDir, { recursive: true });
     writeFileSync(join(dataDir, ".coordinator.pid"), "12345\nv2:install-service-test-incarnation");
     const calls = [];
-    vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
-      calls.push(["kill", pid, signal || "0"]);
-      if (signal === 0 && calls.filter((call) => call[0] === "kill" && call[2] === "0").length > 1) {
-        const err = new Error("not found");
-        err.code = "ESRCH";
-        throw err;
-      }
-      return true;
-    });
+    const kill = vi.spyOn(process, "kill");
     mocks.execFileSync.mockImplementation((cmd, args, options) => {
       calls.push(["exec", cmd, args, options]);
     });
@@ -97,13 +89,11 @@ describe("launchd service controls", () => {
 
     expect(calls).toEqual([
       ["exec", "launchctl", ["disable", "gui/501/ai.worklab"], { stdio: "ignore" }],
-      ["kill", 12345, "0"],
-      ["kill", 12345, "SIGTERM"],
-      ["kill", 12345, "0"],
       ["exec", "launchctl", ["bootout", "gui/501", "/Users/tester/Library/LaunchAgents/ai.worklab.plist"], { stdio: "ignore" }],
       ["exec", "launchctl", ["enable", "gui/501/ai.worklab"], { stdio: "ignore" }],
       ["exec", "launchctl", ["bootstrap", "gui/501", "/Users/tester/Library/LaunchAgents/ai.worklab.plist"], { stdio: "inherit" }],
       ["exec", "launchctl", ["kickstart", "-k", "gui/501/ai.worklab"], { stdio: "inherit" }],
     ]);
+    expect(kill).not.toHaveBeenCalled();
   });
 });

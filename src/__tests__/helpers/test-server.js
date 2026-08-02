@@ -79,7 +79,7 @@ export function sameOriginFetch(url, init = {}) {
   return fetch(url, { ...init, headers });
 }
 
-export function makeTestServer({ watcher, dataDir, consolidation, automationManager, config, runtimeControls, updateControls, assistant, notifications, serviceStatus, acpControls, acpOperationManager, acpUrlHandoffStore, sharedRequestHarness = true } = {}) {
+export function makeTestServer({ watcher, dataDir, consolidation, automationManager, config, runtimeControls, updateControls, assistant, notifications, serviceStatus, acpControls, acpOperationManager, acpUrlHandoffStore, coordinatorControl, sharedRequestHarness = true } = {}) {
   const db = makeTestDb();
   const stubWatcher = watcher || {
     handleRunRequested: async () => ({ runId: "fake-run" }),
@@ -109,6 +109,7 @@ export function makeTestServer({ watcher, dataDir, consolidation, automationMana
     acpControls,
     acpOperationManager,
     acpUrlHandoffStore,
+    coordinatorControl,
   });
   const { rawAgent, agent } = sharedRequestHarness
     ? {

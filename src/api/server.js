@@ -29,7 +29,13 @@ import { registerAcpRoutes } from "./routes/acp.js";
 import { createApiMutationBoundary } from "./acp-request-boundary.js";
 import { registerAdminMcpRoutes } from "../mcp/admin/server.js";
 import { createAcpOperationManager } from "../coordinator/acp-operation-manager.js";
-import { createAcpUrlHandoffStore } from "../core/index.js";
+import {
+  coordinatorIncarnationDigest,
+  coordinatorShutdownProof,
+  createAcpUrlHandoffStore,
+  ensureMcpToken,
+  tokenMatches,
+} from "../core/index.js";
 
 const DEFAULT_SLOW_API_MS = 250;
 
@@ -105,9 +111,16 @@ function serviceStatusPayload(serviceStatus) {
   }
 }
 
-export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls, updateControls, slack, assistant: assistantOptions, notifications, serviceStatus, acpControls, acpOperationManager, acpUrlHandoffStore }) {
+export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls, updateControls, slack, assistant: assistantOptions, notifications, serviceStatus, acpControls, acpOperationManager, acpUrlHandoffStore, coordinatorControl }) {
   const app = express();
   const broker = createSseBroker();
+  const coordinatorProof = coordinatorControl?.incarnation
+    ? coordinatorShutdownProof(
+        ensureMcpToken(dataDir || config?.dataDir),
+        coordinatorControl.incarnation,
+      )
+    : null;
+  let coordinatorShutdownRequested = false;
   const urlHandoffs = acpUrlHandoffStore || createAcpUrlHandoffStore();
   const acpOperations = acpOperationManager || createAcpOperationManager({
     db,
@@ -116,6 +129,29 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
     logger,
     urlHandoffStore: urlHandoffs,
   });
+
+  // This local process-control route sits before the browser/service-token
+  // mutation boundary because it authenticates an incarnation-scoped HMAC.
+  // Neither the persistent bearer nor the raw incarnation crosses the socket.
+  if (coordinatorProof && typeof coordinatorControl?.requestShutdown === "function") {
+    app.post("/api/runtime/shutdown", (req, res) => {
+      if (!tokenMatches(req.get("x-worklab-coordinator-shutdown-proof"), coordinatorProof)) {
+        res.status(409).json({ error: { code: "coordinator_incarnation_mismatch", message: "Coordinator incarnation changed" } });
+        return;
+      }
+      if (!coordinatorShutdownRequested) {
+        coordinatorShutdownRequested = true;
+        res.once("finish", () => {
+          setImmediate(() => {
+            Promise.resolve(coordinatorControl.requestShutdown()).catch((error) => {
+              logger?.error?.({ error }, "coordinator control shutdown failed");
+            });
+          });
+        });
+      }
+      res.status(202).json({ ok: true, pid: process.pid });
+    });
+  }
 
   // Inbound webhook ids are capability URLs and intentionally accept
   // server-to-server POSTs. Every other state-changing API call is UI-origin
@@ -139,6 +175,12 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   app.get("/api/health", (_req, res) => res.json({
     ok: true,
     pid: process.pid,
+    coordinator: coordinatorControl?.incarnation
+      ? {
+          claim_format: "v2",
+          incarnation_sha256: coordinatorIncarnationDigest(coordinatorControl.incarnation),
+        }
+      : null,
     node: process.version,
     uptime_ms: Math.round(process.uptime() * 1000),
     schema: {

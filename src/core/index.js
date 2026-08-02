@@ -252,6 +252,22 @@ export {
   tokenMatches,
 } from "./service-token.js";
 
+export {
+  coordinatorIncarnationDigest,
+  coordinatorShutdownProof,
+  coordinatorClaimPaths,
+  createCoordinatorClaim,
+  parseCoordinatorClaim,
+  parseCoordinatorPid,
+  readCoordinatorClaimFile,
+} from "./coordinator-pid.js";
+
+export {
+  releaseCoordinatorLock,
+  tryAcquireCoordinatorLock,
+  unlinkCoordinatorClaimIfMatching,
+} from "./db/coordinator-lock.js";
+
 export { serviceStatus } from "./host-service-status.js";
 
 // ---------- Runs (input, events, logs, artifacts) ----------

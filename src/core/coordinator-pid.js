@@ -1,6 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const V2_CLAIM_PATTERN = /^v2:[A-Za-z0-9-]{1,200}$/u;
+const COORDINATOR_LOCK_FILE = ".coordinator.lock";
+const COORDINATOR_PID_FILE = ".coordinator.pid";
 
 export function parseCoordinatorPid(value) {
   const [firstLine = ""] = String(value ?? "").split(/\r?\n/u, 1);
@@ -26,4 +30,37 @@ export function createCoordinatorClaim(pid, incarnation = randomUUID()) {
   if (!Number.isSafeInteger(pid) || pid <= 0) throw new TypeError("coordinator pid must be a positive integer");
   if (!/^[A-Za-z0-9-]{1,200}$/u.test(incarnation)) throw new TypeError("coordinator incarnation is invalid");
   return `${pid}\nv2:${incarnation}`;
+}
+
+export function coordinatorIncarnationDigest(incarnation) {
+  if (typeof incarnation !== "string" || !V2_CLAIM_PATTERN.test(`v2:${incarnation}`)) return null;
+  return createHash("sha256").update(incarnation, "utf8").digest("hex");
+}
+
+export function coordinatorShutdownProof(serviceToken, incarnation) {
+  if (typeof serviceToken !== "string" || serviceToken.length === 0) return null;
+  if (typeof incarnation !== "string" || !V2_CLAIM_PATTERN.test(`v2:${incarnation}`)) return null;
+  return createHmac("sha256", serviceToken)
+    .update(`worklab-shutdown-v1:${incarnation}`, "utf8")
+    .digest("hex");
+}
+
+export function coordinatorClaimPaths(dataDir) {
+  return {
+    lockFile: join(dataDir, COORDINATOR_LOCK_FILE),
+    pidFile: join(dataDir, COORDINATOR_PID_FILE),
+  };
+}
+
+export function readCoordinatorClaimFile(dataDir) {
+  const { pidFile } = coordinatorClaimPaths(dataDir);
+  try {
+    const claim = readFileSync(pidFile, "utf8");
+    return { pidFile, claim, parsed: parseCoordinatorClaim(claim) };
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return { pidFile, claim: null, parsed: { format: "missing", pid: null } };
+    }
+    throw error;
+  }
 }

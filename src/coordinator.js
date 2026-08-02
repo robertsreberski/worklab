@@ -210,6 +210,8 @@ export async function startCoordinator({
     logger,
   });
   const acpUrlHandoffStore = createAcpUrlHandoffStore();
+  const coordinatorClaim = parseCoordinatorClaim(ownership.pidContent);
+  const shutdownRequest = { current: null };
   const acpControls = deps.createWorklabAcpControls({
     db,
     dataDir: config.dataDir,
@@ -230,6 +232,13 @@ export async function startCoordinator({
     serviceStatus,
     acpControls,
     acpUrlHandoffStore,
+    coordinatorControl: {
+      incarnation: coordinatorClaim.incarnation,
+      requestShutdown: () => {
+        if (!shutdownRequest.current) throw new Error("coordinator shutdown control is not ready");
+        return shutdownRequest.current();
+      },
+    },
   });
 
   const spawnRuntimeWorker = (options) => spawnWorker({
@@ -418,6 +427,7 @@ export async function startCoordinator({
 
   const onSigterm = () => shutdown({ exit: true });
   const onSigint = () => shutdown({ exit: true });
+  shutdownRequest.current = () => shutdown({ exit: true });
   process.on("SIGTERM", onSigterm);
   process.on("SIGINT", onSigint);
 
