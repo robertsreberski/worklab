@@ -13,11 +13,7 @@ import { getPiModel, getPiModels } from "./pi-model-catalog.js";
 import { resolvePiApiKey } from "./pi-oauth.js";
 import { compactionRecorderFor } from "./run-compactions.js";
 import { runtimePoliciesFromSettings } from "./runtime-policies.js";
-import {
-  projectToolPolicy,
-  runtimeEnforcesToolPolicy,
-  toolPolicyIsUnrestricted,
-} from "./tool-policy-projection.js";
+import { projectToolPolicy } from "./tool-policy-projection.js";
 import { withWorklabRuntimeBrand } from "./runtime-brand.js";
 import { getSkillAccessDirs, inferSkillsRoot } from "./skills.js";
 import { createToolOutputSink } from "./tool-artifacts.js";
@@ -601,16 +597,6 @@ function routerChainEntry(entry, executionMode) {
   };
 }
 
-function fallbackModelReference(entry) {
-  if (entry?.sdk) return entry;
-  return entry?.model && typeof entry.model === "object" ? entry.model : null;
-}
-
-function mixesToolPolicySemantics(primary, fallbackChain) {
-  const routes = [primary, ...(fallbackChain || []).map(fallbackModelReference).filter(Boolean)];
-  return new Set(routes.map((route) => runtimeEnforcesToolPolicy(route?.sdk))).size > 1;
-}
-
 // Caller-side dependency injection: providers (src/ai/providers/*) must not
 // reach back into core/. generateResponse pre-computes everything those
 // adapters need — normalized effort, settings, skill access dirs, and (for
@@ -703,48 +689,33 @@ export async function generateResponse(systemPrompt, options) {
   const fallbackChain = Array.isArray(options.fallbackChain) && options.fallbackChain.length > 0
     ? options.fallbackChain.filter((entry) => entry && (entry.model || entry.sdk))
     : null;
-  const mixedToolPolicySemantics = fallbackChain?.length > 0
-    && mixesToolPolicySemantics(resolved, fallbackChain);
-  const logicalToolPolicy = {
-    allowedTools: options.allowedTools,
-    disallowedTools: options.disallowedTools,
-    planning: options.toolPolicy?.planning === true,
-    permissionMode: options.permissionMode,
-  };
 
   // Direct Codex/OpenCode reject anything but the exact allow-all contract, so
   // an "allow every builtin" policy has to be spelled `["*"]` for them. This is
   // the single choke point where the resolved runtime is known, which is why it
   // lives here rather than in run-input.js.
-  // A mixed fallback chain cannot reuse a projection made for the primary:
-  // ["*"] is exact allow-all for Codex/OpenCode but restores a wider provider
-  // default on Claude/Pi. agent-runtime's per-route-native mode performs that
-  // projection independently when the logical request is unrestricted. For a
-  // restricted mixed chain, retain the named policy: unsupported routes fail
-  // closed and the router may continue to a projecting route without widening.
-  const toolPolicy = mixedToolPolicySemantics
-    ? {
-      allowedTools: logicalToolPolicy.allowedTools,
-      disallowedTools: logicalToolPolicy.disallowedTools,
-      permissionMode: logicalToolPolicy.permissionMode,
-      droppedNetworkTools: [],
-      unenforceable: false,
-    }
-    : projectToolPolicy(resolved, logicalToolPolicy);
-  const routeSafety = mixedToolPolicySemantics && toolPolicyIsUnrestricted(logicalToolPolicy)
-    ? "per-route-native"
-    : null;
-  if (toolPolicy.droppedNetworkTools.length) {
+  const logicalToolPolicy = {
+    allowedTools: options.allowedTools,
+    disallowedTools: options.disallowedTools,
+    // Set by applyPlanningToolPolicy. The read-only planning policy is the one
+    // restriction a non-projecting runtime can honour, via its native plan mode.
+    planning: options.toolPolicy?.planning === true,
+    permissionMode: options.permissionMode,
+  };
+  const toolPolicy = projectToolPolicy(resolved, logicalToolPolicy);
+  function warnToolPolicyDowngrade(route, projected) {
+    if (!projected.droppedNetworkTools.length) return;
     // Provider-native read-only mode pins networkAccess:false, so tools the
     // planning policy granted stop working. Surface it rather than letting the
     // agent discover it as a mid-run tool failure.
     onEvent({
       type: "runtime_warning",
       warning_kind: "tool_policy_downgraded",
-      message: `${resolved.sdk} enforces read-only planning natively, which disables network access: `
-        + `${toolPolicy.droppedNetworkTools.join(", ")} are unavailable for this run.`,
+      message: `${route.sdk} enforces read-only planning natively, which disables network access: `
+        + `${projected.droppedNetworkTools.join(", ")} are unavailable for this run.`,
     });
   }
+  if (!fallbackChain) warnToolPolicyDowngrade(resolved, toolPolicy);
 
   // Provider-native discovery options share one run-level bag. Router attempts
   // replace only `model`, so selecting these from the primary SDK would make a
@@ -825,13 +796,36 @@ export async function generateResponse(systemPrompt, options) {
   const runtime = fallbackChain && fallbackChain.length > 0
     ? createRouterRuntime({
       host: hostOptions,
-      ...(routeSafety ? { routeSafety } : {}),
       chain: [
         // Primary model is always tried first; downstream entries are the
         // host's declared fallbacks.
         routerChainEntry(resolved, nextOptions.executionMode),
         ...fallbackChain.map((entry) => routerChainEntry(entry)),
       ],
+      // Tool-policy representations are provider-specific. Keep the logical
+      // Worklab grant on the host side and project it for the route actually
+      // attempted so Codex's wildcard never widens a Claude fallback, while a
+      // named Claude policy never kills an otherwise valid Codex fallback.
+      // Supplying a resolver also transfers ownership of attempt-scoped custom
+      // provider metadata to this callback, so resolve it for every Pi route;
+      // otherwise the router deliberately strips a primary route's credentials
+      // and capabilities before applying policyOptions.
+      resolveAttempt: ({ model, retryIndex }) => {
+        const projected = projectToolPolicy(model, logicalToolPolicy);
+        const routeProviderContext = resolveCustomProviderContext(model, {
+          db: options.db,
+          dataDir: options.dataDir,
+        });
+        if (retryIndex === 0) warnToolPolicyDowngrade(model, projected);
+        return {
+          options: routeProviderContext || {},
+          policyOptions: {
+            allowedTools: projected.allowedTools,
+            disallowedTools: projected.disallowedTools,
+            permissionMode: projected.permissionMode,
+          },
+        };
+      },
     })
     : createRuntime(hostOptions);
   const result = await runtime.run(systemPrompt, nextOptions);

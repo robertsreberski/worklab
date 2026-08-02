@@ -2,11 +2,24 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { createProvider, upsertModel } from "../../core/providers.js";
+import { makeTestDb } from "../helpers/test-db.js";
 
 const mockRun = vi.fn();
 const mockCreateRuntime = vi.fn(() => ({ run: mockRun }));
 const mockCreateRouterRuntime = vi.fn(() => ({ run: mockRun }));
 const temporaryDirectories = [];
+const openDatabases = [];
+
+function applyPolicyOptions(runOptions, policyOptions = {}) {
+  const merged = { ...runOptions };
+  for (const key of ["allowedTools", "disallowedTools", "permissionMode"]) {
+    if (!Object.hasOwn(policyOptions, key)) continue;
+    if (policyOptions[key] === undefined) delete merged[key];
+    else merged[key] = policyOptions[key];
+  }
+  return merged;
+}
 
 vi.mock("@mono-agent/agent-runtime", () => ({
   createRuntime: mockCreateRuntime,
@@ -27,6 +40,7 @@ afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
   }
+  for (const db of openDatabases.splice(0)) db.close();
 });
 
 describe("generateResponse Codex runtime options", () => {
@@ -197,6 +211,60 @@ describe("generateResponse Codex runtime options", () => {
     expect(runOptions).not.toHaveProperty("nativeSubagents");
   });
 
+  it("re-resolves custom Pi metadata for a routed attempt", async () => {
+    const db = makeTestDb();
+    openDatabases.push(db);
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-custom-pi-route-"));
+    temporaryDirectories.push(dataDir);
+    const provider = createProvider({
+      db,
+      dataDir,
+      name: "local compat",
+      provider_type: "openai_compat",
+      base_url: "http://127.0.0.1:4545",
+    });
+    const model = upsertModel({
+      db,
+      providerId: provider.id,
+      modelName: "local-model",
+      capabilities: { chat: true, tools: true, reasoning: true },
+      enabled: true,
+    });
+    const resolutions = [];
+    mockCreateRouterRuntime.mockImplementationOnce(({ chain, resolveAttempt }) => ({
+      run: async () => {
+        for (const [attemptIndex, entry] of chain.entries()) {
+          resolutions.push(await resolveAttempt({
+            model: entry.model,
+            executionMode: entry.executionMode,
+            attemptIndex,
+            retryIndex: 0,
+          }));
+        }
+        return { text: "ok" };
+      },
+    }));
+
+    await generateResponse("sys", {
+      model: resolveModel(`pi:${provider.id}:${model.model_name}`),
+      fallbackChain: [{ sdk: "claude", model: "claude-sonnet-4-6" }],
+      messages: [{ role: "user", content: "hi" }],
+      settings: {},
+      db,
+      dataDir,
+      allowedTools: ["Read"],
+      disallowedTools: [],
+    });
+
+    expect(resolutions[0].options).toMatchObject({
+      customProvider: { id: provider.id },
+      customModel: { id: model.id, model_name: "local-model" },
+      modelCapabilities: expect.any(Object),
+      isPrivateProvider: true,
+    });
+    expect(resolutions[1].options).toEqual({});
+  });
+
   // The router keeps one provider-option bag across attempts. Adapters ignore
   // irrelevant fields, so every run gets all three discovery knobs rather than
   // selecting them from only the primary SDK.
@@ -281,14 +349,20 @@ describe("generateResponse Codex runtime options", () => {
 
   it("keeps native options on the run bag when a forced fallback changes SDK", async () => {
     const attempts = [];
-    mockCreateRouterRuntime.mockImplementationOnce(({ chain }) => ({
+    mockCreateRouterRuntime.mockImplementationOnce(({ chain, resolveAttempt }) => ({
       run: async (systemPrompt, runOptions) => {
         for (const [index, entry] of chain.entries()) {
-          const attemptOptions = {
+          const resolution = await resolveAttempt({
+            model: entry.model,
+            executionMode: entry.executionMode,
+            attemptIndex: index,
+            retryIndex: 0,
+          });
+          const attemptOptions = applyPolicyOptions({
             ...runOptions,
             model: entry.model,
             executionMode: entry.executionMode,
-          };
+          }, resolution.policyOptions);
           attempts.push({ systemPrompt, options: attemptOptions });
           if (index < chain.length - 1) continue; // force each route to fall through
           return { text: "fallback ok" };
@@ -326,8 +400,26 @@ describe("generateResponse Codex runtime options", () => {
     expect(attempts[2].options.allowedTools).toEqual(["Read", "Grep", "Agent", "Task", "Skill"]);
   });
 
-  it("projects an unrestricted mixed fallback chain per route", async () => {
-    mockRun.mockResolvedValue({ text: "ok" });
+  it("projects an all-builtins policy per route without widening Claude", async () => {
+    const attempts = [];
+    mockCreateRouterRuntime.mockImplementationOnce(({ chain, resolveAttempt }) => ({
+      run: async (_systemPrompt, runOptions) => {
+        for (const [index, entry] of chain.entries()) {
+          const resolution = await resolveAttempt({
+            model: entry.model,
+            executionMode: entry.executionMode,
+            attemptIndex: index,
+            retryIndex: 0,
+          });
+          attempts.push(applyPolicyOptions({
+            ...runOptions,
+            model: entry.model,
+            executionMode: entry.executionMode,
+          }, resolution.policyOptions));
+        }
+        return { text: "ok" };
+      },
+    }));
 
     await generateResponse("sys", {
       model: resolveModel("codex:gpt-5.5"),
@@ -338,33 +430,73 @@ describe("generateResponse Codex runtime options", () => {
       fallbackChain: [{ sdk: "claude", model: "claude-sonnet-4-6" }],
     });
 
-    expect(mockCreateRouterRuntime).toHaveBeenCalledWith(expect.objectContaining({
-      routeSafety: "per-route-native",
-    }));
-    expect(mockRun).toHaveBeenCalledWith("sys", expect.objectContaining({
+    expect(attempts).toHaveLength(2);
+    expect(attempts[0]).toMatchObject({
+      model: { sdk: "codex" },
+      executionMode: "cli",
+      allowedTools: ["*"],
+      disallowedTools: [],
+    });
+    expect(attempts[1]).toMatchObject({
+      model: { sdk: "claude" },
+      executionMode: "sdk",
       allowedTools: WORKLAB_BUILTIN_TOOLS,
       disallowedTools: [],
-    }));
+    });
   });
 
-  it("keeps a restricted mixed fallback policy named so unsupported routes fail closed", async () => {
-    mockRun.mockResolvedValue({ text: "ok" });
+  it("projects the exact planning policy independently for Codex and Claude", async () => {
+    const attempts = [];
+    const onEvent = vi.fn();
+    const planTools = [
+      "Read", "Glob", "Grep", "WebFetch", "WebSearch", "Agent", "Task",
+      "TaskOutput", "TaskStop", "Skill", "Bash",
+    ];
+    mockCreateRouterRuntime.mockImplementationOnce(({ chain, resolveAttempt }) => ({
+      run: async (_systemPrompt, runOptions) => {
+        for (const [index, entry] of chain.entries()) {
+          const resolution = await resolveAttempt({
+            model: entry.model,
+            executionMode: entry.executionMode,
+            attemptIndex: index,
+            retryIndex: 0,
+          });
+          attempts.push(applyPolicyOptions({
+            ...runOptions,
+            model: entry.model,
+            executionMode: entry.executionMode,
+          }, resolution.policyOptions));
+        }
+        return { text: "ok" };
+      },
+    }));
 
     await generateResponse("sys", {
       model: resolveModel("codex:gpt-5.5"),
       executionMode: "cli",
       messages: [{ role: "user", content: "hi" }],
-      allowedTools: ["Read", "Grep"],
+      allowedTools: planTools,
       disallowedTools: ["Write", "Edit"],
       toolPolicy: { planning: true, policy: "read_only_shell_allowlist" },
-      fallbackChain: [{ sdk: "pi", provider: "openai", model: "gpt-5.5" }],
+      fallbackChain: [{ sdk: "claude", model: "claude-sonnet-4-6" }],
+      onEvent,
     });
 
-    expect(mockCreateRouterRuntime.mock.calls[0][0]).not.toHaveProperty("routeSafety");
-    expect(mockRun).toHaveBeenCalledWith("sys", expect.objectContaining({
-      allowedTools: ["Read", "Grep"],
+    expect(attempts[0]).toMatchObject({
+      model: { sdk: "codex" },
+      allowedTools: ["*"],
+      disallowedTools: [],
+      permissionMode: "plan",
+    });
+    expect(attempts[1]).toMatchObject({
+      model: { sdk: "claude" },
+      allowedTools: planTools,
       disallowedTools: ["Write", "Edit"],
+    });
+    expect(attempts[1].permissionMode).toBeUndefined();
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: "runtime_warning",
+      warning_kind: "tool_policy_downgraded",
     }));
-    expect(mockRun.mock.calls[0][1]).not.toHaveProperty("permissionMode", "plan");
   });
 });
