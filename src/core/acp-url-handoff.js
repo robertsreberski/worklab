@@ -66,11 +66,16 @@ function privateUrlValues(original, parsed) {
   for (const pair of parsed.search.slice(1).split("&")) {
     if (!pair) continue;
     const separator = pair.indexOf("=");
-    if (separator < 0) continue;
-    const serialized = pair.slice(separator + 1);
-    addComponent(serialized);
-    addComponent(safelyDecoded(serialized, { query: true }));
+    const serializedKey = separator < 0 ? pair : pair.slice(0, separator);
+    addComponent(serializedKey);
+    addComponent(safelyDecoded(serializedKey, { query: true }));
+    if (separator >= 0) {
+      const serializedValue = pair.slice(separator + 1);
+      addComponent(serializedValue);
+      addComponent(safelyDecoded(serializedValue, { query: true }));
+    }
   }
+  for (const key of parsed.searchParams.keys()) addComponent(key);
   for (const value of parsed.searchParams.values()) addComponent(value);
   if (parsed.hash.length > 1) {
     const serialized = parsed.hash.slice(1);

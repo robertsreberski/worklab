@@ -111,8 +111,8 @@ describe("spawnWorker ACP interactions", () => {
     const urlHandoffStore = createAcpUrlHandoffStore();
     try {
       const { taskId, runId } = seed(db);
-      const rawUrl = "https://秘密.example/続行/PATH_PRIVATE?state=QUERY%20PRIVATE#FRAGMENT%20PRIVATE";
-      const privatePattern = /秘密|続行|PATH_PRIVATE|QUERY(?:%20| )PRIVATE|FRAGMENT(?:%20| )PRIVATE|USERINFO_PRIVATE|xn--/u;
+      const rawUrl = "https://秘密.example/続行/PATH_PRIVATE?QUERY_KEY_PRIVATE=QUERY%20PRIVATE&KEY_ONLY_PRIVATE#FRAGMENT%20PRIVATE";
+      const privatePattern = /秘密|続行|PATH_PRIVATE|QUERY_KEY_PRIVATE|KEY_ONLY_PRIVATE|QUERY(?:%20| )PRIVATE|FRAGMENT(?:%20| )PRIVATE|USERINFO_PRIVATE|xn--/u;
       const broadcasts = [];
       const loggerEvents = [];
       const handle = spawnWorker({
@@ -144,19 +144,21 @@ describe("spawnWorker ACP interactions", () => {
               type: "sdk_event",
               event: {
                 type: "assistant",
-                message: { content: [{ type: "text", text: `later ${rawUrl} PATH_PRIVATE QUERY PRIVATE` }] },
+                message: { content: [{ type: "text", text: `later ${rawUrl} PATH_PRIVATE QUERY_KEY_PRIVATE KEY_ONLY_PRIVATE QUERY PRIVATE` }] },
               },
             }, {
               type: "final",
               text: `finished ${rawUrl}`,
               diagnostics: {
                 path: "PATH_PRIVATE",
+                queryKey: "QUERY_KEY_PRIVATE",
+                keyOnly: "KEY_ONLY_PRIVATE",
                 query: "QUERY PRIVATE",
                 fragment: "FRAGMENT PRIVATE",
               },
             }],
             eventsInOneChunk: true,
-            stderrAfterEvents: `stderr ${rawUrl} PATH_PRIVATE QUERY PRIVATE FRAGMENT PRIVATE\n`,
+            stderrAfterEvents: `stderr ${rawUrl} PATH_PRIVATE QUERY_KEY_PRIVATE KEY_ONLY_PRIVATE QUERY PRIVATE FRAGMENT PRIVATE\n`,
             exitAfterMs: 250,
           }),
           WORKLAB_RUN_ID: runId,

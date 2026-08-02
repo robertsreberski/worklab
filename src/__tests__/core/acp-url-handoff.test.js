@@ -28,16 +28,19 @@ describe("ACP URL handoff store", () => {
   });
 
   it("canonicalizes redirects and exposes only a fixed host-owned public marker", () => {
-    const original = "https://例え.テスト/続行/PRIVATE_PATH?state=PRIVATE%20QUERY#PRIVATE%20FRAGMENT";
+    const original = "https://例え.テスト/続行/PRIVATE_PATH?PRIVATE%20KEY=PRIVATE%20QUERY&KEY_ONLY_PRIVATE#PRIVATE%20FRAGMENT";
     const inspected = inspectAcpUrlHandoff(original);
 
     expect(inspected.url).toBe(
-      "https://xn--r8jz45g.xn--zckzah/%E7%B6%9A%E8%A1%8C/PRIVATE_PATH?state=PRIVATE%20QUERY#PRIVATE%20FRAGMENT",
+      "https://xn--r8jz45g.xn--zckzah/%E7%B6%9A%E8%A1%8C/PRIVATE_PATH?PRIVATE%20KEY=PRIVATE%20QUERY&KEY_ONLY_PRIVATE#PRIVATE%20FRAGMENT",
     );
     expect(inspected.privateValues).toEqual(expect.arrayContaining([
       original,
       inspected.url,
       "PRIVATE_PATH",
+      "PRIVATE%20KEY",
+      "PRIVATE KEY",
+      "KEY_ONLY_PRIVATE",
       "PRIVATE%20QUERY",
       "PRIVATE QUERY",
       "PRIVATE%20FRAGMENT",
@@ -49,7 +52,7 @@ describe("ACP URL handoff store", () => {
       urlAvailable: true,
     });
     expect(JSON.stringify(createAcpUrlPublicRequest(original)))
-      .not.toMatch(/xn--|PRIVATE|state|FRAGMENT/u);
+      .not.toMatch(/xn--|PRIVATE|KEY_ONLY|FRAGMENT/u);
   });
 
   it("binds a URL to one interaction owner and consumes it exactly once", () => {

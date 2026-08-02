@@ -615,7 +615,7 @@ describe("AcpOperationManager", () => {
   });
 
   it("retains URL query state only in the one-use handoff store", async () => {
-    const rawUrl = "https://host-private.example/PATH_PRIVATE/login?token=QUERY_PRIVATE&state=sensitive#FRAGMENT_PRIVATE";
+    const rawUrl = "https://host-private.example/PATH_PRIVATE/login?QUERY_KEY_PRIVATE=QUERY_PRIVATE&KEY_ONLY_PRIVATE#FRAGMENT_PRIVATE";
     const { db, profile, manager, urlHandoffStore, events } = setup({
       authenticate: async ({ onInteraction }) => {
         const request = {
@@ -638,6 +638,8 @@ describe("AcpOperationManager", () => {
           status: `completed ${rawUrl}`,
           warnings: [
             "PATH_PRIVATE",
+            "QUERY_KEY_PRIVATE",
+            "KEY_ONLY_PRIVATE",
             "QUERY_PRIVATE",
             "FRAGMENT_PRIVATE",
           ],
@@ -671,7 +673,7 @@ describe("AcpOperationManager", () => {
       rows: db.prepare("SELECT * FROM acp_interactions").all(),
       events,
     })).not.toMatch(
-      /host-private|PATH_PRIVATE|QUERY_PRIVATE|FRAGMENT_PRIVATE|USERINFO_PRIVATE|sensitive/u,
+      /host-private|PATH_PRIVATE|QUERY_KEY_PRIVATE|KEY_ONLY_PRIVATE|QUERY_PRIVATE|FRAGMENT_PRIVATE|USERINFO_PRIVATE/u,
     );
     expect(() => manager.respond({
       operationId: operation.id,
@@ -692,7 +694,7 @@ describe("AcpOperationManager", () => {
       rows: db.prepare("SELECT * FROM acp_operations").all(),
       events,
     })).not.toMatch(
-      /host-private|PATH_PRIVATE|QUERY_PRIVATE|FRAGMENT_PRIVATE|USERINFO_PRIVATE|sensitive/u,
+      /host-private|PATH_PRIVATE|QUERY_KEY_PRIVATE|KEY_ONLY_PRIVATE|QUERY_PRIVATE|FRAGMENT_PRIVATE|USERINFO_PRIVATE/u,
     );
   });
 
