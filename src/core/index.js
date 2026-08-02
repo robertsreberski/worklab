@@ -167,6 +167,13 @@ export { createWorklabAcpControls } from "./acp-controls.js";
 
 export { createWorklabAcpProfileResolver } from "./acp-runtime-profile.js";
 
+export {
+  ACP_PRIVATE_URL_HANDOFF,
+  ACP_URL_HANDOFF_LIMITS,
+  createAcpUrlHandoffStore,
+  normalizeAcpUrlHandoff,
+} from "./acp-url-handoff.js";
+
 // ---------- Settings + runtime ----------
 export {
   DEFAULT_SETTINGS,

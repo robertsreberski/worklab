@@ -154,7 +154,10 @@ describe("coordinator startup services", () => {
     });
     const operationShutdown = vi.spyOn(coordinator.acpOperationManager, "shutdown");
 
-    expect(createWorklabAcpControls).toHaveBeenCalledWith({ db: coordinator.db });
+    expect(createWorklabAcpControls).toHaveBeenCalledWith({
+      db: coordinator.db,
+      urlHandoffAvailable: true,
+    });
     expect(coordinator.acpOperationManager.supports("probe")).toBe(true);
     await coordinator.shutdown();
     expect(operationShutdown).toHaveBeenCalledTimes(1);

@@ -205,6 +205,7 @@ export function registerAcpRoutes(app, {
   watcher,
   acpControls = {},
   acpOperationManager,
+  acpUrlHandoffStore,
 }) {
   app.get("/api/acp/discovery/mono", async (req, res) => {
     try {

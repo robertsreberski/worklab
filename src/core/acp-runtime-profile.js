@@ -52,7 +52,11 @@ function sessionConfiguration(profile) {
   };
 }
 
-export function createWorklabAcpProfileResolver({ db, env = process.env } = {}) {
+export function createWorklabAcpProfileResolver({
+  db,
+  env = process.env,
+  urlHandoffAvailable = false,
+} = {}) {
   return async function resolveAcpProfile(profileId) {
     const profile = assertAcpProfileBinding({ db, id: profileId });
     if (!profile.agent.enabled) throw runtimeProfileError("profile_disabled", "ACP profile agent is disabled");
@@ -79,7 +83,7 @@ export function createWorklabAcpProfileResolver({ db, env = process.env } = {}) 
       capabilityPolicy: {
         filesystem: { readTextFile: false, writeTextFile: false },
         terminal: false,
-        elicitation: { form: true, url: true },
+        elicitation: { form: true, url: urlHandoffAvailable === true },
         sessionConfig: { boolean: false },
         mcp: { stdio: false, http: false, sse: false },
       },

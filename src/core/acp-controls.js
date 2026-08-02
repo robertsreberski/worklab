@@ -6,6 +6,10 @@ import {
   normalizeAcpSessionCursor,
   sanitizeAcpInteractionRequest,
 } from "./acp-operations.js";
+import {
+  ACP_PRIVATE_URL_HANDOFF,
+  normalizeAcpUrlHandoff,
+} from "./acp-url-handoff.js";
 
 function controlError(code, message) {
   return Object.assign(new Error(message), {
@@ -60,19 +64,35 @@ function elicitationResponse(response) {
   return { action: "cancel" };
 }
 
-function interactionAdapter(onInteraction) {
+function interactionAdapter(onInteraction, { urlHandoffAvailable = false } = {}) {
   if (typeof onInteraction !== "function") return undefined;
   return async (request, context = {}) => {
     const kind = interactionKind(request);
+    const privateUrl = kind === "url" ? normalizeAcpUrlHandoff(request?.payload?.url) : null;
+    if (kind === "url" && (!urlHandoffAvailable || !privateUrl)) {
+      throw controlError(
+        "url_handoff_unavailable",
+        "ACP URL interaction cannot be handed off safely",
+      );
+    }
     const safeRequest = sanitizeAcpInteractionRequest({
       source: { request, context },
       protocolRequestId: protocolRequestId(request, context),
       requestSchema: request?.payload,
     });
-    const response = await onInteraction({
+    const callbackRequest = {
       kind,
       ...safeRequest,
-    });
+    };
+    if (privateUrl) {
+      Object.defineProperty(callbackRequest, ACP_PRIVATE_URL_HANDOFF, {
+        value: privateUrl,
+        enumerable: false,
+        configurable: false,
+        writable: false,
+      });
+    }
+    const response = await onInteraction(callbackRequest);
     return kind === "permission"
       ? permissionResponse(response)
       : elicitationResponse(response);
@@ -112,8 +132,9 @@ export function createWorklabAcpControls({
   agentRuntime = null,
   loadAgentRuntime = defaultRuntimeLoader,
   monoDiscoveryControls = null,
+  urlHandoffAvailable = false,
 } = {}) {
-  const resolveAcpProfile = createWorklabAcpProfileResolver({ db, env });
+  const resolveAcpProfile = createWorklabAcpProfileResolver({ db, env, urlHandoffAvailable });
   const discovery = monoDiscoveryControls || createMonoAcpDiscoveryControls({ env });
   let runtimePromise = agentRuntime ? Promise.resolve(agentRuntime) : null;
   const runtime = () => {
@@ -121,7 +142,7 @@ export function createWorklabAcpControls({
     return runtimePromise;
   };
   const runtimeOptions = ({ signal, onInteraction } = {}) => {
-    const onAcpInteractionRequest = interactionAdapter(onInteraction);
+    const onAcpInteractionRequest = interactionAdapter(onInteraction, { urlHandoffAvailable });
     return {
       resolveAcpProfile,
       signal,

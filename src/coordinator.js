@@ -28,7 +28,7 @@ import { createBackgroundServiceRegistry, startDeferredService } from "./coordin
 import { createStartupTimer } from "./coordinator/startup-timer.js";
 import { mountStaticUi } from "./coordinator/static-ui.js";
 import { createWatcherProxy } from "./coordinator/watcher-proxy.js";
-import { createWorklabAcpControls } from "./core/index.js";
+import { createAcpUrlHandoffStore, createWorklabAcpControls } from "./core/index.js";
 
 const DEFAULT_OPTIONAL_SERVICE_START_TIMEOUT_MS = 5000;
 
@@ -126,7 +126,11 @@ export async function startCoordinator({
     events,
     logger,
   });
-  const acpControls = deps.createWorklabAcpControls({ db });
+  const acpUrlHandoffStore = createAcpUrlHandoffStore();
+  const acpControls = deps.createWorklabAcpControls({
+    db,
+    urlHandoffAvailable: acpUrlHandoffStore.available === true,
+  });
   const { app, broker, acpOperationManager } = createServer({
     db,
     logger,
@@ -141,10 +145,16 @@ export async function startCoordinator({
     notifications: pushNotifications,
     serviceStatus,
     acpControls,
+    acpUrlHandoffStore,
+  });
+
+  const spawnRuntimeWorker = (options) => spawnWorker({
+    ...options,
+    acpUrlHandoffStore,
   });
 
   watcherHolder.current = deps.createTaskWatcher({
-    db, broker, spawn: spawnWorker, workerBinary, logger,
+    db, broker, spawn: spawnRuntimeWorker, workerBinary, logger,
     repoRoot: config.repoRoot, dataDir: config.dataDir, workspace: config.workspace,
     runTimeoutMs: config.runTimeoutMs,
     runIdleWarningMs: config.runIdleWarningMs,
@@ -152,14 +162,14 @@ export async function startCoordinator({
     events,
   });
   consolidationHolder.current = deps.createConsolidationManager({
-    db, broker, spawn: spawnWorker, workerBinary, logger,
+    db, broker, spawn: spawnRuntimeWorker, workerBinary, logger,
     repoRoot: config.repoRoot, dataDir: config.dataDir, config,
     runTimeoutMs: config.runTimeoutMs,
     runIdleWarningMs: config.runIdleWarningMs,
     logInlineLimit: config.logInlineLimit,
   });
   automationManagerHolder.current = deps.createAutomationManager({
-    db, broker, spawn: spawnWorker, watcher: watcherHolder.current, workerBinary, logger,
+    db, broker, spawn: spawnRuntimeWorker, watcher: watcherHolder.current, workerBinary, logger,
     repoRoot: config.repoRoot, dataDir: config.dataDir, workspace: config.workspace,
     runTimeoutMs: config.runTimeoutMs,
     runIdleWarningMs: config.runIdleWarningMs,
@@ -298,6 +308,7 @@ export async function startCoordinator({
 
     try { await watcherHolder.current.shutdown({ drainTimeoutMs }); } catch (err) { logger.warn({ err }, "watcher shutdown error"); }
     try { await acpOperationManager.shutdown(); } catch (err) { logger.warn({ err }, "ACP operation manager shutdown error"); }
+    try { acpUrlHandoffStore.clear(); } catch (err) { logger.warn({ err }, "ACP URL handoff cleanup error"); }
     if (backgroundServices) {
       await backgroundServices.shutdownAll();
     } else {

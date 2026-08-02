@@ -32,6 +32,7 @@ import {
   insertAcpInteractionRequest,
 } from "../core/db/queries/acp-interactions.js";
 import { updateAcpProfileProbe } from "../core/db/queries/acp-profiles.js";
+import { ACP_PRIVATE_URL_HANDOFF } from "../core/acp-url-handoff.js";
 
 const CONTROL_METHODS = Object.freeze({
   probe: "probe",
@@ -228,6 +229,7 @@ export class AcpOperationManager {
     logger,
     now = () => Date.now(),
     abortCleanupTimeoutMs = DEFAULT_ABORT_CLEANUP_TIMEOUT_MS,
+    urlHandoffStore = null,
   } = {}) {
     this.db = db;
     this.broker = broker;
@@ -237,6 +239,7 @@ export class AcpOperationManager {
     this.abortCleanupTimeoutMs = Number.isFinite(abortCleanupTimeoutMs) && abortCleanupTimeoutMs > 0
       ? abortCleanupTimeoutMs
       : DEFAULT_ABORT_CLEANUP_TIMEOUT_MS;
+    this.urlHandoffStore = urlHandoffStore;
     this.active = new Map();
     this.closing = false;
     this.#reconcileOrphanedOperations();
@@ -510,20 +513,42 @@ export class AcpOperationManager {
     const { protocolRequestId, requestSchema } = safeRequest;
     const now = this.now();
     const id = newAcpInteractionId();
-    insertAcpInteractionRequest(this.db, {
-      id,
-      profileId: record.profile.id,
-      taskRunId: null,
-      operationId: record.id,
-      protocolRequestId,
-      kind,
-      requestSchemaJson: JSON.stringify(requestSchema),
-      createdAt: now,
-      updatedAt: now,
-    });
-    if (markAcpOperationWaiting(this.db, record.id, { updatedAt: now }).changes !== 1) {
-      cancelAcpInteraction(this.db, id, { disposition: "cancel", resolvedAt: now });
-      throw managerError("ACP operation is not accepting interactions");
+    const privateUrl = kind === "url" ? request[ACP_PRIVATE_URL_HANDOFF] : null;
+    let retainedUrl = false;
+    if (kind === "url") {
+      retainedUrl = this.urlHandoffStore?.retain?.({
+        interactionId: id,
+        ownerKind: "operation",
+        ownerId: record.id,
+        profileId: record.profile.id,
+        url: privateUrl,
+      }) === true;
+      if (!retainedUrl) {
+        throw managerError("ACP URL interaction cannot be handed off safely", {
+          code: "url_handoff_unavailable",
+          status: 503,
+        });
+      }
+    }
+    try {
+      insertAcpInteractionRequest(this.db, {
+        id,
+        profileId: record.profile.id,
+        taskRunId: null,
+        operationId: record.id,
+        protocolRequestId,
+        kind,
+        requestSchemaJson: JSON.stringify(requestSchema),
+        createdAt: now,
+        updatedAt: now,
+      });
+      if (markAcpOperationWaiting(this.db, record.id, { updatedAt: now }).changes !== 1) {
+        cancelAcpInteraction(this.db, id, { disposition: "cancel", resolvedAt: now });
+        throw managerError("ACP operation is not accepting interactions");
+      }
+    } catch (error) {
+      if (retainedUrl) this.urlHandoffStore?.remove?.(id);
+      throw error;
     }
     this.#clearDeadline(record);
     const interaction = rowToAcpInteraction(getAcpInteractionById(this.db, id));
@@ -555,6 +580,11 @@ export class AcpOperationManager {
         status: 404,
       });
     }
+    this.urlHandoffStore?.remove?.(interactionId, {
+      ownerKind: "operation",
+      ownerId: operationId,
+      profileId: record.profile.id,
+    });
     const safeDisposition = acpInteractionDisposition(rowToAcpInteraction(row), response, disposition);
     assertOfferedPermissionResponse(row, response, safeDisposition);
     if (!record.privateResponses.rememberResponse(response)) {
@@ -593,6 +623,11 @@ export class AcpOperationManager {
     if (!record) throw managerError("ACP operation is not active", { code: "not_active", status: 409 });
     const pending = record.pending.get(interactionId);
     if (!pending) throw managerError("ACP interaction is not pending", { code: "not_pending", status: 409 });
+    this.urlHandoffStore?.remove?.(interactionId, {
+      ownerKind: "operation",
+      ownerId: operationId,
+      profileId: record.profile.id,
+    });
     const cancelled = cancelAcpInteraction(this.db, interactionId, {
       disposition: "cancel",
       resolvedAt: this.now(),
@@ -626,6 +661,7 @@ export class AcpOperationManager {
     const records = [...this.active.values()];
     for (const record of records) this.abort(record.id, "Worklab is shutting down");
     await Promise.allSettled(records.map((record) => record.done));
+    for (const record of records) this.urlHandoffStore?.removeOwner?.("operation", record.id);
   }
 
   #settlePending(record, disposition) {
@@ -638,10 +674,16 @@ export class AcpOperationManager {
       status: 409,
     });
     for (const [id, pending] of record.pending) {
+      this.urlHandoffStore?.remove?.(id, {
+        ownerKind: "operation",
+        ownerId: record.id,
+        profileId: record.profile.id,
+      });
       record.controller.signal.removeEventListener("abort", pending.abort);
       pending.reject(error);
       record.pending.delete(id);
     }
+    this.urlHandoffStore?.removeOwner?.("operation", record.id);
   }
 
   #broadcastOperation(operationId, state) {

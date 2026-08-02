@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createWorklabAcpControls } from "../../core/acp-controls.js";
 import { createAcpProfile } from "../../core/acp-profiles.js";
 import { makeTestDb } from "../helpers/test-db.js";
+import { ACP_PRIVATE_URL_HANDOFF } from "../../core/acp-url-handoff.js";
 
 const cleanup = [];
 const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
@@ -46,6 +47,7 @@ function setup(agentRuntime, { loadAgentRuntime, agentOwnedWorkspace = false } =
       discoverMono: vi.fn(),
       resolveMonoSource: vi.fn(),
     },
+    urlHandoffAvailable: true,
   });
   return { db, profile, controls };
 }
@@ -242,6 +244,68 @@ describe("createWorklabAcpControls", () => {
         },
       ]);
       expect(JSON.stringify(delivered)).not.toMatch(/RAW_REMOTE_(?:PERMISSION|FORM)_SESSION/u);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("carries URL secrets only on a non-enumerable in-process handoff symbol", async () => {
+    const rawUrl = "https://example.test/authorize?state=private-state#resume";
+    let delivered;
+    const runtime = {
+      authenticateAcpProfile: vi.fn(async (_id, _method, options) => {
+        await options.onAcpInteractionRequest({
+          kind: "elicitation",
+          payload: {
+            mode: "url",
+            message: "Continue in a browser",
+            url: rawUrl,
+          },
+        }, { requestId: "url-request-1" });
+        return { authenticated: true };
+      }),
+    };
+    const { db, profile, controls } = setup(runtime);
+    try {
+      await controls.authenticate({
+        profile,
+        authMethodId: "browser",
+        onInteraction: async (request) => {
+          delivered = request;
+          return { disposition: "decline" };
+        },
+      });
+      expect(delivered[ACP_PRIVATE_URL_HANDOFF]).toBe(rawUrl);
+      expect(Object.keys(delivered)).toEqual(["kind", "protocolRequestId", "requestSchema"]);
+      expect(JSON.stringify(delivered)).not.toMatch(/private-state|resume/u);
+      expect(delivered.requestSchema.url).toContain("%5Bredacted%5D");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rejects URL callbacks when a safe handoff channel is unavailable", async () => {
+    const db = makeTestDb();
+    const cwd = mkdtempSync(join(tmpdir(), "worklab-acp-controls-no-url-"));
+    cleanup.push(cwd);
+    const profile = createAcpProfile({
+      db,
+      id: PROFILE_ID,
+      input: { agentName: "external", command: process.execPath, cwd, envKeys: [] },
+    });
+    const runtime = {
+      authenticateAcpProfile: vi.fn(async (_id, _method, options) => options.onAcpInteractionRequest({
+        kind: "elicitation",
+        payload: { mode: "url", url: "https://example.test/private?state=secret" },
+      }, { requestId: "url-no-handoff" })),
+    };
+    const controls = createWorklabAcpControls({ db, env: {}, agentRuntime: runtime });
+    try {
+      await expect(controls.authenticate({
+        profile,
+        authMethodId: "browser",
+        onInteraction: vi.fn(),
+      })).rejects.toMatchObject({ code: "url_handoff_unavailable" });
     } finally {
       db.close();
     }

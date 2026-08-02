@@ -6,6 +6,10 @@ import { createAcpProfile } from "../../core/acp-profiles.js";
 import { createAcpOperationManager } from "../../coordinator/acp-operation-manager.js";
 import { getAcpInteractionById } from "../../core/db/queries/acp-interactions.js";
 import { makeTestDb } from "../helpers/test-db.js";
+import {
+  ACP_PRIVATE_URL_HANDOFF,
+  createAcpUrlHandoffStore,
+} from "../../core/acp-url-handoff.js";
 
 const cleanup = [];
 
@@ -34,8 +38,15 @@ function setup(controls, {
   });
   const events = [];
   const broker = { broadcast: (channel, event) => events.push({ channel, event }) };
-  const manager = createAcpOperationManager({ db, broker, controls, abortCleanupTimeoutMs });
-  return { db, profile, events, manager };
+  const urlHandoffStore = createAcpUrlHandoffStore();
+  const manager = createAcpOperationManager({
+    db,
+    broker,
+    controls,
+    abortCleanupTimeoutMs,
+    urlHandoffStore,
+  });
+  return { db, profile, events, manager, urlHandoffStore };
 }
 
 async function waitForOperation(manager, operationId, state) {
@@ -602,15 +613,23 @@ describe("AcpOperationManager", () => {
     expect(manager.isActive(operation.id)).toBe(false);
   });
 
-  it("redacts credentials and query values from persisted interaction URLs", async () => {
-    const { db, profile, manager } = setup({
-      authenticate: async ({ onInteraction }) => onInteraction({
+  it("retains URL query state only in the one-use handoff store", async () => {
+    const rawUrl = "https://example.test/login?token=one-time-secret&state=sensitive#fragment";
+    const { db, profile, manager, urlHandoffStore, events } = setup({
+      authenticate: async ({ onInteraction }) => {
+        const request = {
         requestId: "auth-url-1",
         kind: "url",
         schema: {
-          url: "https://user:password@example.test/login?token=one-time-secret&state=sensitive#fragment",
+            url: "https://example.test/login?token=%5Bredacted%5D&state=%5Bredacted%5D",
         },
-      }),
+        };
+        Object.defineProperty(request, ACP_PRIVATE_URL_HANDOFF, {
+          value: rawUrl,
+          enumerable: false,
+        });
+        return onInteraction(request);
+      },
     });
     const operation = manager.start({
       profileId: profile.id,
@@ -625,8 +644,19 @@ describe("AcpOperationManager", () => {
 
     const persisted = interaction.request_schema_json;
     expect(persisted).toContain("https://example.test/login");
-    expect(persisted).not.toMatch(/user|password|one-time-secret|sensitive|fragment/u);
+    expect(persisted).not.toMatch(/one-time-secret|sensitive|fragment/u);
+    expect(urlHandoffStore.has({
+      interactionId: interaction.id,
+      ownerKind: "operation",
+      ownerId: operation.id,
+      profileId: profile.id,
+    })).toBe(true);
+    expect(JSON.stringify({
+      rows: db.prepare("SELECT * FROM acp_interactions").all(),
+      events,
+    })).not.toMatch(/one-time-secret|sensitive|fragment/u);
     manager.cancelInteraction({ operationId: operation.id, interactionId: interaction.id });
+    expect(urlHandoffStore.size).toBe(0);
     await waitForOperation(manager, operation.id, "succeeded");
   });
 

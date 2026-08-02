@@ -33,6 +33,7 @@ describe("Worklab ACP runtime profiles", () => {
       const resolveProfile = createWorklabAcpProfileResolver({
         db,
         env: { TEST_ACP_TOKEN: "private", UNLISTED_SECRET: "no" },
+        urlHandoffAvailable: true,
       });
       const descriptor = await resolveProfile(PROFILE_ID);
       expect(descriptor.env).toEqual({ TEST_ACP_TOKEN: "private" });
@@ -43,6 +44,20 @@ describe("Worklab ACP runtime profiles", () => {
         mcp: { stdio: false },
       });
       expect(descriptor.process).toMatchObject({ requestTimeoutMs: 0, maxLineBytes: 16 * 1024 * 1024 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("does not advertise URL elicitations without a private handoff channel", async () => {
+    const db = makeTestDb();
+    try {
+      createGeneric(db);
+      const descriptor = await createWorklabAcpProfileResolver({
+        db,
+        env: { TEST_ACP_TOKEN: "private" },
+      })(PROFILE_ID);
+      expect(descriptor.capabilityPolicy.elicitation).toEqual({ form: true, url: false });
     } finally {
       db.close();
     }
