@@ -530,40 +530,40 @@ describe("legacy ACP session privacy migration", () => {
     `).run(
       otherProfileId,
       process.execPath,
-      JSON.stringify({ status: "Java password", label: "alpha" }),
+      JSON.stringify({ status: "Java password runpin", label: "alpha" }),
     );
     db.prepare(`
       UPDATE acp_profiles SET last_probe_result_json = ? WHERE id = ?
     `).run(
       JSON.stringify({
         sessionId: probePrivateValue,
-        copied: `Java password ${probePrivateValue}`,
+        copied: `Java password runpin ${probePrivateValue}`,
       }),
       PROFILE_ID,
     );
     db.prepare(`
       INSERT INTO tasks (
         id, title, plan_body, pending_actions_json, created_at, updated_at
-      ) VALUES ('task-b', 'Task B', 'Java password', ?, 1, 1)
-    `).run(JSON.stringify([{ label: "alpha", value: "Java password" }]));
+      ) VALUES ('task-b', 'Task B', 'Java password runpin', ?, 1, 1)
+    `).run(JSON.stringify([{ label: "alpha", value: "Java password runpin" }]));
     db.prepare(`
-      UPDATE tasks SET plan_body = 'Java password', pending_actions_json = ?
+      UPDATE tasks SET plan_body = 'Java password runpin', pending_actions_json = ?
       WHERE id = 'task-acp'
-    `).run(JSON.stringify([{ label: "alpha", value: "Java password" }]));
+    `).run(JSON.stringify([{ label: "alpha", value: "Java password runpin" }]));
     db.prepare(`
       INSERT INTO task_runs (
         id, task_id, mode, stage, agent_name, provider_kind, status,
         process_status, started_at, diagnostics_json
       ) VALUES ('run-a-owned', 'task-acp', 'execute', 'execute', 'external',
         'acp', 'complete', 'succeeded', 1, ?)
-    `).run(JSON.stringify({ pageToken: "a", nextToken: "password", copied: "Java password" }));
+    `).run(JSON.stringify({ pageToken: "a", nextToken: "runpin", copied: "Java password" }));
     db.prepare(`
       INSERT INTO task_runs (
         id, task_id, mode, stage, agent_name, provider_kind, status,
         process_status, started_at, diagnostics_json
       ) VALUES ('run-b-owned', 'task-b', 'execute', 'execute', 'external-b',
         'acp', 'complete', 'succeeded', 2, ?)
-    `).run(JSON.stringify({ status: "Java password", label: "alpha" }));
+    `).run(JSON.stringify({ status: "Java password runpin", label: "alpha" }));
     db.prepare(`
       INSERT INTO acp_operations (
         id, profile_id, kind, state, request_json, result_json, error_json,
@@ -571,7 +571,10 @@ describe("legacy ACP session privacy migration", () => {
       ) VALUES ('operation-a-owned', ?, 'list_sessions', 'succeeded', '{}', ?, '{}', 1, 1, 1)
     `).run(
       PROFILE_ID,
-      JSON.stringify({ pageToken: "a", nextToken: "password", copied: `Java password ${probePrivateValue}` }),
+      JSON.stringify({
+        nextToken: "password",
+        copied: `Java password runpin ${probePrivateValue}`,
+      }),
     );
     db.prepare(`
       INSERT INTO acp_operations (
@@ -581,7 +584,7 @@ describe("legacy ACP session privacy migration", () => {
     `).run(
       otherProfileId,
       JSON.stringify({ label: "alpha" }),
-      JSON.stringify({ status: "Java password", label: "alpha" }),
+      JSON.stringify({ status: "Java password runpin", label: "alpha" }),
     );
     db.prepare(`
       INSERT INTO acp_interactions (
@@ -601,7 +604,7 @@ describe("legacy ACP session privacy migration", () => {
         'form', ?, 'submitted', 'accept', 2, 2)
     `).run(
       otherProfileId,
-      JSON.stringify({ description: "Java password", label: "alpha" }),
+      JSON.stringify({ description: "Java password runpin", label: "alpha" }),
     );
     db.prepare("DELETE FROM schema_meta WHERE key = 'acp_legacy_session_privacy_compacted_v1'").run();
     db.prepare("UPDATE schema_meta SET value = '48' WHERE key = 'version'").run();
@@ -614,26 +617,29 @@ describe("legacy ACP session privacy migration", () => {
     expect(taskA.pending_actions_json).not.toContain("password");
     expect(db.prepare("SELECT plan_body, pending_actions_json FROM tasks WHERE id = 'task-b'").get())
       .toEqual({
-        plan_body: "Java password",
-        pending_actions_json: '[{"label":"alpha","value":"Java password"}]',
+        plan_body: "Java password runpin",
+        pending_actions_json: '[{"label":"alpha","value":"Java password runpin"}]',
       });
     expect(db.prepare(`
       SELECT last_probe_result_json FROM acp_profiles WHERE id = ?
     `).get(otherProfileId).last_probe_result_json)
-      .toBe('{"status":"Java password","label":"alpha"}');
+      .toBe('{"status":"Java password runpin","label":"alpha"}');
     expect(db.prepare(`
       SELECT request_json, result_json FROM acp_operations WHERE id = 'operation-b-owned'
     `).get()).toEqual({
       request_json: '{"label":"alpha"}',
-      result_json: '{"status":"Java password","label":"alpha"}',
+      result_json: '{"status":"Java password runpin","label":"alpha"}',
     });
     expect(db.prepare(`
       SELECT request_schema_json FROM acp_interactions WHERE id = 'interaction-b-owned'
     `).get().request_schema_json)
-      .toBe('{"description":"Java password","label":"alpha"}');
+      .toBe('{"description":"Java password runpin","label":"alpha"}');
     expect(db.prepare(`
       SELECT last_probe_result_json FROM acp_profiles WHERE id = ?
     `).get(PROFILE_ID).last_probe_result_json).not.toContain(probePrivateValue);
+    expect(db.prepare(`
+      SELECT last_probe_result_json FROM acp_profiles WHERE id = ?
+    `).get(PROFILE_ID).last_probe_result_json).not.toContain("runpin");
     expect(db.prepare(`
       SELECT request_schema_json FROM acp_interactions WHERE id = 'interaction-a-owned'
     `).get().request_schema_json).not.toContain(probePrivateValue);

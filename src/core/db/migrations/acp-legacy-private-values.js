@@ -122,16 +122,68 @@ function mergePrivateValues(target, values) {
   for (const value of values) target.add(value);
 }
 
+function ownershipEntries(scope, ownership) {
+  return [
+    ["profile", scope.byProfile, ownership.profileId],
+    ["run", scope.byRun, ownership.runId],
+    ["task", scope.byTask, ownership.taskId],
+  ].filter(([, , key]) => key);
+}
+
+function propagatePrivateValueOwnership(scope) {
+  const nodes = new Map();
+  const neighbors = new Map();
+  for (const ownership of scope.ownershipLinks) {
+    const entries = ownershipEntries(scope, ownership).map(([type, map, key]) => {
+      const nodeId = JSON.stringify([type, key]);
+      nodes.set(nodeId, { map, key });
+      if (!neighbors.has(nodeId)) neighbors.set(nodeId, new Set());
+      return nodeId;
+    });
+    for (const nodeId of entries) {
+      for (const neighbor of entries) {
+        if (neighbor !== nodeId) neighbors.get(nodeId).add(neighbor);
+      }
+    }
+  }
+
+  const visited = new Set();
+  for (const start of nodes.keys()) {
+    if (visited.has(start)) continue;
+    const component = [];
+    const pending = [start];
+    while (pending.length) {
+      const nodeId = pending.pop();
+      if (visited.has(nodeId)) continue;
+      visited.add(nodeId);
+      component.push(nodeId);
+      pending.push(...(neighbors.get(nodeId) || []));
+    }
+    const values = new Set();
+    for (const nodeId of component) {
+      const { map, key } = nodes.get(nodeId);
+      mergePrivateValues(values, map.get(key) || []);
+    }
+    for (const nodeId of component) {
+      const { map, key } = nodes.get(nodeId);
+      if (!map.has(key)) map.set(key, new Set());
+      mergePrivateValues(map.get(key), values);
+    }
+  }
+}
+
 export function createPrivateValueScope() {
   return {
     all: new Set(),
     byProfile: new Map(),
     byRun: new Map(),
     byTask: new Map(),
+    ownershipLinks: [],
   };
 }
 
-export function addOwnedPrivateValues(scope, values, { profileId, runId, taskId } = {}) {
+export function addOwnedPrivateValues(scope, values, ownership = {}) {
+  const { profileId, runId, taskId } = ownership;
   mergePrivateValues(scope.all, values);
   for (const [map, key] of [
     [scope.byProfile, profileId],
@@ -142,9 +194,11 @@ export function addOwnedPrivateValues(scope, values, { profileId, runId, taskId 
     if (!map.has(key)) map.set(key, new Set());
     mergePrivateValues(map.get(key), values);
   }
+  if (ownershipEntries(scope, ownership).length > 1) scope.ownershipLinks.push(ownership);
 }
 
 export function finalizePrivateValueScope(scope) {
+  propagatePrivateValueOwnership(scope);
   const sorted = (values) => [...values].sort((left, right) => right.length - left.length);
   return {
     all: sorted(scope.all),

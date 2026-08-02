@@ -342,6 +342,7 @@ function collectGlobalAcpPrivateValues(db, runs, jsonColumns, dataDir) {
       collectPrivateValuesFromObject(seed, values, { includeCursors: true });
     }
     addOwnedPrivateValues(scope, values, {
+      profileId: profileIdForRun(run),
       runId: run.id,
       taskId: run.task_id,
     });

@@ -233,7 +233,7 @@ describe("backup command", () => {
       });
       expect(JSON.parse(malformed.result_json)).toEqual({
         redacted: true,
-        reason: "ACP session data exceeded backup scrub limits",
+        reason: "ACP pagination cursor data was invalid",
       });
 
       const aliases = restoredDb.prepare(`
@@ -377,6 +377,131 @@ describe("backup command", () => {
     }
   });
 
+  it("fails closed across an owning ACP graph when identifier collection is incomplete", async () => {
+    const dataDir = tmp("backup-acp-incomplete-data");
+    const outDir = tmp("backup-acp-incomplete-out");
+    const restoredDir = tmp("backup-acp-incomplete-restored");
+    const workspace = tmp("backup-acp-incomplete-workspace");
+    process.env.WORKLAB_DATA_DIR = dataDir;
+    const sourceDb = openDb(join(dataDir, "worklab.db"));
+    runMigrations(sourceDb);
+    const profileA = createAcpProfile({
+      db: sourceDb,
+      input: {
+        agentName: "backup-incomplete-a",
+        displayName: "Backup incomplete A",
+        command: process.execPath,
+        cwd: workspace,
+      },
+    });
+    const profileB = createAcpProfile({
+      db: sourceDb,
+      input: {
+        agentName: "backup-incomplete-b",
+        displayName: "Backup incomplete B",
+        command: process.execPath,
+        cwd: workspace,
+      },
+    });
+    const malformedSecret = "BACKUP_MALFORMED_GRAPH_SECRET_493827";
+    const deepSecret = "BACKUP_DEEP_GRAPH_SECRET_493827";
+    let deepSource = { sessions: [{ id: deepSecret }] };
+    for (let depth = 0; depth < 40; depth += 1) deepSource = { nested: deepSource };
+    for (const [id, title, plan] of [
+      ["task-backup-incomplete-a", "Incomplete A", `${malformedSecret} ${deepSecret}`],
+      ["task-backup-incomplete-b", "Incomplete B", "Unrelated profile survives"],
+    ]) {
+      sourceDb.prepare(`
+        INSERT INTO tasks (id, title, plan_body, pending_actions_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 1, 1)
+      `).run(id, title, plan, JSON.stringify([{ label: plan }]));
+    }
+    for (const [id, taskId, agentName] of [
+      ["run-backup-incomplete-a", "task-backup-incomplete-a", "backup-incomplete-a"],
+      ["run-backup-incomplete-b", "task-backup-incomplete-b", "backup-incomplete-b"],
+    ]) {
+      sourceDb.prepare(`
+        INSERT INTO task_runs (
+          id, task_id, mode, stage, agent_name, provider_kind, status,
+          process_status, started_at, diagnostics_json
+        ) VALUES (?, ?, 'execute', 'execute', ?, 'acp', 'complete', 'succeeded', 1, ?)
+      `).run(id, taskId, agentName, JSON.stringify({ status: "ordinary" }));
+    }
+    sourceDb.prepare(`
+      INSERT INTO acp_operations (
+        id, profile_id, kind, state, request_json, result_json, error_json,
+        created_at, updated_at, completed_at
+      ) VALUES ('operation-backup-incomplete-a', ?, 'probe', 'failed', ?, ?, '{}', 1, 1, 1)
+    `).run(
+      profileA.id,
+      `{"opaque":"${malformedSecret}"`,
+      JSON.stringify(deepSource),
+    );
+    sourceDb.prepare(`
+      INSERT INTO task_comments (id, task_id, author_type, body, created_at)
+      VALUES ('comment-backup-incomplete-a', 'task-backup-incomplete-a', 'system', ?, 1)
+    `).run(`Copied ${malformedSecret} ${deepSecret}`);
+    sourceDb.prepare(`
+      INSERT INTO run_compactions (
+        id, task_run_id, seq, trigger, summary, metadata_json, error_text, created_at
+      ) VALUES ('compaction-backup-incomplete-a', 'run-backup-incomplete-a', 1,
+        'manual', ?, ?, ?, 1)
+    `).run(
+      `Summary ${malformedSecret}`,
+      JSON.stringify({ copied: deepSecret }),
+      `Error ${deepSecret}`,
+    );
+    sourceDb.prepare(`
+      UPDATE acp_profiles SET last_probe_result_json = ? WHERE id = ?
+    `).run(JSON.stringify({ status: "Unrelated profile survives" }), profileB.id);
+    sourceDb.close();
+
+    const lines = [];
+    vi.spyOn(console, "log").mockImplementation((line) => lines.push(String(line)));
+    await backup(["--out", outDir]);
+    const archive = lines.find((line) => line.startsWith("backup: ")).replace("backup: ", "");
+    execFileSync("tar", ["-xzf", archive, "-C", restoredDir]);
+    const restoredDbPath = join(restoredDir, "worklab.db");
+    const restoredDb = openDb(restoredDbPath);
+    const fallback = JSON.stringify({
+      redacted: true,
+      reason: "ACP session data exceeded backup scrub limits",
+    });
+    try {
+      expect(restoredDb.prepare(`
+        SELECT request_json, result_json, error_json
+        FROM acp_operations WHERE id = 'operation-backup-incomplete-a'
+      `).get()).toEqual({ request_json: fallback, result_json: fallback, error_json: fallback });
+      expect(restoredDb.prepare(`
+        SELECT plan_body, pending_actions_json
+        FROM tasks WHERE id = 'task-backup-incomplete-a'
+      `).get()).toEqual({ plan_body: "[redacted]", pending_actions_json: fallback });
+      expect(restoredDb.prepare(`
+        SELECT body FROM task_comments WHERE id = 'comment-backup-incomplete-a'
+      `).get().body).toBe("[redacted]");
+      expect(restoredDb.prepare(`
+        SELECT summary, metadata_json, error_text
+        FROM run_compactions WHERE id = 'compaction-backup-incomplete-a'
+      `).get()).toEqual({ summary: "[redacted]", metadata_json: fallback, error_text: "[redacted]" });
+      expect(restoredDb.prepare(`
+        SELECT plan_body, pending_actions_json
+        FROM tasks WHERE id = 'task-backup-incomplete-b'
+      `).get()).toEqual({
+        plan_body: "Unrelated profile survives",
+        pending_actions_json: '[{"label":"Unrelated profile survives"}]',
+      });
+      expect(restoredDb.prepare(`
+        SELECT last_probe_result_json FROM acp_profiles WHERE id = ?
+      `).get(profileB.id).last_probe_result_json)
+        .toBe('{"status":"Unrelated profile survives"}');
+    } finally {
+      restoredDb.close();
+    }
+    const restoredBytes = readFileSync(restoredDbPath);
+    expect(restoredBytes.includes(Buffer.from(malformedSecret))).toBe(false);
+    expect(restoredBytes.includes(Buffer.from(deepSecret))).toBe(false);
+  });
+
   it("keeps low-entropy ACP values inside their owning backup graph", async () => {
     const dataDir = tmp("backup-acp-owned-data");
     const outDir = tmp("backup-acp-owned-out");
@@ -405,11 +530,14 @@ describe("backup command", () => {
     });
     sourceDb.prepare(`
       UPDATE acp_profiles SET last_probe_result_json = ? WHERE id = ?
-    `).run(JSON.stringify({ status: "Java password", label: "alpha" }), profileB.id);
+    `).run(JSON.stringify({ copied: "runpin" }), profileA.id);
+    sourceDb.prepare(`
+      UPDATE acp_profiles SET last_probe_result_json = ? WHERE id = ?
+    `).run(JSON.stringify({ status: "Java password runpin", label: "alpha" }), profileB.id);
     for (const [id, title, plan] of [
-      ["task-backup-owned-a", "Owned A", "Java password"],
-      ["task-backup-owned-b", "Owned B", "Java password"],
-      ["task-backup-unrelated", "Unrelated", "Java password"],
+      ["task-backup-owned-a", "Owned A", "Java password runpin"],
+      ["task-backup-owned-b", "Owned B", "Java password runpin"],
+      ["task-backup-unrelated", "Unrelated", "Java password runpin"],
     ]) {
       sourceDb.prepare(`
         INSERT INTO tasks (id, title, plan_body, pending_actions_json, created_at, updated_at)
@@ -422,14 +550,14 @@ describe("backup command", () => {
         process_status, started_at, diagnostics_json
       ) VALUES ('run-backup-owned-a', 'task-backup-owned-a', 'execute', 'execute',
         'backup-owned-a', 'acp', 'complete', 'succeeded', 1, ?)
-    `).run(JSON.stringify({ pageToken: "a", nextToken: "password", copied: "Java password" }));
+    `).run(JSON.stringify({ pageToken: "a", nextToken: "runpin", copied: "Java password" }));
     sourceDb.prepare(`
       INSERT INTO task_runs (
         id, task_id, mode, stage, agent_name, provider_kind, status,
         process_status, started_at, diagnostics_json
       ) VALUES ('run-backup-owned-b', 'task-backup-owned-b', 'execute', 'execute',
         'backup-owned-b', 'acp', 'complete', 'succeeded', 2, ?)
-    `).run(JSON.stringify({ status: "Java password", label: "alpha" }));
+    `).run(JSON.stringify({ status: "Java password runpin", label: "alpha" }));
     sourceDb.prepare(`
       INSERT INTO task_comments (id, task_id, author_type, body, created_at)
       VALUES ('comment-backup-unrelated', 'task-backup-unrelated', 'system', 'Java password', 1)
@@ -441,7 +569,7 @@ describe("backup command", () => {
       ) VALUES ('operation-backup-owned-a', ?, 'list_sessions', 'succeeded', '{}', ?, '{}', 1, 1, 1)
     `).run(
       profileA.id,
-      JSON.stringify({ pageToken: "a", nextToken: "password", copied: "Java password" }),
+      JSON.stringify({ nextToken: "password", copied: "Java password runpin" }),
     );
     sourceDb.prepare(`
       INSERT INTO acp_operations (
@@ -451,7 +579,7 @@ describe("backup command", () => {
     `).run(
       profileB.id,
       JSON.stringify({ label: "alpha" }),
-      JSON.stringify({ status: "Java password", label: "alpha" }),
+      JSON.stringify({ status: "Java password runpin", label: "alpha" }),
     );
     sourceDb.prepare(`
       INSERT INTO acp_interactions (
@@ -461,7 +589,7 @@ describe("backup command", () => {
         'request-b', 'form', ?, 'pending', 2, 2)
     `).run(
       profileB.id,
-      JSON.stringify({ description: "Java password", label: "alpha" }),
+      JSON.stringify({ description: "Java password runpin", label: "alpha" }),
     );
     sourceDb.close();
 
@@ -480,29 +608,32 @@ describe("backup command", () => {
       expect(restoredDb.prepare(`
         SELECT plan_body, pending_actions_json FROM tasks WHERE id = 'task-backup-owned-b'
       `).get()).toEqual({
-        plan_body: "Java password",
-        pending_actions_json: '[{"label":"alpha","value":"Java password"}]',
+        plan_body: "Java password runpin",
+        pending_actions_json: '[{"label":"alpha","value":"Java password runpin"}]',
       });
       expect(restoredDb.prepare(`
         SELECT plan_body FROM tasks WHERE id = 'task-backup-unrelated'
-      `).get().plan_body).toBe("Java password");
+      `).get().plan_body).toBe("Java password runpin");
       expect(restoredDb.prepare(`
         SELECT body FROM task_comments WHERE id = 'comment-backup-unrelated'
       `).get().body).toBe("Java password");
       expect(restoredDb.prepare(`
         SELECT last_probe_result_json FROM acp_profiles WHERE id = ?
+      `).get(profileA.id).last_probe_result_json).not.toContain("runpin");
+      expect(restoredDb.prepare(`
+        SELECT last_probe_result_json FROM acp_profiles WHERE id = ?
       `).get(profileB.id).last_probe_result_json)
-        .toBe('{"status":"Java password","label":"alpha"}');
+        .toBe('{"status":"Java password runpin","label":"alpha"}');
       expect(restoredDb.prepare(`
         SELECT request_json, result_json FROM acp_operations WHERE id = 'operation-backup-owned-b'
       `).get()).toEqual({
         request_json: '{"label":"alpha"}',
-        result_json: '{"status":"Java password","label":"alpha"}',
+        result_json: '{"status":"Java password runpin","label":"alpha"}',
       });
       expect(restoredDb.prepare(`
         SELECT request_schema_json FROM acp_interactions WHERE id = 'interaction-backup-owned-b'
       `).get().request_schema_json)
-        .toBe('{"description":"Java password","label":"alpha"}');
+        .toBe('{"description":"Java password runpin","label":"alpha"}');
     } finally {
       restoredDb.close();
     }
@@ -535,8 +666,6 @@ describe("backup command", () => {
     const deepRawSessionId = "backup-deep-raw-acp-session-secret";
     const legacyOperationId = "acpop-backup-legacy-session";
     const legacyInteractionId = "interaction-backup-legacy-session";
-    let hostileDeepPayload = { sessionId: deepRawSessionId };
-    for (let depth = 0; depth < 40; depth += 1) hostileDeepPayload = { nested: hostileDeepPayload };
     let delivered;
     const manager = createAcpOperationManager({
       db: sourceDb,
@@ -680,7 +809,7 @@ describe("backup command", () => {
       `activity details ${legacyProtocolRequestId}`,
       JSON.stringify({ copied: legacyRawSessionId }),
       JSON.stringify({ sessionId: legacyRawSessionId, providerSessionId: validProviderSessionId }),
-      JSON.stringify(hostileDeepPayload),
+      JSON.stringify({ sessionId: deepRawSessionId, copied: deepRawSessionId }),
       legacyRawSessionId,
     );
     sourceDb.prepare(`
@@ -883,10 +1012,7 @@ describe("backup command", () => {
       expect(JSON.stringify(restoredLegacyRun)).not.toContain(legacyRawSessionId);
       expect(JSON.stringify(restoredLegacyRun)).not.toContain(legacyProtocolRequestId);
       expect(restoredLegacyRun.diagnostics_json).toContain(validProviderSessionId);
-      expect(JSON.parse(restoredLegacyRun.warnings_json)).toEqual({
-        redacted: true,
-        reason: "ACP session data exceeded backup scrub limits",
-      });
+      expect(JSON.parse(restoredLegacyRun.warnings_json)).toEqual({ copied: "[redacted]" });
       expect(restoredDb.prepare(`
         SELECT provider_session_id, diagnostics_json
         FROM task_runs WHERE id = 'run-backup-acp-encoded'
