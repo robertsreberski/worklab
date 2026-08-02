@@ -64,6 +64,18 @@ function managerError(message, { code = "invalid_state", status = 409 } = {}) {
   return Object.assign(new Error(message), { code, status, safeMessage: message });
 }
 
+function operationActiveError() {
+  return managerError("ACP profile already has an active operation", {
+    code: "operation_active",
+    status: 409,
+  });
+}
+
+function isActiveProfileConstraint(error) {
+  return error?.code === "SQLITE_CONSTRAINT_UNIQUE"
+    && String(error.message || "").includes("acp_operations.profile_id");
+}
+
 function boundedIdentifier(value, name, max = 1000) {
   if (typeof value !== "string" || !value.trim()) {
     throw managerError(`${name} is required`, { code: "validation", status: 400 });
@@ -269,6 +281,7 @@ export class AcpOperationManager {
       : DEFAULT_ABORT_CLEANUP_TIMEOUT_MS;
     this.urlHandoffStore = urlHandoffStore;
     this.active = new Map();
+    this.quarantinedProfiles = new Map();
     this.closing = false;
     this.#reconcileOrphanedOperations();
   }
@@ -324,7 +337,14 @@ export class AcpOperationManager {
   }
 
   isProfileActive(profileId) {
-    return [...this.active.values()].some((entry) => entry.profile.id === profileId);
+    return [...this.active.values()].some((entry) => entry.profile.id === profileId)
+      || this.quarantinedProfiles.has(profileId)
+      || countActiveAcpOperationsForProfile(this.db, profileId) > 0;
+  }
+
+  #isProfileLocallyOccupied(profileId) {
+    return [...this.active.values()].some((entry) => entry.profile.id === profileId)
+      || this.quarantinedProfiles.has(profileId);
   }
 
   start({ profileId, kind, remoteSessionId = null, authMethodId = null, cursor = null } = {}) {
@@ -341,12 +361,7 @@ export class AcpOperationManager {
       });
     }
     const profile = assertAcpProfileBinding({ db: this.db, id: profileId });
-    if (this.isProfileActive(profileId) || countActiveAcpOperationsForProfile(this.db, profileId) > 0) {
-      throw managerError("ACP profile already has an active operation", {
-        code: "operation_active",
-        status: 409,
-      });
-    }
+    if (this.#isProfileLocallyOccupied(profileId)) throw operationActiveError();
     const providerSessionId = kind === "delete_session"
       ? normalizeAcpProviderSessionId(remoteSessionId, profileId)
       : null;
@@ -363,15 +378,20 @@ export class AcpOperationManager {
         : sessionCursor
           ? { cursor: sessionCursor }
           : {};
-    insertAcpOperation(this.db, {
-      id,
-      profileId,
-      kind,
-      remoteSessionId: providerSessionId,
-      requestJson: JSON.stringify(request),
-      createdAt: now,
-      updatedAt: now,
-    });
+    try {
+      insertAcpOperation(this.db, {
+        id,
+        profileId,
+        kind,
+        remoteSessionId: providerSessionId,
+        requestJson: JSON.stringify(request),
+        createdAt: now,
+        updatedAt: now,
+      });
+    } catch (error) {
+      if (isActiveProfileConstraint(error)) throw operationActiveError();
+      throw error;
+    }
     const record = {
       id,
       profile,
@@ -443,56 +463,86 @@ export class AcpOperationManager {
       }
       this.#broadcastOperation(record.id, "succeeded");
     } catch (error) {
-      const cancelled = record.controller.signal.aborted
-        && record.controller.signal.reason?.code !== "operation_timeout";
-      const sanitized = sanitizeAcpOperationError(record.kind, error, {
-        cancelled,
-        privateValues: record.privateResponses.values,
-        privacyFailedClosed: record.privateResponses.failedClosed,
-      });
-      const completedAt = this.now();
-      if (cancelled) {
-        cancelAcpOperation(this.db, record.id, {
-          errorJson: JSON.stringify(sanitized),
-          completedAt,
-        });
-      } else {
-        failAcpOperation(this.db, record.id, {
-          errorJson: JSON.stringify(sanitized),
-          completedAt,
-        });
-      }
-      if (record.kind === "probe") {
-        updateAcpProfileProbe(this.db, record.profile.id, {
-          state: "failed",
-          probedAt: completedAt,
-          resultJson: "{}",
-          errorJson: JSON.stringify(sanitized),
-        });
-      }
-      this.logger?.warn?.({
-        operation_id: record.id,
-        kind: record.kind,
-        error_code: sanitized.code,
-      }, "ACP operation ended without success");
-      this.#broadcastOperation(record.id, cancelled ? "cancelled" : "failed");
-    } finally {
+      const failure = this.#operationFailure(record, error);
       this.#clearDeadline(record);
       this.#settlePending(record, "operation_ended");
       if (record.controller.signal.aborted && handlerPromise) {
         const settled = await waitForSettlement(handlerPromise, this.abortCleanupTimeoutMs);
         if (!settled) {
+          this.#quarantineProfile(record, handlerPromise, failure);
           this.logger?.warn?.({
             operation_id: record.id,
             kind: record.kind,
             cleanup_timeout_ms: this.abortCleanupTimeoutMs,
           }, "ACP operation handler did not settle after cancellation");
+          return this.get(record.id);
         }
       }
+      this.#persistOperationFailure(record, failure);
+    } finally {
+      this.#clearDeadline(record);
+      this.#settlePending(record, "operation_ended");
       record.privateResponses.clear();
       this.active.delete(record.id);
     }
     return this.get(record.id);
+  }
+
+  #operationFailure(record, error) {
+    const cancelled = record.controller.signal.aborted
+      && record.controller.signal.reason?.code !== "operation_timeout";
+    return {
+      cancelled,
+      sanitized: sanitizeAcpOperationError(record.kind, error, {
+        cancelled,
+        privateValues: record.privateResponses.values,
+        privacyFailedClosed: record.privateResponses.failedClosed,
+      }),
+    };
+  }
+
+  #persistOperationFailure(record, { cancelled, sanitized }) {
+    const completedAt = this.now();
+    const transition = cancelled ? cancelAcpOperation : failAcpOperation;
+    transition(this.db, record.id, {
+      errorJson: JSON.stringify(sanitized),
+      completedAt,
+    });
+    if (record.kind === "probe") {
+      updateAcpProfileProbe(this.db, record.profile.id, {
+        state: "failed",
+        probedAt: completedAt,
+        resultJson: "{}",
+        errorJson: JSON.stringify(sanitized),
+      });
+    }
+    this.logger?.warn?.({
+      operation_id: record.id,
+      kind: record.kind,
+      error_code: sanitized.code,
+    }, "ACP operation ended without success");
+    this.#broadcastOperation(record.id, cancelled ? "cancelled" : "failed");
+  }
+
+  #quarantineProfile(record, handlerPromise, failure) {
+    const entry = { operationId: record.id };
+    this.quarantinedProfiles.set(record.profile.id, entry);
+    const settle = () => {
+      try {
+        this.#persistOperationFailure(record, failure);
+      } catch (error) {
+        this.logger?.warn?.({
+          operation_id: record.id,
+          kind: record.kind,
+          error_code: error?.code || "quarantine_settlement_failed",
+        }, "ACP operation quarantine could not be settled");
+      } finally {
+        if (this.quarantinedProfiles.get(record.profile.id) === entry) {
+          this.quarantinedProfiles.delete(record.profile.id);
+        }
+      }
+    };
+    Promise.resolve(handlerPromise).then(settle, settle);
   }
 
   #clearDeadline(record) {

@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAcpProfile } from "../../core/acp-profiles.js";
 import { createAcpOperationManager } from "../../coordinator/acp-operation-manager.js";
+import { openDb } from "../../core/db/open.js";
+import { runMigrations } from "../../core/db/migrations/runner.js";
 import { getAcpInteractionById } from "../../core/db/queries/acp-interactions.js";
 import { makeTestDb } from "../helpers/test-db.js";
 import {
@@ -833,7 +835,7 @@ describe("AcpOperationManager", () => {
     expect(delivered).toEqual({ outcome: { outcome: "selected", optionId: "allow_once" } });
   });
 
-  it("retains an aborted handler until cleanup finishes or its hard ceiling elapses", async () => {
+  it("retains an aborted handler and its database guard while cleanup finishes", async () => {
     let beginCleanup;
     let finishCleanup;
     const cleanupStarted = new Promise((resolve) => { beginCleanup = resolve; });
@@ -851,7 +853,7 @@ describe("AcpOperationManager", () => {
 
     expect(manager.abort(operation.id, "test cleanup gate")).toBe(true);
     await cleanupStarted;
-    await vi.waitFor(() => expect(manager.get(operation.id)?.state).toBe("cancelled"));
+    expect(manager.get(operation.id)?.state).toBe("running");
     expect(manager.isActive(operation.id)).toBe(true);
     expect(() => manager.start({ profileId: profile.id, kind: "probe" }))
       .toThrowError("ACP profile already has an active operation");
@@ -873,16 +875,23 @@ describe("AcpOperationManager", () => {
 
     finishCleanup();
     await shutdown;
+    expect(manager.get(operation.id)?.state).toBe("cancelled");
     expect(manager.isActive(operation.id)).toBe(false);
     expect(() => manager.start({ profileId: secondProfile.id, kind: "probe" }))
       .toThrowError("ACP operation manager is shutting down");
   });
 
-  it("releases an aborted handler after the cleanup hard ceiling", async () => {
-    const { profile, manager } = setup({
+  it("quarantines a profile after the cleanup ceiling until its handler settles", async () => {
+    let finishCleanup;
+    let calls = 0;
+    const cleanupGate = new Promise((resolve) => { finishCleanup = resolve; });
+    const { db, profile, manager } = setup({
       probe: async ({ signal }) => {
+        calls += 1;
+        if (calls > 1) return { ok: true, status: "ready" };
         await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
-        return new Promise(() => {});
+        await cleanupGate;
+        throw signal.reason;
       },
     }, { abortCleanupTimeoutMs: 20 });
     const operation = manager.start({ profileId: profile.id, kind: "probe" });
@@ -892,7 +901,53 @@ describe("AcpOperationManager", () => {
       timeout: 500,
       interval: 5,
     });
-    expect(manager.get(operation.id)?.state).toBe("cancelled");
+    expect(manager.get(operation.id)?.state).toBe("running");
+    expect(manager.isProfileActive(profile.id)).toBe(true);
+    expect(db.prepare(`
+      SELECT COUNT(*) AS count FROM acp_operations
+      WHERE profile_id = ?
+        AND state IN ('queued', 'running', 'waiting_for_interaction')
+    `).get(profile.id)?.count).toBe(1);
+    let conflict;
+    try {
+      manager.start({ profileId: profile.id, kind: "probe" });
+    } catch (error) {
+      conflict = error;
+    }
+    expect(conflict).toMatchObject({ code: "operation_active", status: 409 });
+
+    finishCleanup();
+    await waitForOperation(manager, operation.id, "cancelled");
+    expect(manager.isProfileActive(profile.id)).toBe(false);
+
+    const replacement = manager.start({ profileId: profile.id, kind: "probe" });
+    await waitForOperation(manager, replacement.id, "succeeded");
+  });
+
+  it("keeps shutdown bounded without clearing a quarantined database guard", async () => {
+    vi.useFakeTimers();
+    const { db, profile, manager } = setup({
+      probe: async ({ signal }) => {
+        await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+        return new Promise(() => {});
+      },
+    }, { abortCleanupTimeoutMs: 50 });
+    const operation = manager.start({ profileId: profile.id, kind: "probe" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(manager.get(operation.id)?.state).toBe("running");
+
+    let shutdownSettled = false;
+    const shutdown = manager.shutdown().then(() => { shutdownSettled = true; });
+    await vi.advanceTimersByTimeAsync(49);
+    expect(shutdownSettled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await shutdown;
+
+    expect(shutdownSettled).toBe(true);
+    expect(manager.isActive(operation.id)).toBe(false);
+    expect(manager.isProfileActive(profile.id)).toBe(true);
+    expect(db.prepare("SELECT state FROM acp_operations WHERE id = ?").get(operation.id)?.state)
+      .toBe("running");
   });
 
   it("persists deadline expiry as a failure instead of a user cancellation", async () => {
@@ -1200,6 +1255,65 @@ describe("AcpOperationManager", () => {
     expect(conflict).toMatchObject({ code: "operation_active", status: 409 });
     release({ ok: true });
     await waitForOperation(manager, first.id, "succeeded");
+  });
+
+  it("maps the cross-manager unique-index race to operation_active", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "worklab-acp-operation-shared-"));
+    cleanup.push(cwd);
+    const databasePath = join(cwd, "worklab.db");
+    const firstDb = openDb(databasePath);
+    const secondDb = openDb(databasePath);
+    let releaseFirst;
+    const firstGate = new Promise((resolve) => { releaseFirst = resolve; });
+    let firstManager;
+    let secondManager;
+    try {
+      runMigrations(firstDb);
+      const profile = createAcpProfile({
+        db: firstDb,
+        input: {
+          agentName: "cross-manager",
+          displayName: "Cross manager",
+          command: process.execPath,
+          cwd,
+        },
+      });
+      firstManager = createAcpOperationManager({
+        db: firstDb,
+        controls: { probe: async () => firstGate },
+      });
+      secondManager = createAcpOperationManager({
+        db: secondDb,
+        controls: { probe: async () => ({ ok: true, status: "ready" }) },
+      });
+
+      const first = firstManager.start({ profileId: profile.id, kind: "probe" });
+      let conflict;
+      try {
+        secondManager.start({ profileId: profile.id, kind: "probe" });
+      } catch (error) {
+        conflict = error;
+      }
+      expect(conflict).toMatchObject({ code: "operation_active", status: 409 });
+      expect(secondDb.prepare(`
+        SELECT COUNT(*) AS count FROM acp_operations
+        WHERE profile_id = ?
+          AND state IN ('queued', 'running', 'waiting_for_interaction')
+      `).get(profile.id)?.count).toBe(1);
+
+      releaseFirst({ ok: true, status: "ready" });
+      await waitForOperation(firstManager, first.id, "succeeded");
+      const second = secondManager.start({ profileId: profile.id, kind: "probe" });
+      await waitForOperation(secondManager, second.id, "succeeded");
+    } finally {
+      releaseFirst?.({ ok: true, status: "ready" });
+      await Promise.allSettled([
+        firstManager?.shutdown(),
+        secondManager?.shutdown(),
+      ]);
+      firstDb.close();
+      secondDb.close();
+    }
   });
 
   it("requires a bounded explicit authentication method id", () => {
