@@ -213,7 +213,17 @@ their unresolved interactions instead of silently resuming them.
 Provider session identifiers are opaque, profile-bound handles. Worklab may
 persist and return the opaque handle for resume, listing, and deletion, but raw
 remote session IDs are removed from operation results, task-run events, logs,
-and backups. A handle from one profile cannot be used against another.
+and backups. Handles and pagination cursors use authenticated encrypted v2
+envelopes backed by a Worklab-owned key derived from the local provider
+encryption master key. Legacy reversible v1 values are scrubbed but never
+accepted for normal operations. A handle from one profile cannot be used
+against another, and tampered or wrong-key handles fail before the external
+agent is launched.
+
+Backups intentionally omit the provider encryption master key. They therefore
+remove ACP handles and cursors as well as raw session identifiers; restoring a
+backup starts new external-agent sessions instead of carrying resumable remote
+session authority onto another host.
 
 ### Browser And Network Boundary
 

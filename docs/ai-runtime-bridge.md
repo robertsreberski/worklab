@@ -11,6 +11,7 @@ Active agent runtime references use only these prefixes:
 - `claude:<modelId>` for the Claude Agent SDK bridge.
 - `pi:<providerId>:<modelId>` for the Pi Agent SDK bridge.
 - `codex:<modelId>` for the Codex CLI bridge.
+- `acp:<profileId>` for a persisted external-agent ACP v1 profile.
 
 Current Pi provider examples:
 
@@ -65,7 +66,7 @@ Historical run/log snapshots are not rewritten.
 
 A runtime bridge exposes:
 
-- `id`: canonical runtime id, currently `pi`, `claude`, or `codex`.
+- `id`: canonical runtime id, currently `pi`, `claude`, `codex`, or `acp`.
 - `supports(ref)`: returns true for refs handled by the bridge.
 - `capabilities(ref)`: reports runtime capabilities for UI and execenv logic.
 - `execute(systemPrompt, request)`: runs the provider and returns a normalized
@@ -73,7 +74,9 @@ A runtime bridge exposes:
 
 `RuntimeRequest` includes the normalized model ref, effort, messages, cwd, MCP
 servers, tool allowlists, permission mode, output schema, run artifact path,
-settings, abort signal, live input queue, and event callback.
+settings, abort signal, live input queue, and event callback. ACP requests also
+receive a host-owned 32-byte session-token key and a profile resolver; neither
+surface is delegated to the external process.
 
 `RuntimeResult` includes final text, optional `worklabResult`, usage, duration,
 turn count, canonical model reference, runtime id, provider session id,
@@ -95,6 +98,15 @@ usage, diagnostics, and post-success SDK error handling.
 The Codex bridge handles `codex:*` refs through the local Codex CLI app-server
 when the agent uses `execution_mode='cli'`. The Pi `openai-codex` provider
 remains SDK-only and is routed through the pi-native bridge.
+
+The ACP bridge handles `acp:*` refs through the shared
+`@mono-agent/agent-runtime` stdio client. Worklab resolves the persisted profile
+and supplies only the client services allowed by its ACP policy. Raw remote
+session IDs stay inside the connection. The runtime returns authenticated,
+encrypted v2 handles and cursors bound to the profile and Worklab key; Worklab
+can persist those opaque values without learning their plaintext. Resume,
+list, and delete validate the key, version, token kind, and profile before
+profile resolution or process launch.
 
 ## Adding A Runtime
 
