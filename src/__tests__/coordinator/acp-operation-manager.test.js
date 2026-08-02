@@ -155,7 +155,10 @@ describe("AcpOperationManager", () => {
     await waitForOperation(manager, operation.id, "succeeded");
 
     expect(selectedMethod).toBe("browser-login");
-    expect(deliveredResponse).toBe(response);
+    expect(deliveredResponse).toEqual({
+      action: "accept",
+      content: { password: "actual-form-secret" },
+    });
     expect(manager.get(operation.id).result).toEqual({
       authenticated: true,
       authMethodId: "browser-login",
@@ -175,6 +178,50 @@ describe("AcpOperationManager", () => {
     });
     expect(persisted).not.toMatch(/actual-form-secret|schema-secret|auth-result-secret|RAW_MANAGEMENT_INTERACTION_SESSION/u);
     expect(JSON.stringify(events)).not.toContain(rawSessionId);
+  });
+
+  it("delivers a canonical form response when management uses an alias", async () => {
+    let acpReceived;
+    const { db, profile, manager } = setup({
+      authenticate: async ({ onInteraction }) => {
+        acpReceived = await onInteraction({
+          requestId: "canonical-form-alias",
+          kind: "form",
+          schema: { title: "Confirm account" },
+        });
+        return { authenticated: true };
+      },
+    });
+    const operation = manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "canonical-form-alias",
+    });
+    let interaction;
+    await vi.waitFor(() => {
+      interaction = db.prepare("SELECT * FROM acp_interactions WHERE operation_id = ?")
+        .get(operation.id);
+      expect(interaction?.state).toBe("pending");
+    });
+
+    const receipt = manager.respond({
+      operationId: operation.id,
+      interactionId: interaction.id,
+      response: {
+        disposition: "accepted",
+        values: { confirmation: "confirmed" },
+        ignored: "not part of the ACP response",
+      },
+    });
+
+    expect(receipt).toMatchObject({ state: "submitted", disposition: "accept" });
+    expect(getAcpInteractionById(db, interaction.id))
+      .toMatchObject({ state: "submitted", disposition: "accept" });
+    await waitForOperation(manager, operation.id, "succeeded");
+    expect(acpReceived).toEqual({
+      action: "accept",
+      content: { confirmation: "confirmed" },
+    });
   });
 
   it("rejects contradictory form dispositions while accepting equivalent aliases", async () => {
@@ -300,7 +347,7 @@ describe("AcpOperationManager", () => {
 
     await vi.advanceTimersByTimeAsync(0);
     expect(manager.get(operation.id)?.state).toBe("succeeded");
-    expect(deliveredResponses.map(({ values }) => values.answer))
+    expect(deliveredResponses.map(({ content }) => content.answer))
       .toEqual(["concurrent-first", "concurrent-second"]);
   });
 
@@ -401,19 +448,19 @@ describe("AcpOperationManager", () => {
           },
         });
         secondDelivered = await onInteraction({
-          requestId: `followup:${firstDelivered.values.code}:OTP${firstDelivered.values.pin}END:approved=${firstDelivered.values.approved}-ish`,
+          requestId: `followup:${firstDelivered.content.code}:OTP${firstDelivered.content.pin}END:approved=${firstDelivered.content.approved}-ish`,
           kind: "form",
           schema: {
-            title: `Confirm:${firstDelivered.values.code}:OTP${firstDelivered.values.pin}END:approved=${firstDelivered.values.approved}-ish`,
+            title: `Confirm:${firstDelivered.content.code}:OTP${firstDelivered.content.pin}END:approved=${firstDelivered.content.approved}-ish`,
           },
         });
         return {
-          authenticated: firstDelivered.values.approved,
-          status: `used:${firstDelivered.values.code}:OTP${firstDelivered.values.pin}END:approved=${firstDelivered.values.approved}-ish`,
+          authenticated: firstDelivered.content.approved,
+          status: `used:${firstDelivered.content.code}:OTP${firstDelivered.content.pin}END:approved=${firstDelivered.content.approved}-ish`,
           warnings: [
-            firstDelivered.values.code,
-            `OTP${firstDelivered.values.pin}END`,
-            `approved=${firstDelivered.values.approved}-ish`,
+            firstDelivered.content.code,
+            `OTP${firstDelivered.content.pin}END`,
+            `approved=${firstDelivered.content.approved}-ish`,
           ],
         };
       },
@@ -463,12 +510,12 @@ describe("AcpOperationManager", () => {
     });
 
     const completed = await waitForOperation(manager, operation.id, "succeeded");
-    expect(firstDelivered.values).toEqual({
+    expect(firstDelivered.content).toEqual({
       code: privateCode,
       pin: privatePin,
       approved: privateApproval,
     });
-    expect(secondDelivered).toEqual({ disposition: "decline" });
+    expect(secondDelivered).toEqual({ action: "decline" });
     expect(completed.result).toEqual({
       authenticated: "[redacted]",
       status: "used:[redacted]:OTP[redacted]END:approved=[redacted]-ish",
@@ -505,9 +552,9 @@ describe("AcpOperationManager", () => {
           kind: "form",
           schema: { title: "Enter error values" },
         });
-        throw Object.assign(new Error(`failed ${response.values.code} OTP${response.values.pin}END approved=${response.values.approved}-ish`), {
-          code: `runtime_PIN${response.values.pin}END_APPROVED${response.values.approved}ISH`,
-          publicMessage: `failed ${response.values.code} OTP${response.values.pin}END approved=${response.values.approved}-ish`,
+        throw Object.assign(new Error(`failed ${response.content.code} OTP${response.content.pin}END approved=${response.content.approved}-ish`), {
+          code: `runtime_PIN${response.content.pin}END_APPROVED${response.content.approved}ISH`,
+          publicMessage: `failed ${response.content.code} OTP${response.content.pin}END approved=${response.content.approved}-ish`,
         });
       },
     });
@@ -637,6 +684,51 @@ describe("AcpOperationManager", () => {
     });
     await waitForOperation(manager, operation.id, "succeeded");
     expect(delivered).toEqual({ outcome: { outcome: "selected", optionId: "allow-once" } });
+  });
+
+  it("delivers a canonical permission response for a management shortcut", async () => {
+    let acpReceived;
+    const { db, profile, manager } = setup({
+      authenticate: async ({ onInteraction }) => {
+        acpReceived = await onInteraction({
+          requestId: "canonical-permission-shortcut",
+          kind: "permission",
+          schema: {
+            options: [{ optionId: "allow-once", name: "Allow once", kind: "allow_once" }],
+          },
+        });
+        return { authenticated: true };
+      },
+    });
+    const operation = manager.start({
+      profileId: profile.id,
+      kind: "authenticate",
+      authMethodId: "canonical-permission-shortcut",
+    });
+    let interaction;
+    await vi.waitFor(() => {
+      interaction = db.prepare("SELECT * FROM acp_interactions WHERE operation_id = ?")
+        .get(operation.id);
+      expect(interaction?.state).toBe("pending");
+    });
+
+    const receipt = manager.respond({
+      operationId: operation.id,
+      interactionId: interaction.id,
+      response: {
+        disposition: "approved",
+        option_id: "allow-once",
+        ignored: "not part of the ACP response",
+      },
+    });
+
+    expect(receipt).toMatchObject({ state: "submitted", disposition: "allow_once" });
+    expect(getAcpInteractionById(db, interaction.id))
+      .toMatchObject({ state: "submitted", disposition: "allow_once" });
+    await waitForOperation(manager, operation.id, "succeeded");
+    expect(acpReceived).toEqual({
+      outcome: { outcome: "selected", optionId: "allow-once" },
+    });
   });
 
   it("accepts a permission cancellation without inventing an option selection", async () => {

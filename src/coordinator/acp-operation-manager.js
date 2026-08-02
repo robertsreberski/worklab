@@ -229,6 +229,26 @@ function assertOfferedPermissionResponse(row, response, disposition) {
   }
 }
 
+function canonicalInteractionResponse(row, response, disposition) {
+  const source = isPlainObject(response) ? response : {};
+  if (row.kind === "permission") {
+    if (disposition === "cancel") return { outcome: { outcome: "cancelled" } };
+    return {
+      outcome: {
+        outcome: "selected",
+        optionId: permissionOptionId(source),
+      },
+    };
+  }
+  if (disposition === "accept") {
+    const content = Object.hasOwn(source, "content") ? source.content : source.values;
+    return content === undefined
+      ? { action: "accept" }
+      : { action: "accept", content };
+  }
+  return { action: disposition };
+}
+
 export class AcpOperationManager {
   constructor({
     db,
@@ -622,7 +642,8 @@ export class AcpOperationManager {
     }
     const safeDisposition = acpInteractionDisposition(rowToAcpInteraction(row), response, disposition);
     assertOfferedPermissionResponse(row, response, safeDisposition);
-    if (!record.privateResponses.rememberResponse(response)) {
+    const safeResponse = canonicalInteractionResponse(row, response, safeDisposition);
+    if (!record.privateResponses.rememberResponse(safeResponse)) {
       throw managerError("ACP interaction response is too deeply nested or complex", {
         code: "validation",
         status: 400,
@@ -653,7 +674,7 @@ export class AcpOperationManager {
     record.pending.delete(interactionId);
     record.controller.signal.removeEventListener("abort", pending.abort);
     if (resumesOperation) this.#armDeadline(record);
-    pending.resolve(response);
+    pending.resolve(safeResponse);
     const interaction = rowToAcpInteraction(finalized);
     this.broker?.broadcast?.("global", { type: "acp_interaction_submitted", interaction });
     if (resumesOperation) this.#broadcastOperation(operationId, "running");
