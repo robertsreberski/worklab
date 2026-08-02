@@ -36,6 +36,7 @@ describe("coordinator drain — clean drain within timeout", () => {
     const db = makeTestDb();
     const broker = stubBroker();
     const { taskId, runId } = seedTaskAndRun(db);
+    const providerSessionId = "acp:v1:external:ZHJhaW5lZC1zZXNzaW9u";
     const script = {
       events: [
         { type: "started", runId },
@@ -58,7 +59,13 @@ describe("coordinator drain — clean drain within timeout", () => {
           },
         },
       ],
-      drain: { emitDrained: true, emitCancelled: true, exitCode: 0, exitAfterMs: 5 },
+      drain: {
+        emitDrained: true,
+        emitCancelled: true,
+        providerSessionId,
+        exitCode: 0,
+        exitAfterMs: 5,
+      },
       // exitAfterMs gives the events time to flow before the drain message arrives
       exitAfterMs: 1000,
     };
@@ -81,10 +88,14 @@ describe("coordinator drain — clean drain within timeout", () => {
     expect(result.failureKind).toBe("cancelled_shutdown");
     expect(result.diagnostics.drained).toBe(true);
     expect(result.diagnostics.drain_timeout).toBeUndefined();
+    expect(result.providerSessionId).toBe(providerSessionId);
 
-    const row = db.prepare("SELECT failure_kind, cancel_initiator, transcript_tail_json FROM task_runs WHERE id = ?").get(runId);
+    const row = db.prepare(
+      "SELECT failure_kind, cancel_initiator, transcript_tail_json, provider_session_id FROM task_runs WHERE id = ?",
+    ).get(runId);
     expect(row.failure_kind).toBe("cancelled_shutdown");
     expect(row.cancel_initiator).toBe("coordinator_shutdown");
+    expect(row.provider_session_id).toBe(providerSessionId);
     expect(row.transcript_tail_json).toBeTruthy();
     const snapshot = JSON.parse(row.transcript_tail_json);
     expect(snapshot.resume_kind).toBe("drained");

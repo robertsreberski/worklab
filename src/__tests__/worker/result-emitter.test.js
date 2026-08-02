@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { emitFinalResult } from "../../worker/result-emitter.js";
+import { emitCancelledEvent, emitFinalResult } from "../../worker/result-emitter.js";
 
 const PROVIDER_SESSION_ID = "acp:v1:profile-1:opaque-session";
 const RAW_PROTOCOL_RESULT = {
@@ -57,6 +57,27 @@ describe("emitFinalResult", () => {
     expect(emit).toHaveBeenCalledTimes(1);
     const event = emit.mock.calls[0][0];
     expect(event.type).toBe("cancelled");
+    expectSanitizedProviderSession(event);
+  });
+
+  it("preserves provider sessions on coordinator drain cancellation events", () => {
+    const emit = vi.fn();
+
+    emitCancelledEvent(emit, {
+      providerSessionId: PROVIDER_SESSION_ID,
+      protocolResult: RAW_PROTOCOL_RESULT,
+    }, {
+      initiator: "coordinator_shutdown",
+      drained: true,
+    });
+
+    expect(emit).toHaveBeenCalledTimes(1);
+    const event = emit.mock.calls[0][0];
+    expect(event).toMatchObject({
+      type: "cancelled",
+      initiator: "coordinator_shutdown",
+      drained: true,
+    });
     expectSanitizedProviderSession(event);
   });
 

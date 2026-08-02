@@ -14,7 +14,7 @@ import { runAutomation } from "./worker/automation-runner.js";
 import { runTask } from "./worker/task-runner.js";
 import { runReview } from "./worker/review-runner.js";
 import { runLeadCycle } from "./worker/lead-cycle-runner.js";
-import { emitFinalResult } from "./worker/result-emitter.js";
+import { emitCancelledEvent, emitFinalResult } from "./worker/result-emitter.js";
 import { createApprovalChannel } from "./worker/approval-channel.js";
 import { createAcpInteractionChannel } from "./worker/acp-interaction-channel.js";
 
@@ -186,7 +186,10 @@ async function main() {
     if (!result || result.cancelled || result.error) {
       approvalChannel.denyAllPending("coordinator_shutdown");
       acpInteractionChannel.cancelAllPending("coordinator_shutdown");
-      emit({ type: "cancelled", initiator: "coordinator_shutdown", drained: true });
+      emitCancelledEvent(emit, result, {
+        initiator: "coordinator_shutdown",
+        drained: true,
+      });
       process.exit(0);
     }
   }

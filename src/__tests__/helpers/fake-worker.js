@@ -13,6 +13,7 @@ import { writeFileSync } from "node:fs";
 //   "drain": {
 //     "emitDrained": true,         // emit a `drained` event on receipt
 //     "emitCancelled": true,       // emit `{type:"cancelled", drained:true}` after `drained`
+//     "providerSessionId": "...", // optional opaque session id on cancellation
 //     "exitCode": 0,               // exit code on drain
 //     "exitAfterMs": 0             // delay between handling drain and exit
 //   },
@@ -54,7 +55,12 @@ function handleDrainMessage(message) {
   }
   setTimeout(() => {
     if (cfg.emitCancelled !== false) {
-      emit({ type: "cancelled", initiator: "coordinator_shutdown", drained: true });
+      emit({
+        type: "cancelled",
+        initiator: "coordinator_shutdown",
+        drained: true,
+        ...(cfg.providerSessionId ? { provider_session_id: cfg.providerSessionId } : {}),
+      });
     }
     process.exit(cfg.exitCode ?? 0);
   }, Math.max(0, Number(cfg.exitAfterMs) || 0));

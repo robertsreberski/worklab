@@ -44,6 +44,14 @@ function providerSessionPayload(result) {
   return result?.providerSessionId ? { provider_session_id: result.providerSessionId } : {};
 }
 
+export function emitCancelledEvent(emit, result, fields = {}) {
+  emit({
+    type: "cancelled",
+    ...fields,
+    ...providerSessionPayload(result),
+  });
+}
+
 // Fields the agent runtime surfaces on every successful run that we want the
 // coordinator to persist on task_runs (capabilitiesUsed, failoverHistory) or
 // surface in the UI (observerSnapshot is also picked up here so the coordinator
@@ -62,10 +70,7 @@ export function emitFinalResult(ctx, result) {
   const { emit } = ctx;
 
   if (result.cancelled) {
-    emit({
-      type: "cancelled",
-      ...providerSessionPayload(result),
-    });
+    emitCancelledEvent(emit, result);
     return 130;
   }
   emitRuntimeWarnings(emit, result);
