@@ -11,6 +11,7 @@ export function Button({
   iconRight,
   type = "button",
   onClick,
+  buttonRef,
   children,
   class: className = "",
   ...rest
@@ -18,15 +19,20 @@ export function Button({
   const cls = `button ${variant} ${size} ${className}`.trim();
   return (
     <button
+      ref={buttonRef}
       type={type}
       class={cls}
       disabled={disabled || loading}
       aria-disabled={disabled || loading ? "true" : undefined}
+      aria-busy={loading ? "true" : undefined}
       onClick={onClick}
       {...rest}
     >
       {loading ? (
-        <span class="spinner" aria-hidden="true" />
+        <>
+          <span class="spinner" aria-hidden="true" />
+          {children != null && children !== false ? <span class="sr-only">{children}</span> : null}
+        </>
       ) : (
         <>
           {iconLeft}
