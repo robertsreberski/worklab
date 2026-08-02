@@ -584,7 +584,6 @@ const BASE_SECTION_NAMES = [
   "Learned memory",
   "Recent journal",
   "Capabilities",
-  "Native teammate subagents",
   "Workspace",
   "Current Run Guidance",
   "Resume context",
@@ -599,7 +598,6 @@ function buildBaseSections(input) {
     agent, skills, memory, learningMemoryContext, journalTail, currentRunComments,
     allowedTools, disallowedTools, mcpServers, pinnedKb, effectiveWorkdir, qaOutputDir,
     workspaceMode, sourceWorkdir, worktree, worklabToolSurfaceMarkdown, resumeContext,
-    nativeSubagents,
   } = input;
   return [
     ["Role", agent.instructions || ""],
@@ -609,7 +607,6 @@ function buildBaseSections(input) {
     ["Learned memory", learningMemoryContext || ""],
     ["Recent journal", journalTail || ""],
     ["Capabilities", renderCapabilitiesBlock({ allowedTools, disallowedTools, mcpServers, worklabToolSurfaceMarkdown })],
-    ["Native teammate subagents", nativeSubagents?.promptMarkdown || ""],
     ["Workspace", formatWorkspaceGuidance(effectiveWorkdir, qaOutputDir, { workspaceMode, sourceWorkdir, worktree })],
     ["Current Run Guidance", formatCurrentRunGuidance(currentRunComments)],
     ["Resume context", resumeContext || ""],
