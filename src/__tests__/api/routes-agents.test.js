@@ -739,6 +739,47 @@ describe("agents CRUD", () => {
     await agent.get("/api/agents/coder").expect(404);
   });
 
+  it("rejects generic PATCH and DELETE for ACP-bound agents before changing the binding", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "worklab-agent-acp-owned-"));
+    tempDirs.push(cwd);
+    const { agent, db } = makeTestServer();
+    const created = await agent.post("/api/acp/profiles").send({
+      agentName: "external-owned",
+      displayName: "External Owned",
+      description: "Profile-owned description",
+      command: process.execPath,
+      cwd,
+    }).expect(201);
+    const profileId = created.body.profile.id;
+    const profileRoute = `/api/acp/profiles/${profileId}`;
+    const before = db.prepare("SELECT * FROM agents WHERE name = ?").get("external-owned");
+
+    const patched = await agent.patch("/api/agents/external-owned").send({
+      display_name: "Hijacked",
+      description: "Generic route must not write this",
+      enabled: false,
+    }).expect(409);
+    expect(patched.body.error).toMatchObject({
+      code: "acp_profile_managed",
+      profile_id: profileId,
+      profile_route: profileRoute,
+    });
+    expect(patched.body.error.message).toContain(profileRoute);
+    expect(db.prepare("SELECT * FROM agents WHERE name = ?").get("external-owned")).toEqual(before);
+
+    const deleted = await agent.delete("/api/agents/external-owned").expect(409);
+    expect(deleted.body.error).toMatchObject({
+      code: "acp_profile_managed",
+      profile_id: profileId,
+      profile_route: profileRoute,
+    });
+    expect(db.prepare("SELECT * FROM agents WHERE name = ?").get("external-owned")).toEqual(before);
+    expect(db.prepare("SELECT id, agent_name FROM acp_profiles WHERE id = ?").get(profileId)).toEqual({
+      id: profileId,
+      agent_name: "external-owned",
+    });
+  });
+
   it("POST /api/agents/:name/consolidate delegates to consolidation manager", async () => {
     const consolidation = { runNow: vi.fn(() => ({ runId: "run_123" })) };
     const { agent } = makeTestServer({ consolidation });
