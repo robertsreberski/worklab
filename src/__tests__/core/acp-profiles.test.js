@@ -213,6 +213,35 @@ describe("ACP profile persistence", () => {
     });
   });
 
+  it("keeps legacy mono sources visible but rejects their import", () => {
+    const db = makeTestDb();
+    const workspace = tempDir("legacy-mono-workspace");
+    const compatible = monoDescriptor(workspace);
+    const legacy = monoDescriptor(workspace, {
+      bridgeVersion: 0,
+      protocolVersion: 0,
+      installedVersion: "unknown",
+      sourceId: "legacy-agent",
+      label: "Legacy Agent",
+      compatible: false,
+      warnings: ["bridge_metadata_missing_or_invalid"],
+    });
+    const discovery = normalizeMonoDiscovery({
+      schema: "mono-agent.acp-discovery.v1",
+      bridgeVersion: 1,
+      protocolVersion: 1,
+      sources: [legacy, compatible],
+    });
+
+    expect(discovery.sources).toEqual([legacy, compatible]);
+    expect(() => createAcpProfile({
+      db,
+      input: { sourceId: "legacy-agent" },
+      mono: { descriptor: discovery.sources[0], command: process.execPath, args: ["bridge", "acp"] },
+    })).toThrow(/not ACP-compatible/i);
+    expect(db.prepare("SELECT COUNT(*) AS count FROM acp_profiles").get().count).toBe(0);
+  });
+
   it("updates identity and generic policy without breaking the profile binding", () => {
     const db = makeTestDb();
     const cwd = tempDir();

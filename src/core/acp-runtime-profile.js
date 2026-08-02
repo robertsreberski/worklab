@@ -128,6 +128,9 @@ export function createMonoAcpDiscoveryControls({
     const descriptor = discovery.sources.find((source) => source.sourceId === sourceId);
     if (!descriptor) throw runtimeProfileError("source_not_found", "mono-agent source was not found");
     if (!descriptor.compatible) throw runtimeProfileError("source_incompatible", "mono-agent source is not compatible");
+    if (descriptor.health !== "running") {
+      throw runtimeProfileError("source_not_running", "mono-agent source is not running");
+    }
     return {
       descriptor,
       command: executable(),

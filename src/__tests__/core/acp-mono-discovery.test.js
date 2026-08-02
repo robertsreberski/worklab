@@ -89,6 +89,31 @@ describe("discoverMonoAcpAgents", () => {
     expect(execFileImpl.mock.calls[0][2].env).toEqual({ PATH: "/custom" });
   });
 
+  it("preserves sanitized legacy sources without failing the compatible catalog", async () => {
+    const input = descriptor();
+    input.sources.unshift({
+      ...input.sources[0],
+      bridgeVersion: 0,
+      protocolVersion: 0,
+      installedVersion: "unknown",
+      sourceId: "legacy",
+      label: "Legacy Agent",
+      compatible: false,
+      warnings: ["bridge_metadata_missing_or_invalid"],
+    });
+    const result = await discoverMonoAcpAgents({ execFileImpl: fakeExec(input) });
+
+    expect(result.sources).toHaveLength(2);
+    expect(result.sources[0]).toMatchObject({
+      sourceId: "legacy",
+      bridgeVersion: 0,
+      protocolVersion: 0,
+      compatible: false,
+      warnings: ["bridge_metadata_missing_or_invalid"],
+    });
+    expect(result.sources[1]).toMatchObject({ sourceId: "personal", compatible: true });
+  });
+
   it("passes cancellation to the child process and rejects promptly", async () => {
     let childOptions;
     const execFileImpl = vi.fn((_command, _args, options) => {

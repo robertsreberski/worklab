@@ -136,6 +136,7 @@ describe("Worklab ACP runtime profiles", () => {
     const descriptor = {
       sourceId: "personal",
       compatible: true,
+      health: "running",
       workspace: { path: "/tmp", owner: "agent" },
     };
     const discover = vi.fn().mockResolvedValue({ sources: [descriptor] });
@@ -167,5 +168,11 @@ describe("Worklab ACP runtime profiles", () => {
       command: resolveExecutable(process.execPath),
       env: { HOME: "/tmp/home", PATH: process.env.PATH, TMPDIR: "/tmp/acp" },
     });
+
+    discover.mockResolvedValueOnce({
+      sources: [{ ...descriptor, health: "stale" }],
+    });
+    await expect(controls.resolveMonoSource({ sourceId: "personal" }))
+      .rejects.toMatchObject({ code: "source_not_running" });
   });
 });

@@ -69,6 +69,13 @@ function exactVersion(value, expected, field) {
   return value;
 }
 
+function advertisedVersion(value, field) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new MonoAcpDiscoveryError("invalid_discovery", `mono-agent returned an invalid ${field}`);
+  }
+  return value;
+}
+
 function sanitizeSource(source) {
   if (!source || typeof source !== "object" || source.schema !== MONO_ACP_SOURCE_SCHEMA) {
     throw new MonoAcpDiscoveryError("invalid_discovery", "mono-agent returned an invalid ACP source descriptor");
@@ -97,15 +104,19 @@ function sanitizeSource(source) {
   const warnings = Array.isArray(source.warnings)
     ? source.warnings.slice(0, 32).map((warning) => cleanText(warning, { max: 1024 })).filter(Boolean)
     : [];
+  const bridgeVersion = advertisedVersion(source.bridgeVersion, "bridge version");
+  const protocolVersion = advertisedVersion(source.protocolVersion, "protocol version");
   return {
     schema: MONO_ACP_SOURCE_SCHEMA,
-    bridgeVersion: exactVersion(source.bridgeVersion, MONO_ACP_BRIDGE_VERSION, "bridge version"),
-    protocolVersion: exactVersion(source.protocolVersion, ACP_PROTOCOL_VERSION, "protocol version"),
+    bridgeVersion,
+    protocolVersion,
     installedVersion: cleanText(source.installedVersion, { required: true, max: 128 }),
     sourceId: cleanText(source.sourceId, { required: true, max: 1024 }),
     label: cleanText(source.label, { required: true, max: 1024 }),
     health,
-    compatible: source.compatible === true,
+    compatible: source.compatible === true
+      && bridgeVersion === MONO_ACP_BRIDGE_VERSION
+      && protocolVersion === ACP_PROTOCOL_VERSION,
     workspace: { path: resolve(workspacePath), owner: "agent" },
     ownership: { configuration: "agent", workspace: "agent", mcp: "agent" },
     constraints: {

@@ -269,17 +269,15 @@ function normalizeAgentIdentity(input, defaults = {}) {
   return { agentName, displayName, description, enabled: enabledValue };
 }
 
-export function normalizeMonoSourceDescriptor(value) {
+function normalizeMonoDiscoverySource(value) {
   if (!isPlainObject(value) || value.schema !== ACP_SOURCE_SCHEMA) {
     throw acpError(`mono source must use schema ${ACP_SOURCE_SCHEMA}`);
   }
   const bridgeVersion = Number(value.bridgeVersion);
   const protocolVersion = Number(value.protocolVersion);
-  if (bridgeVersion !== ACP_BRIDGE_VERSION || protocolVersion !== ACP_PROTOCOL_VERSION) {
-    throw acpError("mono source uses an incompatible ACP bridge version", { code: "incompatible_source" });
-  }
-  if (value.compatible !== true) {
-    throw acpError("mono source is not ACP-compatible", { code: "incompatible_source" });
+  if (!Number.isSafeInteger(bridgeVersion) || bridgeVersion < 0
+    || !Number.isSafeInteger(protocolVersion) || protocolVersion < 0) {
+    throw acpError("mono source versions are invalid", { code: "invalid_discovery" });
   }
   const sourceId = boundedString(value.sourceId, "mono sourceId", { required: true, max: 200 });
   const label = boundedString(value.label, "mono label", { required: true, max: 200 });
@@ -329,7 +327,9 @@ export function normalizeMonoSourceDescriptor(value) {
     sourceId,
     label,
     health,
-    compatible: true,
+    compatible: value.compatible === true
+      && bridgeVersion === ACP_BRIDGE_VERSION
+      && protocolVersion === ACP_PROTOCOL_VERSION,
     workspace: { path: workspacePath, owner: "agent" },
     ownership: { configuration: "agent", workspace: "agent", mcp: "agent" },
     constraints: {
@@ -344,6 +344,14 @@ export function normalizeMonoSourceDescriptor(value) {
   };
   if (Buffer.byteLength(JSON.stringify(descriptor), "utf8") > MAX_DESCRIPTOR_BYTES) {
     throw acpError("mono source descriptor is too large");
+  }
+  return descriptor;
+}
+
+export function normalizeMonoSourceDescriptor(value) {
+  const descriptor = normalizeMonoDiscoverySource(value);
+  if (!descriptor.compatible) {
+    throw acpError("mono source is not ACP-compatible", { code: "incompatible_source" });
   }
   return descriptor;
 }
@@ -363,7 +371,10 @@ export function normalizeMonoDiscovery(value) {
     schema: ACP_DISCOVERY_SCHEMA,
     bridgeVersion: ACP_BRIDGE_VERSION,
     protocolVersion: ACP_PROTOCOL_VERSION,
-    sources: value.sources.map(normalizeMonoSourceDescriptor),
+    // A current discovery client can see older running services. Preserve
+    // those sanitized rows so the UI can explain that an upgrade/restart is
+    // required, while normalizeMonoSourceDescriptor still rejects import.
+    sources: value.sources.map(normalizeMonoDiscoverySource),
   };
 }
 
