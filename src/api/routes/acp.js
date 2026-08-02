@@ -121,8 +121,28 @@ async function invokeExternalControl({
 
 async function invokeWatcherInteraction(callback, failureMessage) {
   try {
-    return await callback();
-  } catch {
+    const result = await callback();
+    if (result?.ok !== false) return result;
+    const conflictCodes = new Set([
+      "no_pending_interaction",
+      "delivery_in_progress",
+      "run_not_active",
+    ]);
+    const validationCodes = new Set(["invalid_response", "invalid_decision"]);
+    const status = conflictCodes.has(result.code) ? 409 : validationCodes.has(result.code) ? 400 : 503;
+    throw routeError(
+      status === 409
+        ? "ACP interaction is no longer available"
+        : status === 400
+          ? "ACP interaction response is invalid"
+          : failureMessage,
+      {
+        code: result.code || "interaction_delivery_failed",
+        status,
+      },
+    );
+  } catch (error) {
+    if (error?.safeMessage) throw error;
     throw routeError(failureMessage, {
       code: "interaction_delivery_failed",
       status: 502,
@@ -303,6 +323,33 @@ export function registerAcpRoutes(app, {
   app.get("/api/acp/operations/:id", (req, res) => {
     try {
       res.json({ operation: operationOr404(db, req.params.id) });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  app.post("/api/acp/operations/:id/cancel", (req, res) => {
+    try {
+      const operation = operationOr404(db, req.params.id);
+      if (Object.keys(req.body || {}).length > 0) {
+        throw routeError("operation cancellation does not accept a request body");
+      }
+      if (typeof acpOperationManager?.abort !== "function") {
+        throw routeError("ACP operation manager is not configured", {
+          code: "not_configured",
+          status: 501,
+        });
+      }
+      if (!acpOperationManager.abort(operation.id)) {
+        throw routeError("ACP operation is not active", {
+          code: "not_active",
+          status: 409,
+        });
+      }
+      res.status(202).json({
+        operation: rowToAcpOperation(getAcpOperationById(db, operation.id)) || operation,
+        cancellationRequested: true,
+      });
     } catch (error) {
       sendError(res, error);
     }

@@ -367,6 +367,35 @@ describe("ACP API", () => {
     })).not.toMatch(/actual-form-secret|schema-secret/u);
   });
 
+  it("cancels only active management operations", async () => {
+    const cwd = workspace();
+    const probe = vi.fn(({ signal }) => new Promise((resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    }));
+    const { agent, acpOperationManager } = makeTestServer({ acpControls: { probe } });
+    const profile = (await createGeneric(agent, cwd)).body.profile;
+    const operation = (await agent.post(`/api/acp/profiles/${profile.id}/probe`)
+      .expect(202)).body.operation;
+
+    const cancelled = await agent.post(`/api/acp/operations/${operation.id}/cancel`)
+      .send({})
+      .expect(202);
+    expect(cancelled.body).toMatchObject({ cancellationRequested: true });
+    await vi.waitFor(() => {
+      expect(acpOperationManager.get(operation.id)?.state).toBe("cancelled");
+    });
+    await agent.post(`/api/acp/operations/${operation.id}/cancel`)
+      .send({})
+      .expect(409, {
+        error: { code: "not_active", message: "ACP operation is not active" },
+      });
+    await agent.post("/api/acp/operations/acpo_missing/cancel")
+      .send({})
+      .expect(404, {
+        error: { code: "not_found", message: "ACP operation not found" },
+      });
+  });
+
   it("requires exactly one bounded authMethodId for authentication", async () => {
     const cwd = workspace();
     const authenticate = vi.fn(async () => ({ authenticated: true }));
@@ -478,6 +507,77 @@ describe("ACP API", () => {
     });
     expect(JSON.stringify(response.body)).not.toMatch(/watcher-error-secret|request-form-secret/u);
     expect(server.db.prepare("SELECT state FROM acp_interactions WHERE id = ?").get(interactionId).state)
+      .toBe("pending");
+  });
+
+  it("honors a failed watcher delivery result and leaves the interaction retryable", async () => {
+    const cwd = workspace();
+    const server = makeTestServer({
+      watcher: {
+        handleRunRequested: async () => ({ runId: "fake-run" }),
+        sendRunAcpInteractionResponse: async () => ({
+          ok: false,
+          code: "delivery_failed",
+          message: "stdin failed with dispatcher-secret",
+        }),
+        sendRunAcpInteractionCancel: async () => ({
+          ok: false,
+          code: "delivery_failed",
+          message: "stdin cancel failed with dispatcher-secret",
+        }),
+      },
+    });
+    const profile = (await createGeneric(server.agent, cwd)).body.profile;
+    server.db.prepare(`
+      INSERT INTO task_runs (id, mode, stage, agent_name, status, process_status, started_at)
+      VALUES ('run-acp-result-error', 'execute', 'execute', ?, 'running', 'running', ?)
+    `).run(profile.agentName, Date.now());
+    const interactionId = newAcpInteractionId();
+    insertAcpInteractionRequest(server.db, {
+      id: interactionId,
+      profileId: profile.id,
+      taskRunId: "run-acp-result-error",
+      protocolRequestId: "task-form-result-error",
+      kind: "form",
+      requestSchemaJson: "{}",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    const response = await server.agent.post(`/api/acp/interactions/${interactionId}/respond`).send({
+      disposition: "accept",
+      values: { password: "request-dispatcher-secret" },
+    }).expect(503);
+    expect(response.body).toEqual({
+      error: {
+        code: "delivery_failed",
+        message: "task-run ACP interaction response failed",
+      },
+    });
+    expect(JSON.stringify(response.body)).not.toMatch(/dispatcher-secret|request-dispatcher-secret/u);
+    expect(server.db.prepare("SELECT state FROM acp_interactions WHERE id = ?").get(interactionId).state)
+      .toBe("pending");
+
+    const cancelId = newAcpInteractionId();
+    insertAcpInteractionRequest(server.db, {
+      id: cancelId,
+      profileId: profile.id,
+      taskRunId: "run-acp-result-error",
+      protocolRequestId: "task-form-cancel-error",
+      kind: "form",
+      requestSchemaJson: "{}",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    await server.agent.post(`/api/acp/interactions/${cancelId}/cancel`)
+      .send({})
+      .expect(503, {
+        error: {
+          code: "delivery_failed",
+          message: "task-run ACP interaction cancellation failed",
+        },
+      });
+    expect(server.db.prepare("SELECT state FROM acp_interactions WHERE id = ?").get(cancelId).state)
       .toBe("pending");
   });
 
