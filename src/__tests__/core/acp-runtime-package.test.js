@@ -95,6 +95,13 @@ function readFixtureLog(logFile) {
     .map((line) => JSON.parse(line));
 }
 
+function tamperSealedHandle(providerSessionId) {
+  const payloadStart = providerSessionId.lastIndexOf(":") + 1;
+  const mutationIndex = payloadStart + Math.floor((providerSessionId.length - payloadStart) / 2);
+  const replacement = providerSessionId[mutationIndex] === "A" ? "B" : "A";
+  return `${providerSessionId.slice(0, mutationIndex)}${replacement}${providerSessionId.slice(mutationIndex + 1)}`;
+}
+
 describe("installed @mono-agent/agent-runtime ACP contract", () => {
   it("exports the high-level ACP control facade Worklab consumes", () => {
     for (const name of REQUIRED_ACP_CONTROLS) {
@@ -133,6 +140,9 @@ describe("installed @mono-agent/agent-runtime ACP contract", () => {
       PROFILE_ID,
       SESSION_TOKEN_KEY,
     )).toBe(first.providerSessionId);
+    const tamperedHandle = tamperSealedHandle(first.providerSessionId);
+    expect(tamperedHandle).toMatch(/^acp:v2:installed-package:[A-Za-z0-9_-]+$/);
+    expect(tamperedHandle).not.toBe(first.providerSessionId);
 
     const resumeLog = join(root, "resume.ndjson");
     const resumed = await agentRuntime.createRuntime({
@@ -162,6 +172,7 @@ describe("installed @mono-agent/agent-runtime ACP contract", () => {
     const legacyHandle = `acp:v1:${PROFILE_ID}:${Buffer.from(RAW_SESSION_ID).toString("base64url")}`;
     for (const [providerSessionId, acpSessionTokenKey] of [
       [first.providerSessionId, OTHER_SESSION_TOKEN_KEY],
+      [tamperedHandle, SESSION_TOKEN_KEY],
       [legacyHandle, SESSION_TOKEN_KEY],
     ]) {
       const rejected = await agentRuntime.createRuntime({
