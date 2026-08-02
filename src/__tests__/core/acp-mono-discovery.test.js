@@ -141,6 +141,24 @@ describe("discoverMonoAcpAgents", () => {
       .rejects.toMatchObject({ code: "incompatible_discovery" });
   });
 
+  it.each([
+    ["workspace owner", (source) => { source.workspace.owner = "client"; }],
+    ["missing workspace owner", (source) => { delete source.workspace.owner; }],
+    ["configuration owner", (source) => { source.ownership.configuration = "client"; }],
+    ["workspace policy owner", (source) => { source.ownership.workspace = "client"; }],
+    ["MCP owner", (source) => { source.ownership.mcp = "client"; }],
+    ["missing ownership", (source) => { delete source.ownership; }],
+  ])("rejects rather than rewriting an untrusted %s", async (_label, mutate) => {
+    const input = descriptor();
+    mutate(input.sources[0]);
+
+    await expect(discoverMonoAcpAgents({ execFileImpl: fakeExec(input) }))
+      .rejects.toMatchObject({
+        code: "incompatible_discovery",
+        message: "mono-agent ACP source must retain agent ownership",
+      });
+  });
+
   it("rejects non-JSON and keeps process stderr out of public errors", async () => {
     const notJson = vi.fn((_command, _args, _options, callback) => callback(null, "hello", ""));
     await expect(discoverMonoAcpAgents({ execFileImpl: notJson })).rejects.toBeInstanceOf(MonoAcpDiscoveryError);

@@ -84,6 +84,15 @@ function sanitizeSource(source) {
   if (!isAbsolute(workspacePath)) {
     throw new MonoAcpDiscoveryError("invalid_discovery", "mono-agent ACP source workspace must be absolute");
   }
+  if (source.workspace?.owner !== "agent"
+    || source.ownership?.configuration !== "agent"
+    || source.ownership?.workspace !== "agent"
+    || source.ownership?.mcp !== "agent") {
+    throw new MonoAcpDiscoveryError(
+      "incompatible_discovery",
+      "mono-agent ACP source must retain agent ownership",
+    );
+  }
   const health = VALID_HEALTH.has(source.health) ? source.health : "failed";
   const promptContent = Array.isArray(source.constraints?.promptContent)
     ? [...new Set(source.constraints.promptContent.filter((entry) => VALID_PROMPT_CONTENT.has(entry)))]
