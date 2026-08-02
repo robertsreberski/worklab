@@ -197,6 +197,27 @@ describe("openDb + runMigrations", () => {
       SELECT sql FROM sqlite_master
       WHERE type = 'index' AND name = 'idx_acp_operations_one_active_profile'
     `).get()?.sql).toContain("CREATE UNIQUE INDEX");
+    insertOperation.run(
+      "00000000-0000-4000-8000-000000000014",
+      "00000000-0000-4000-8000-000000000011",
+      "queued",
+      now + 1,
+      now + 1,
+    );
+    expect(() => insertOperation.run(
+      "00000000-0000-4000-8000-000000000015",
+      "00000000-0000-4000-8000-000000000011",
+      "running",
+      now + 2,
+      now + 2,
+    )).toThrowError(/acp_operations\.profile_id/u);
+    expect(() => insertOperation.run(
+      "00000000-0000-4000-8000-000000000016",
+      "00000000-0000-4000-8000-000000000011",
+      "succeeded",
+      now + 3,
+      now + 3,
+    )).not.toThrow();
     expect(db.prepare("SELECT value FROM schema_meta WHERE key = 'version'").get()?.value)
       .toBe(String(SCHEMA_VERSION));
   });

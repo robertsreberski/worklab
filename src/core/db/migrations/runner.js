@@ -66,25 +66,32 @@ function reconcileAcpOperationsBeforeActiveProfileIndex(db) {
     code: "coordinator_restarted",
     message: "Worklab restarted before the ACP operation completed.",
   });
-  db.transaction(() => {
+  const reconcile = db.transaction(() => {
     const terminalized = db.prepare(`
       UPDATE acp_operations
       SET state = 'failed', error_json = ?, updated_at = ?, completed_at = ?
       WHERE state IN ('queued', 'running', 'waiting_for_interaction')
     `).run(errorJson, completedAt, completedAt);
-    if (terminalized.changes === 0 || !tableExists(db, "acp_interactions")) return;
-    db.prepare(`
-      UPDATE acp_interactions
-      SET state = 'expired', disposition = 'operation_ended',
-          updated_at = ?, resolved_at = ?
-      WHERE resolved_at IS NULL
-        AND state IN ('pending', 'submitted')
-        AND operation_id IN (
-          SELECT id FROM acp_operations
-          WHERE state = 'failed' AND error_json = ? AND completed_at = ?
-        )
-    `).run(completedAt, completedAt, errorJson, completedAt);
-  })();
+    if (terminalized.changes > 0 && tableExists(db, "acp_interactions")) {
+      db.prepare(`
+        UPDATE acp_interactions
+        SET state = 'expired', disposition = 'operation_ended',
+            updated_at = ?, resolved_at = ?
+        WHERE resolved_at IS NULL
+          AND state IN ('pending', 'submitted')
+          AND operation_id IN (
+            SELECT id FROM acp_operations
+            WHERE state = 'failed' AND error_json = ? AND completed_at = ?
+          )
+      `).run(completedAt, completedAt, errorJson, completedAt);
+    }
+    db.exec(`
+      CREATE UNIQUE INDEX idx_acp_operations_one_active_profile
+      ON acp_operations(profile_id)
+      WHERE state IN ('queued', 'running', 'waiting_for_interaction')
+    `);
+  });
+  reconcile.immediate();
 }
 
 function assertSupportedSchemaVersion(db) {
