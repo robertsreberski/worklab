@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
 import { appendFileSync } from "node:fs";
 import { newAgentLogId } from "../core/ids.js";
 // Compat for the legacy task_runs.status column (kept alongside process_status
@@ -37,7 +36,6 @@ import {
 } from "../core/db/queries/runs.js";
 import {
   expirePendingApprovalsForRun,
-  insertApprovalRequest,
   recordApprovalDecision,
 } from "../core/db/queries/task-run-approvals.js";
 import { buildTranscriptTailSnapshot } from "@mono-agent/agent-runtime/agent/transcript.js";
@@ -57,10 +55,8 @@ import {
   createTaskRunAcpUrlHandoffReceiver,
   createTaskRunAcpEventBoundary,
   expireAcpInteractionsForRun,
-  persistAcpInteractionRequest,
-  sanitizeTaskRunAcpInteractionEvent,
-  taskRunEventNeedsUrlHandoff,
 } from "./spawn-worker/acp-interactions.js";
+import { createAcpAwareStdoutPipeline } from "./spawn-worker/stdout-pipeline.js";
 
 const FINALISATION_COMPLETION_TOOL_NAMES = new Set(["journal_summary", "worktree_sync", "todo_write"]);
 
@@ -168,6 +164,20 @@ export function spawnWorker({
   let timedOut = false;
   let finalisationIdleFailed = false;
   let finalisationIdleLastTool = null;
+  const stdoutState = {
+    get promptDiagnostics() { return promptDiagnostics; }, set promptDiagnostics(value) { promptDiagnostics = value; },
+    get finalPayload() { return finalPayload; }, set finalPayload(value) { finalPayload = value; },
+    get structuredOutputResult() { return structuredOutputResult; }, set structuredOutputResult(value) { structuredOutputResult = value; },
+    get errorMessage() { return errorMessage; }, set errorMessage(value) { errorMessage = value; },
+    get resultError() { return resultError; }, set resultError(value) { resultError = value; },
+    get terminalProviderSessionId() { return terminalProviderSessionId; }, set terminalProviderSessionId(value) { terminalProviderSessionId = value; },
+    get explicitFailureKind() { return explicitFailureKind; }, set explicitFailureKind(value) { explicitFailureKind = value; },
+    get errorDetails() { return errorDetails; }, set errorDetails(value) { errorDetails = value; },
+    get workerCancelSignal() { return workerCancelSignal; }, set workerCancelSignal(value) { workerCancelSignal = value; },
+    get cancelInitiator() { return cancelInitiator; }, set cancelInitiator(value) { cancelInitiator = value; },
+    get cancelReason() { return cancelReason; }, set cancelReason(value) { cancelReason = value; },
+    get drainAcknowledged() { return drainAcknowledged; }, set drainAcknowledged(value) { drainAcknowledged = value; },
+  };
   const logId = newAgentLogId();
   let rawLogPath = null;
   const toolUseNames = new Map();
@@ -191,14 +201,20 @@ export function spawnWorker({
   const acpEventBoundary = createTaskRunAcpEventBoundary({
     profileId: env.WORKLAB_ACP_PROFILE_ID || null,
   });
-  let acpInteractionControls = null;
+  const acpInteractionControls = createAcpInteractionControls({
+    db,
+    runId,
+    writeControlMessage,
+    emitEvent,
+    urlHandoffStore: acpUrlHandoffStore,
+  });
   const acpUrlHandoffReceiver = createTaskRunAcpUrlHandoffReceiver({
     stream: child.stdio[3],
     store: acpUrlHandoffStore,
     runId,
     profileId: env.WORKLAB_ACP_PROFILE_ID || null,
     onInvalid: (reason) => logger?.warn?.({ runId, reason }, "ACP private URL handoff channel rejected"),
-    onRetained: (handoff) => acpInteractionControls?.registerUrlHandoff?.(handoff) === true,
+    onRetained: (handoff) => acpInteractionControls.registerUrlHandoff(handoff) === true,
   });
   // Trailing-edge debounce window for the in-flight events JSON. Long-running
   // agents emit hundreds of events; rewriting the whole JSON each line is
@@ -630,156 +646,21 @@ export function spawnWorker({
   }
   resetIdleTimer();
 
-  const expectedAcpProfileId = env.WORKLAB_ACP_PROFILE_ID || null;
-  let stdoutProcessing = Promise.resolve();
-  const rl = createInterface({ input: child.stdout });
-  rl.on("line", (line) => {
-    if (!line.trim()) return;
-    let parsed;
-    try {
-      parsed = JSON.parse(line);
-    } catch (err) {
-      logger?.warn?.({
-        ...(env.WORKLAB_ACP_PROFILE_ID ? { line_length: line.length } : { line }),
-        err: err.message,
-      }, "worker emitted malformed stdout");
-      return;
-    }
-    const processParsed = () => {
-      const isUrlInteraction = taskRunEventNeedsUrlHandoff(parsed);
-      if (parsed.type === "acp_interaction_requested"
-        && expectedAcpProfileId
-        && parsed.profile_id !== expectedAcpProfileId) {
-        acpUrlHandoffStore?.remove?.(String(parsed.interaction_id || ""), {
-          ownerKind: "run",
-          ownerId: runId,
-          profileId: expectedAcpProfileId,
-        });
-        logger?.warn?.({ runId, reason: "profile_mismatch" }, "ACP interaction request rejected");
-        writeControlMessage({
-          type: "acp_interaction_cancel",
-          interaction_id: String(parsed.interaction_id || ""),
-        }).catch(() => {});
-        return;
-      }
-      const urlPublicRequest = isUrlInteraction
-        ? acpInteractionControls.publicUrlRequest(parsed.interaction_id)
-        : null;
-      if (isUrlInteraction && !urlPublicRequest) {
-        logger?.warn?.({ runId, reason: "url_privacy_unavailable" }, "ACP interaction request rejected");
-        writeControlMessage({
-          type: "acp_interaction_cancel",
-          interaction_id: String(parsed.interaction_id || ""),
-        }).catch(() => {});
-        return;
-      }
-      const safeParsed = acpInteractionControls.redactWorkerEvent(
-        sanitizeTaskRunAcpInteractionEvent(acpEventBoundary.sanitizeWorkerEvent(parsed), {
-          urlPublicRequest,
-        }),
-      );
-      if (safeParsed.type === "acp_interaction_requested" && safeParsed.interaction_id) {
-        try {
-          // Make the pending row visible before the SSE notification. The raw
-          // URL is already isolated on fd3 and is never present in safeParsed.
-          persistAcpInteractionRequest(db, runId, safeParsed, {
-            profileId: expectedAcpProfileId,
-          });
-        } catch (err) {
-          logger?.warn?.({ err: err.message, runId }, "failed to persist ACP interaction request");
-          writeControlMessage({
-            type: "acp_interaction_cancel",
-            interaction_id: String(safeParsed.interaction_id),
-          }).catch(() => {});
-          return;
-        }
-      }
-      const { rawEvent } = emitEvent(safeParsed);
-      mergeWorkerDiagnostics(rawEvent.diagnostics);
-      if (["final", "error", "cancelled", "worklab_result_error"].includes(rawEvent.type)) {
-        const providerSessionId = acpEventBoundary.validateProviderSessionId(
-          rawEvent.provider_session_id || rawEvent.providerSessionId,
-        );
-        if (providerSessionId) {
-          terminalProviderSessionId = providerSessionId;
-        }
-      }
-      const recoveredStructuredResult = worklabResultFromStructuredOutputEvent(rawEvent);
-      if (recoveredStructuredResult) structuredOutputResult = recoveredStructuredResult;
-      if (rawEvent.type === "final") finalPayload = rawEvent;
-      if (rawEvent.type === "error") {
-        errorMessage = rawEvent.message;
-        explicitFailureKind = rawEvent.failureKind || rawEvent.failure_kind || explicitFailureKind;
-        if (rawEvent.details) errorDetails = rawEvent.details;
-      }
-      if (rawEvent.type === "cancelled") {
-        cancelInitiator = cancelInitiator || rawEvent.initiator || rawEvent.cancel_initiator || null;
-        cancelReason = cancelReason || rawEvent.reason || rawEvent.cancel_reason || null;
-        workerCancelSignal = workerCancelSignal || rawEvent.signal || null;
-        if (rawEvent.drained === true) drainAcknowledged = true;
-      }
-      if (rawEvent.type === "drained") {
-        drainAcknowledged = true;
-      }
-      if (rawEvent.type === "worklab_result_error") {
-        resultError = rawEvent.message || "invalid worklab_result";
-        explicitFailureKind = "invalid_result";
-      }
-      if (rawEvent.type === "approval_requested" && rawEvent.request_id) {
-        try {
-          insertApprovalRequest(db, {
-            taskRunId: runId,
-            requestId: String(rawEvent.request_id),
-            toolName: rawEvent.tool_name || rawEvent.toolName || "",
-            toolUseId: rawEvent.tool_use_id || rawEvent.toolUseId || null,
-            argumentsSummary: rawEvent.arguments_summary || rawEvent.argumentsSummary || "",
-            riskTier: rawEvent.risk_tier || rawEvent.riskTier || "medium",
-            model: rawEvent.model || null,
-          });
-          broker.broadcast(runId, {
-            type: "approval_requested",
-            request_id: String(rawEvent.request_id),
-            tool_name: rawEvent.tool_name || rawEvent.toolName || "",
-            risk_tier: rawEvent.risk_tier || rawEvent.riskTier || "medium",
-          });
-        } catch (err) {
-          logger?.warn?.({ err: err.message, runId }, "failed to persist approval request");
-        }
-      }
-      if (rawEvent.type === "acp_interaction_acknowledged" && rawEvent.interaction_id) {
-        try {
-          acpInteractionControls.handleWorkerEvent(rawEvent);
-        } catch (err) {
-          logger?.warn?.({ err: err.message, runId }, "failed to apply ACP interaction acknowledgement");
-        }
-      }
-      if (rawEvent.type === "prompt_built" && rawEvent.diagnostics) {
-        promptDiagnostics = { ...(promptDiagnostics || {}), ...rawEvent.diagnostics };
-      }
-    };
-    stdoutProcessing = stdoutProcessing.then(async () => {
-      if (taskRunEventNeedsUrlHandoff(parsed)) {
-        const ready = await acpUrlHandoffReceiver.waitFor(parsed.interaction_id);
-        if (ready) {
-          processParsed();
-          return;
-        }
-        emitEvent({
-          type: "runtime_warning",
-          warning_kind: "acp_url_handoff_unavailable",
-          message: "ACP URL interaction was cancelled because its private handoff was unavailable.",
-          ts: Date.now(),
-        });
-        writeControlMessage({
-          type: "acp_interaction_cancel",
-          interaction_id: String(parsed.interaction_id || ""),
-        }).catch(() => {});
-        return;
-      }
-      processParsed();
-    }).catch(() => {
-      logger?.warn?.({ runId, reason: "stdout_processing_failed" }, "ACP worker event rejected");
-    });
+  const stdoutPipeline = createAcpAwareStdoutPipeline({
+    stream: child.stdout,
+    acpProfileId: env.WORKLAB_ACP_PROFILE_ID || null,
+    runId,
+    db,
+    broker,
+    logger,
+    acpUrlHandoffStore,
+    acpUrlHandoffReceiver,
+    acpInteractionControls,
+    acpEventBoundary,
+    emitEvent,
+    mergeWorkerDiagnostics,
+    writeControlMessage,
+    state: stdoutState,
   });
 
   child.stderr.on("data", (chunk) => {
@@ -878,14 +759,6 @@ export function spawnWorker({
     return { ok: true, row };
   }
 
-  acpInteractionControls = createAcpInteractionControls({
-    db,
-    runId,
-    writeControlMessage,
-    emitEvent,
-    urlHandoffStore: acpUrlHandoffStore,
-  });
-
   async function sendLiveMessage(message) {
     const normalized = normalizeLiveInputBody(message?.body);
     if (!normalized.ok) return { ok: false, code: normalized.code, message: normalized.error };
@@ -920,7 +793,7 @@ export function spawnWorker({
     function finalize(code, signal = null) {
       if (finalized || finalizationQueued) return;
       finalizationQueued = true;
-      void stdoutProcessing.then(() => finalizeAfterStdout(code, signal));
+      void stdoutPipeline.whenIdle().then(() => finalizeAfterStdout(code, signal));
     }
 
     function finalizeAfterStdout(code, signal = null) {
@@ -1294,28 +1167,6 @@ export function spawnWorker({
     get drainAcknowledged() { return drainAcknowledged; },
     get drainTimedOut() { return drainTimedOut; },
   };
-}
-
-function isPlainObject(value) {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function isWorklabResult(value) {
-  return isPlainObject(value)
-    && value.schema === "worklab.v2"
-    && typeof value.decision === "string";
-}
-
-function worklabResultFromStructuredOutputEvent(rawEvent) {
-  const event = rawEvent?.type === "sdk_event" && rawEvent.event ? rawEvent.event : rawEvent;
-  if (event?.type !== "structured_output") return null;
-  const candidates = [
-    event.worklab_result,
-    event.value,
-    event.value?.worklab_result,
-    rawEvent?.worklab_result,
-  ];
-  return candidates.find(isWorklabResult) || null;
 }
 
 function finalTextFromWorklabResult(result) {
