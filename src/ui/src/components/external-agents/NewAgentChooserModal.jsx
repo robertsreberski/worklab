@@ -26,13 +26,12 @@ export function NewAgentChooserModal({ open, onClose, onChoose }) {
   return (
     <Modal open={open} onClose={onClose} title="Create an agent" size="lg" class="agent-create-chooser-modal">
       <p class="soft-meta">Choose where the agent runs. Every choice becomes one assignable Agent resource in Worklab.</p>
-      <div class="agent-create-choices" role="list">
+      <div class="agent-create-choices">
         {CHOICES.map((choice) => (
           <button
             key={choice.mode}
             type="button"
             class="agent-create-choice"
-            role="listitem"
             onClick={() => onChoose?.(choice.mode)}
           >
             <span class="agent-create-choice-icon" aria-hidden="true"><Icon name={choice.icon} size={18} /></span>
