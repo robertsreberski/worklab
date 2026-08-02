@@ -74,6 +74,23 @@ describe("admin MCP tools", () => {
     await expect(apiRequest({ baseUrl: "http://127.0.0.1:1" }, "GET", "/mcp")).rejects.toThrow(/\/api/);
   });
 
+  it("authenticates internal API mutations with the configured service token", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    const handlers = createAdminToolHandlers({
+      baseUrl: "http://localhost:7878",
+      token: "test-service-token",
+      fetchImpl,
+    });
+
+    await handlers.worklab_task_create({ title: "Authenticated internal request" });
+
+    const [, init] = fetchImpl.mock.calls[0];
+    expect(new Headers(init.headers).get("authorization")).toBe("Bearer test-service-token");
+  });
+
   it("maps wrapper tools onto existing HTTP API routes", async () => {
     const fetchImpl = vi.fn(async (url, init) => new Response(JSON.stringify({
       url: String(url),

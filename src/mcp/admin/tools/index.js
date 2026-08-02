@@ -39,8 +39,8 @@ const modules = [
 
 export const adminToolDefinitions = modules.flatMap((mod) => mod.definitions);
 
-export function createAdminToolHandlers({ baseUrl, config, fetchImpl = fetch } = {}) {
-  const client = { baseUrl, fetchImpl };
+export function createAdminToolHandlers({ baseUrl, config, fetchImpl = fetch, token } = {}) {
+  const client = { baseUrl, fetchImpl, token };
   const ctx = { config };
   const handlers = {};
   for (const mod of modules) {
