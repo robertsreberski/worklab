@@ -711,7 +711,7 @@ describe("ACP API", () => {
     await vi.waitFor(() => {
       expect(acpOperationManager.get(operation.id)?.state).toBe("succeeded");
     });
-    expect(delivered.values.password).toBe("actual-form-secret");
+    expect(delivered.content.password).toBe("actual-form-secret");
     expect(selectedMethod).toBe("browser-login");
     expect(JSON.stringify({
       profiles: db.prepare("SELECT * FROM acp_profiles").all(),
