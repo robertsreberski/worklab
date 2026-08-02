@@ -27,6 +27,14 @@
   request. This is CSRF protection rather than network authentication; direct
   listener and tailnet access still require an operator-managed trust boundary.
 
+- Changed `worklab backup` to create a private, credential-scrubbed archive
+  from an online SQLite snapshot. Credential files and runtime logs are
+  excluded; provider keys, push subscriptions, inbound webhook capabilities,
+  and legacy raw ACP session identifiers are removed from the copied database.
+  Restored webhook automations stay disabled until reconfigured. Task content,
+  comments, knowledge, memory, attachments, and run results remain in the
+  archive, so the result must still be handled as sensitive private data.
+
 - Upgraded `@mono-agent/agent-runtime` from 0.4.1 to 0.17.1.
   - Non-empty skill sets now carry an explicit `skillsRoot`, as required by
     the runtime's indexed-skill contract, while `skillDirs` continues to bound
