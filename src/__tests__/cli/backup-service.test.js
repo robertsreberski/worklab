@@ -9,6 +9,7 @@ import { createAcpProfile } from "../../core/acp-profiles.js";
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
 import { SCHEMA_VERSION } from "../../core/db/schema/current.js";
+import { ACP_URL_PUBLIC_REQUEST } from "../../core/acp-url-handoff.js";
 import { createAcpOperationManager } from "../../coordinator/acp-operation-manager.js";
 
 function opaqueV2Token(prefix, profileId, raw) {
@@ -706,8 +707,35 @@ describe("backup command", () => {
       "backup-v2-provider-session-ciphertext",
     );
     const deepRawSessionId = "backup-deep-raw-acp-session-secret";
+    const aliasSessionValues = [
+      "backup-raw-camel-session-secret-493827",
+      "backup-raw-snake-session-secret-493827",
+      "backup-remote-camel-session-secret-493827",
+      "backup-remote-snake-session-secret-493827",
+      "backup-provider-camel-session-secret-493827",
+      "backup-provider-snake-session-secret-493827",
+    ];
+    const privateUrl = "https://login.example/continue?code=BACKUP_PRIVATE_OAUTH_CODE_493827#BACKUP_PRIVATE_OAUTH_FRAGMENT_493827";
     const legacyOperationId = "acpop-backup-legacy-session";
     const legacyInteractionId = "interaction-backup-legacy-session";
+    const legacyUrlInteractionId = "interaction-backup-legacy-url";
+    sourceDb.prepare(`
+      UPDATE acp_profiles
+      SET last_probe_result_json = ?, last_probe_error_json = ?
+      WHERE id = ?
+    `).run(
+      JSON.stringify({
+        rawSessionId: aliasSessionValues[0],
+        raw_session_id: aliasSessionValues[1],
+        remoteSessionId: aliasSessionValues[2],
+        remote_session_id: aliasSessionValues[3],
+        providerSessionId: aliasSessionValues[4],
+        provider_session_id: aliasSessionValues[5],
+        status: aliasSessionValues.join(" "),
+      }),
+      JSON.stringify({ message: aliasSessionValues.join(" ") }),
+      profile.id,
+    );
     let delivered;
     const manager = createAcpOperationManager({
       db: sourceDb,
@@ -820,6 +848,22 @@ describe("backup command", () => {
         providerSessionId: validProviderSessionId,
         description: `${legacyRawSessionId} ${legacyProtocolRequestId}`,
       }),
+      Date.now(),
+      Date.now(),
+      Date.now(),
+    );
+    sourceDb.prepare(`
+      INSERT INTO acp_interactions
+        (id, profile_id, operation_id, protocol_request_id, kind,
+         request_schema_json, state, disposition, created_at, updated_at, resolved_at)
+      VALUES (?, ?, ?, ?, 'url', ?, 'submitted', ?, ?, ?, ?)
+    `).run(
+      legacyUrlInteractionId,
+      profile.id,
+      legacyOperationId,
+      privateUrl,
+      JSON.stringify({ mode: "url", url: privateUrl, message: `Open ${privateUrl}` }),
+      "BACKUP_PRIVATE_OAUTH_FRAGMENT_493827",
       Date.now(),
       Date.now(),
       Date.now(),
@@ -1006,6 +1050,15 @@ describe("backup command", () => {
         agent_name: "backup-acp",
         env_keys_json: "[\"ACP_BACKUP_TOKEN\"]",
       });
+      const restoredProbe = restoredDb.prepare(`
+        SELECT last_probe_result_json, last_probe_error_json FROM acp_profiles WHERE id = ?
+      `).get(profile.id);
+      expect(JSON.parse(restoredProbe.last_probe_result_json)).toEqual({
+        status: "[redacted] [redacted] [redacted] [redacted] [redacted] [redacted]",
+      });
+      expect(JSON.parse(restoredProbe.last_probe_error_json)).toEqual({
+        message: "[redacted] [redacted] [redacted] [redacted] [redacted] [redacted]",
+      });
       expect(restoredDb.prepare("SELECT kind, state, result_json FROM acp_operations WHERE id = ?")
         .get(operation.id)).toEqual({
         kind: "authenticate",
@@ -1055,6 +1108,14 @@ describe("backup command", () => {
       expect(restoredDb.prepare(`
         SELECT protocol_request_id FROM acp_interactions WHERE id = 'interaction-backup-safe-request'
       `).get().protocol_request_id).toBe("ordinary-request-id-42");
+      expect(restoredDb.prepare(`
+        SELECT protocol_request_id, request_schema_json, disposition
+        FROM acp_interactions WHERE id = ?
+      `).get(legacyUrlInteractionId)).toEqual({
+        protocol_request_id: expect.stringMatching(/^backup:url:[a-f0-9]{32}$/u),
+        request_schema_json: JSON.stringify(ACP_URL_PUBLIC_REQUEST),
+        disposition: null,
+      });
 
       const restoredLegacyRun = restoredDb.prepare(`
         SELECT provider_session_id, error_text, summary, details, result_json, diagnostics_json, warnings_json
@@ -1161,6 +1222,10 @@ describe("backup command", () => {
       deepRawSessionId,
       validProviderSessionId,
       v2ProviderSessionId,
+      ...aliasSessionValues,
+      privateUrl,
+      "BACKUP_PRIVATE_OAUTH_CODE_493827",
+      "BACKUP_PRIVATE_OAUTH_FRAGMENT_493827",
     ]) {
       expect(restoredBytes.includes(Buffer.from(secret))).toBe(false);
     }

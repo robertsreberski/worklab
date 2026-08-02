@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -14,13 +14,18 @@ import {
   createAcpEventPrivacyBoundary,
   validateAcpProviderSessionId,
 } from "../../acp-privacy.js";
+import { classifyAcpSessionIdKey } from "../../acp-operations.js";
 import { normalizeAcpPaginationCursorKey } from "../../acp-session-cursors.js";
+import {
+  ACP_URL_PUBLIC_REQUEST,
+  inspectAcpUrlHandoff,
+} from "../../acp-url-handoff.js";
 import { runLogPathInsideDataDir } from "../../run-event-store.js";
 import {
   addGlobalPrivateValue,
   addOwnedPrivateValues,
-  collectPrivateValuesFromObject,
-  collectPrivateValuesFromText,
+  collectPrivateValuesFromObject as collectLegacyPrivateValuesFromObject,
+  collectPrivateValuesFromText as collectLegacyPrivateValuesFromText,
   createPrivateValueScope,
   finalizePrivateValueScope,
   parseLegacyV1AcpProviderSessionId,
@@ -35,6 +40,19 @@ const LEGACY_PRIVACY_EVENT = Object.freeze({
   type: "privacy_redaction",
   reason: "legacy_acp_session_data",
 });
+const ACP_URL_PUBLIC_REQUEST_JSON = JSON.stringify(ACP_URL_PUBLIC_REQUEST);
+const ACP_INTERACTION_DISPOSITIONS = new Set([
+  "accept",
+  "decline",
+  "cancel",
+  "selected",
+  "allow_once",
+  "allow_always",
+  "reject_once",
+  "reject_always",
+  "operation_ended",
+  "run_ended",
+]);
 
 const RUN_JSON_DEFAULTS = new Map([
   ["artifact_paths_json", []],
@@ -63,12 +81,6 @@ const TASK_TEXT_COLUMNS = [
   "error_text",
 ];
 const EXPLICIT_PRIVATE_VALUE_RE = /"((?:\\.|[^"\\])*)"\s*:\s*"((?:\\.|[^"\\])*)"/gu;
-const EXPLICIT_SESSION_KEYS = new Set([
-  "sessionId",
-  "session_id",
-  "providerSessionId",
-  "provider_session_id",
-]);
 const TASK_EMBEDDING_KINDS = new Set([
   "task",
   "tasks",
@@ -128,7 +140,7 @@ function explicitSessionSeeds(text) {
   for (const match of String(text || "").matchAll(EXPLICIT_PRIVATE_VALUE_RE)) {
     try {
       const key = JSON.parse(`"${match[1]}"`);
-      if (!EXPLICIT_SESSION_KEYS.has(key) && !normalizeAcpPaginationCursorKey(key)) continue;
+      if (!classifyAcpSessionIdKey(key) && !normalizeAcpPaginationCursorKey(key)) continue;
       seeds.push({ [key]: JSON.parse(`"${match[2]}"`) });
     } catch {
       // The containing JSON is already replaced fail-closed; an invalid JSON
@@ -136,6 +148,56 @@ function explicitSessionSeeds(text) {
     }
   }
   return seeds;
+}
+
+function collectNormalizedSessionAliasesFromObject(value, values, {
+  depth = 0,
+  nodes = { value: 0 },
+  seen = new WeakSet(),
+} = {}) {
+  if (depth > 32 || nodes.value > 50_000) {
+    throw new Error("ACP privacy migration exceeded the private-value traversal limit");
+  }
+  nodes.value += 1;
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      collectNormalizedSessionAliasesFromObject(entry, values, {
+        depth: depth + 1,
+        nodes,
+        seen,
+      });
+    }
+    return;
+  }
+  if (!value || typeof value !== "object" || seen.has(value)) return;
+  seen.add(value);
+  for (const [key, entry] of Object.entries(value)) {
+    const sessionIdKey = classifyAcpSessionIdKey(key);
+    if (sessionIdKey) {
+      addGlobalPrivateValue(values, entry, { provider: sessionIdKey === "provider" });
+    }
+    collectNormalizedSessionAliasesFromObject(entry, values, {
+      depth: depth + 1,
+      nodes,
+      seen,
+    });
+  }
+}
+
+function collectPrivateValuesFromObject(value, values, options = {}) {
+  collectLegacyPrivateValuesFromObject(value, values, options);
+  collectNormalizedSessionAliasesFromObject(value, values);
+}
+
+function collectPrivateValuesFromText(text, values, options = {}) {
+  collectLegacyPrivateValuesFromText(text, values, options);
+  for (const seed of explicitSessionSeeds(text)) {
+    for (const [key, entry] of Object.entries(seed)) {
+      const sessionIdKey = classifyAcpSessionIdKey(key);
+      if (!sessionIdKey) continue;
+      addGlobalPrivateValue(values, entry, { provider: sessionIdKey === "provider" });
+    }
+  }
 }
 
 function profileIdFromHandle(value) {
@@ -422,6 +484,62 @@ function serializedJson(value, fallback) {
   } catch {
     return JSON.stringify(fallback);
   }
+}
+
+function isCanonicalAcpUrlRequest(value) {
+  const parsed = parseJson(value, null);
+  const request = parsed.value;
+  return parsed.valid
+    && request
+    && typeof request === "object"
+    && !Array.isArray(request)
+    && Object.keys(request).length === Object.keys(ACP_URL_PUBLIC_REQUEST).length
+    && request.mode === ACP_URL_PUBLIC_REQUEST.mode
+    && request.message === ACP_URL_PUBLIC_REQUEST.message
+    && request.urlAvailable === ACP_URL_PUBLIC_REQUEST.urlAvailable;
+}
+
+function legacyUrlProtocolRequestId(interactionId) {
+  const digest = createHash("sha256").update(String(interactionId ?? "")).digest("hex").slice(0, 32);
+  return `legacy-url-redacted:${digest}`;
+}
+
+function scrubLegacyAcpUrlInteractions(db) {
+  if (!tableExists(db, "acp_interactions")
+    || !hasColumn(db, "acp_interactions", "kind")
+    || !hasColumn(db, "acp_interactions", "request_schema_json")) return 0;
+  const rows = db.prepare(`
+    SELECT id, protocol_request_id, request_schema_json, disposition
+    FROM acp_interactions
+    WHERE kind = 'url'
+    ORDER BY rowid ASC
+  `).all();
+  const update = db.prepare(`
+    UPDATE acp_interactions
+    SET protocol_request_id = ?, request_schema_json = ?, disposition = ?
+    WHERE id = ?
+  `);
+  let changes = 0;
+  for (const row of rows) {
+    const legacySchema = !isCanonicalAcpUrlRequest(row.request_schema_json);
+    const privateProtocolId = Boolean(inspectAcpUrlHandoff(row.protocol_request_id));
+    const protocolRequestId = legacySchema || privateProtocolId
+      ? legacyUrlProtocolRequestId(row.id)
+      : row.protocol_request_id;
+    const disposition = ACP_INTERACTION_DISPOSITIONS.has(row.disposition)
+      ? row.disposition
+      : null;
+    if (protocolRequestId === row.protocol_request_id
+      && row.request_schema_json === ACP_URL_PUBLIC_REQUEST_JSON
+      && disposition === row.disposition) continue;
+    changes += update.run(
+      protocolRequestId,
+      ACP_URL_PUBLIC_REQUEST_JSON,
+      disposition,
+      row.id,
+    ).changes;
+  }
+  return changes;
 }
 
 function serializedContainsPrivateValue(value, privateValues) {
@@ -1054,6 +1172,7 @@ export function scrubLegacyAcpSessionData(db) {
     databaseChanges += scrubAcpProfileProbeData(db);
     databaseChanges += scrubStandaloneAcpOperations(db);
     databaseChanges += scrubDurableAcpPrivateCopies(db, runs, privateScope);
+    databaseChanges += scrubLegacyAcpUrlInteractions(db);
   } finally {
     db.pragma(`secure_delete = ${Number(previousSecureDelete) || 0}`);
   }

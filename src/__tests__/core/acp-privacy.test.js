@@ -92,6 +92,30 @@ describe("ACP event privacy boundary", () => {
     expect(JSON.stringify([first, second])).not.toMatch(/RAW_REMOTE_SESSION|RAW_PROVIDER_SESSION/u);
   });
 
+  it("normalizes raw, remote, and provider session-id aliases before redaction", () => {
+    const aliases = {
+      rawSessionId: "RAW_CAMEL_SESSION",
+      raw_session_id: "RAW_SNAKE_SESSION",
+      remoteSessionId: "REMOTE_CAMEL_SESSION",
+      remote_session_id: "REMOTE_SNAKE_SESSION",
+      providerSessionId: "PROVIDER_CAMEL_SESSION",
+    };
+    const providerSessionId = opaqueSessionId("provider-snake-session");
+    const boundary = createAcpEventPrivacyBoundary({ profileId: PROFILE_ID });
+
+    const sanitized = boundary.sanitizeEvent({
+      ...aliases,
+      provider_session_id: providerSessionId,
+      message: Object.values(aliases).join(" "),
+    });
+
+    expect(sanitized).toEqual({
+      provider_session_id: providerSessionId,
+      message: "[redacted] [redacted] [redacted] [redacted] [redacted]",
+    });
+    expect(JSON.stringify(sanitized)).not.toMatch(/(?:RAW|REMOTE|PROVIDER)_(?:CAMEL|SNAKE)_SESSION/u);
+  });
+
   it("preserves structurally valid v2 handles without decoding their sealed bytes", () => {
     const sealedText = `${"n".repeat(12)}RAW_CIPHERTEXT_BYTES${"t".repeat(16)}`;
     const providerSessionId = `acp:v2:${PROFILE_ID}:${Buffer.from(sealedText).toString("base64url")}`;

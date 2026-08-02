@@ -7,6 +7,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
 import { addGlobalPrivateValue } from "../../core/db/migrations/acp-legacy-private-values.js";
+import { rowToAcpInteraction } from "../../core/acp-operations.js";
+import { rowToAcpProfile } from "../../core/acp-profiles.js";
+import { ACP_URL_PUBLIC_REQUEST } from "../../core/acp-url-handoff.js";
 
 const PROFILE_ID = "00000000-0000-4000-8000-000000000001";
 
@@ -83,6 +86,109 @@ describe("legacy ACP session privacy migration", () => {
     expect(db.prepare("SELECT value FROM schema_meta WHERE key = 'acp_legacy_session_privacy_compacted_v1'").get())
       .toEqual({ value: "1" });
     expect(db.prepare("SELECT length(body) AS length FROM legacy_payload").get().length).toBe(100000);
+    db.close();
+  });
+
+  it("scrubs normalized session aliases and legacy OAuth URL interactions before API serialization", () => {
+    const root = mkdtempSync(join(tmpdir(), "worklab-acp-alias-url-privacy-"));
+    roots.push(root);
+    const dbPath = join(root, "worklab.db");
+    const rawSessionValues = [
+      "RAW_CAMEL_PROFILE_SESSION_493827",
+      "RAW_SNAKE_PROFILE_SESSION_493827",
+      "REMOTE_CAMEL_PROFILE_SESSION_493827",
+      "REMOTE_SNAKE_PROFILE_SESSION_493827",
+      "PROVIDER_CAMEL_PROFILE_SESSION_493827",
+      "PROVIDER_SNAKE_PROFILE_SESSION_493827",
+    ];
+    const privateUrl = "https://login.example/continue?code=PRIVATE_OAUTH_CODE_493827#PRIVATE_OAUTH_FRAGMENT_493827";
+    const db = openDb(dbPath);
+    runMigrations(db);
+    insertAcpFixture(db);
+    db.prepare(`
+      UPDATE acp_profiles
+      SET last_probe_state = 'succeeded', last_probe_at = 1,
+          last_probe_result_json = ?, last_probe_error_json = ?
+      WHERE id = ?
+    `).run(
+      JSON.stringify({
+        rawSessionId: rawSessionValues[0],
+        raw_session_id: rawSessionValues[1],
+        remoteSessionId: rawSessionValues[2],
+        remote_session_id: rawSessionValues[3],
+        providerSessionId: rawSessionValues[4],
+        provider_session_id: rawSessionValues[5],
+        status: rawSessionValues.join(" "),
+      }),
+      JSON.stringify({ message: rawSessionValues.join(" ") }),
+      PROFILE_ID,
+    );
+    db.prepare(`
+      INSERT INTO acp_operations (
+        id, profile_id, kind, state, request_json, result_json, error_json,
+        created_at, updated_at, completed_at
+      ) VALUES ('operation-legacy-url', ?, 'probe', 'succeeded', '{}', '{}', '{}', 1, 1, 1)
+    `).run(PROFILE_ID);
+    db.prepare(`
+      INSERT INTO task_runs (
+        id, task_id, mode, stage, agent_name, provider_kind, started_at,
+        status, process_status
+      ) VALUES ('run-legacy-url', 'task-acp', 'execute', 'execute', 'external',
+        'acp', 1, 'complete', 'succeeded')
+    `).run();
+    const insertUrlInteraction = db.prepare(`
+      INSERT INTO acp_interactions (
+        id, profile_id, task_run_id, operation_id, protocol_request_id, kind,
+        request_schema_json, state, disposition, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 'url', ?, 'submitted', ?, 1, 1)
+    `);
+    insertUrlInteraction.run(
+      "interaction-operation-legacy-url",
+      PROFILE_ID,
+      null,
+      "operation-legacy-url",
+      privateUrl,
+      JSON.stringify({ mode: "url", url: privateUrl, message: `Open ${privateUrl}` }),
+      "PRIVATE_OAUTH_FRAGMENT_493827",
+    );
+    insertUrlInteraction.run(
+      "interaction-run-legacy-url",
+      PROFILE_ID,
+      "run-legacy-url",
+      null,
+      "request-run-legacy-url",
+      JSON.stringify({ mode: "url", callbackUrl: privateUrl, message: `Open ${privateUrl}` }),
+      "accept",
+    );
+
+    runMigrations(db);
+
+    const profileApi = rowToAcpProfile(db.prepare("SELECT * FROM acp_profiles WHERE id = ?").get(PROFILE_ID));
+    expect(JSON.stringify(profileApi.lastProbe)).not.toMatch(/(?:RAW|REMOTE|PROVIDER)_(?:CAMEL|SNAKE)_PROFILE_SESSION/u);
+    expect(profileApi.lastProbe.result).toEqual({
+      status: "[redacted] [redacted] [redacted] [redacted] [redacted] [redacted]",
+    });
+    expect(profileApi.lastProbe.error).toEqual({
+      message: "[redacted] [redacted] [redacted] [redacted] [redacted] [redacted]",
+    });
+
+    for (const id of ["interaction-operation-legacy-url", "interaction-run-legacy-url"]) {
+      const stored = db.prepare("SELECT * FROM acp_interactions WHERE id = ?").get(id);
+      expect(stored.request_schema_json).toBe(JSON.stringify(ACP_URL_PUBLIC_REQUEST));
+      expect(stored.protocol_request_id).toMatch(/^legacy-url-redacted:[a-f0-9]{32}$/u);
+      expect(rowToAcpInteraction(stored).requestSchema).toEqual(ACP_URL_PUBLIC_REQUEST);
+      expect(JSON.stringify({ stored, api: rowToAcpInteraction(stored) })).not.toContain(privateUrl);
+    }
+    expect(db.prepare(`
+      SELECT disposition FROM acp_interactions WHERE id = 'interaction-operation-legacy-url'
+    `).get().disposition).toBeNull();
+    expect(db.prepare(`
+      SELECT disposition FROM acp_interactions WHERE id = 'interaction-run-legacy-url'
+    `).get().disposition).toBe("accept");
+    for (const secret of [...rawSessionValues, privateUrl, "PRIVATE_OAUTH_CODE_493827", "PRIVATE_OAUTH_FRAGMENT_493827"]) {
+      expect(databaseContains(dbPath, secret)).toBe(false);
+      expect(databaseContains(`${dbPath}-wal`, secret)).toBe(false);
+    }
     db.close();
   });
 

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   chmodSync,
   closeSync,
@@ -21,6 +22,8 @@ import {
   openDb,
   parseAcpSessionCursor,
 } from "../core/index.js";
+import { classifyAcpSessionIdKey } from "../core/acp-operations.js";
+import { ACP_URL_PUBLIC_REQUEST } from "../core/acp-url-handoff.js";
 import { applyConfigArgs } from "./args.js";
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
@@ -48,8 +51,19 @@ const OMITTED_ROOT_ENTRIES = new Set([
 ]);
 
 const WEBHOOK_RECONFIGURATION_MESSAGE = "Webhook credential omitted from backup; edit the automation to generate a new webhook ID.";
-const RAW_ACP_SESSION_KEYS = new Set(["sessionId", "session_id", "remoteSessionId", "remote_session_id"]);
-const PROVIDER_ACP_SESSION_KEYS = new Set(["providerSessionId", "provider_session_id"]);
+const ACP_URL_PUBLIC_REQUEST_JSON = JSON.stringify(ACP_URL_PUBLIC_REQUEST);
+const ACP_INTERACTION_DISPOSITIONS = new Set([
+  "accept",
+  "decline",
+  "cancel",
+  "selected",
+  "allow_once",
+  "allow_always",
+  "reject_once",
+  "reject_always",
+  "operation_ended",
+  "run_ended",
+]);
 const MAX_ACP_SCRUB_DEPTH = 32;
 const MAX_ACP_SCRUB_NODES = 10_000;
 const MAX_ACP_JSON_CHARS = 16 * 1024 * 1024;
@@ -190,7 +204,7 @@ function collectAcpIdentifiers(value, values, {
   }
   if (!value || typeof value !== "object") return state;
   for (const [key, entry] of Object.entries(value)) {
-    if (RAW_ACP_SESSION_KEYS.has(key) || PROVIDER_ACP_SESSION_KEYS.has(key) || (sessionRecord && key === "id")) {
+    if (classifyAcpSessionIdKey(key) || (sessionRecord && key === "id")) {
       addPrivateAcpIdentifier(values, entry);
     }
     if (includeCursors && normalizeAcpPaginationCursorKey(key)) {
@@ -224,7 +238,7 @@ function collectJsonAcpIdentifiers(text, values, options = {}) {
     try {
       const key = JSON.parse(`"${match[1]}"`);
       const value = JSON.parse(`"${match[2]}"`);
-      if (RAW_ACP_SESSION_KEYS.has(key) || PROVIDER_ACP_SESSION_KEYS.has(key)) {
+      if (classifyAcpSessionIdKey(key)) {
         addPrivateAcpIdentifier(values, value);
       }
       if (options.includeCursors && normalizeAcpPaginationCursorKey(key)) {
@@ -278,8 +292,7 @@ function scrubAcpValue(value, privateValues, {
   if (!value || typeof value !== "object") return value;
   const output = Object.create(null);
   for (const [key, entry] of Object.entries(value)) {
-    if (RAW_ACP_SESSION_KEYS.has(key)) continue;
-    if (PROVIDER_ACP_SESSION_KEYS.has(key)) continue;
+    if (classifyAcpSessionIdKey(key)) continue;
     if (sessionRecord && key === "id") continue;
     if (includeCursors && normalizeAcpPaginationCursorKey(key)) continue;
     const outputKey = redactPrivateAcpText(key, privateValues);
@@ -303,6 +316,11 @@ function scrubAcpJson(text, privateValues, { forceFailure = false, includeCursor
   const state = scrubTraversalState();
   const scrubbed = scrubAcpValue(parsed.value, privateValues, { includeCursors, state });
   return JSON.stringify(state.failed ? ACP_SCRUB_FALLBACK : scrubbed);
+}
+
+function backupUrlProtocolRequestId(interactionId) {
+  const digest = createHash("sha256").update(String(interactionId ?? "")).digest("hex").slice(0, 32);
+  return `backup:url:${digest}`;
 }
 
 function validAcpCursorAliases(value, profileId, {
@@ -645,7 +663,10 @@ function scrubLegacyAcpSessionData(db) {
   }
 
   const interactions = hasColumn(db, "acp_interactions", "request_schema_json")
-    ? db.prepare("SELECT id, profile_id, protocol_request_id, request_schema_json FROM acp_interactions").all()
+    ? db.prepare(`
+        SELECT id, profile_id, protocol_request_id, kind, request_schema_json, disposition
+        FROM acp_interactions
+      `).all()
     : [];
   for (const row of interactions) {
     const values = new Set();
@@ -766,9 +787,20 @@ function scrubLegacyAcpSessionData(db) {
     }
 
     const updateInteraction = db.prepare(`
-      UPDATE acp_interactions SET protocol_request_id = ?, request_schema_json = ? WHERE id = ?
+      UPDATE acp_interactions
+      SET protocol_request_id = ?, request_schema_json = ?, disposition = ?
+      WHERE id = ?
     `);
     for (const row of interactions) {
+      if (row.kind === "url") {
+        updateInteraction.run(
+          backupUrlProtocolRequestId(row.id),
+          ACP_URL_PUBLIC_REQUEST_JSON,
+          ACP_INTERACTION_DISPOSITIONS.has(row.disposition) ? row.disposition : null,
+          row.id,
+        );
+        continue;
+      }
       const values = ownedPrivateValues(privateScope, privateScope.byProfile, row.profile_id);
       const forceFailure = privateScope.failedProfiles.has(row.profile_id);
       const redactedProtocolId = forceFailure
@@ -780,6 +812,7 @@ function scrubLegacyAcpSessionData(db) {
           forceFailure: forceFailure
             || privateScope.failedCells.has(`acp_interactions:${row.id}:request_schema_json`),
         }),
+        row.disposition,
         row.id,
       );
     }

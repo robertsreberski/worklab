@@ -79,6 +79,20 @@ function normalizedPrivacyKey(value) {
   return String(value || "").replace(/[_-]/gu, "").toLowerCase();
 }
 
+export function classifyAcpSessionIdKey(value) {
+  const normalizedKey = normalizedPrivacyKey(value);
+  if (RAW_SESSION_ID_KEYS.has(normalizedKey)) return "raw";
+  if (PROVIDER_SESSION_ID_KEYS.has(normalizedKey)) return "provider";
+  return null;
+}
+
+function isAcpUrlFieldKey(value) {
+  const key = String(value || "");
+  return /^(?:url|uri|href)$/iu.test(key)
+    || /(?:[_-](?:url|uri|href))$/iu.test(key)
+    || /(?:Url|Uri|Href|URL|URI|HREF)$/u.test(key);
+}
+
 function structurallyValidSealedToken(encoded) {
   try {
     const sealed = Buffer.from(encoded, "base64url");
@@ -170,12 +184,12 @@ function privacyScan(value, additionalRawSessionIds = [], { includeCursorSources
         state.complete = false;
         return;
       }
-      const normalizedKey = normalizedPrivacyKey(key);
-      if (RAW_SESSION_ID_KEYS.has(normalizedKey)) {
+      const sessionIdKey = classifyAcpSessionIdKey(key);
+      if (sessionIdKey === "raw") {
         const provider = parsedProviderSessionId(item);
         if (!provider) collectSession(item);
       }
-      if (PROVIDER_SESSION_ID_KEYS.has(normalizedKey)) {
+      if (sessionIdKey === "provider") {
         const provider = parsedProviderSessionId(item);
         if (!provider) collectSession(item);
       }
@@ -255,7 +269,7 @@ function sanitizedValue(value, {
     if (canonicalProviderSessionId(value) || canonicalSessionCursor(value)) {
       return hasPrivateScalar(privateValues, value) ? "[redacted]" : value;
     }
-    return /(?:^|_)(?:url|uri|href)$/iu.test(parentKey)
+    return isAcpUrlFieldKey(parentKey)
       ? sanitizedUrl(value, rawSessionIds, privateValues)
       : redactedText(value, rawSessionIds, MAX_TEXT_CHARS, privateValues);
   }
@@ -279,9 +293,9 @@ function sanitizedValue(value, {
   const output = {};
   for (const [key, entry] of Object.entries(value).slice(0, MAX_ITEMS)) {
     const propertyIdentifier = parentKey === "properties";
-    const normalizedKey = normalizedPrivacyKey(key);
-    if (RAW_SESSION_ID_KEYS.has(normalizedKey)) continue;
-    if (PROVIDER_SESSION_ID_KEYS.has(normalizedKey)
+    const sessionIdKey = classifyAcpSessionIdKey(key);
+    if (sessionIdKey === "raw") continue;
+    if (sessionIdKey === "provider"
       && !canonicalProviderSessionId(entry)) continue;
     if (containsRawSessionId(key, rawSessionIds)) continue;
     if (containsPrivateScalar(key, privateValues)) continue;

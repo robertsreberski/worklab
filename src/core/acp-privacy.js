@@ -1,4 +1,5 @@
 import {
+  classifyAcpSessionIdKey,
   normalizeAcpProviderSessionId,
 } from "./acp-operations.js";
 import {
@@ -12,8 +13,6 @@ const MAX_ACP_EVENT_NODES = 50_000;
 const MAX_ACP_EVENT_STRING_CHARS = 4 * 1024 * 1024;
 const MAX_ACP_RAW_SESSION_IDS = 128;
 const MAX_ACP_RAW_SESSION_ID_CHARS = 16 * 1024;
-const ACP_SESSION_ID_KEYS = new Set(["sessionId", "session_id"]);
-const ACP_PROVIDER_SESSION_ID_KEYS = new Set(["providerSessionId", "provider_session_id"]);
 
 function canonicalAcpProviderSessionId(value, profileId) {
   if (typeof profileId !== "string" || profileId.length === 0) return null;
@@ -86,11 +85,12 @@ export function createAcpEventPrivacyBoundary({
     for (const [key, entry] of Object.entries(value)) {
       state.stringChars += key.length;
       if (state.stringChars > MAX_ACP_EVENT_STRING_CHARS) return false;
-      if (ACP_SESSION_ID_KEYS.has(key)) {
+      const sessionIdKey = classifyAcpSessionIdKey(key);
+      if (sessionIdKey === "raw") {
         if (!collectRawSessionId(entry, collected)) return false;
         continue;
       }
-      if (ACP_PROVIDER_SESSION_ID_KEYS.has(key)) {
+      if (sessionIdKey === "provider") {
         const providerSessionId = canonicalAcpProviderSessionId(entry, profileId);
         if (!providerSessionId && !collectRawSessionId(entry, collected)) return false;
       }
@@ -122,8 +122,9 @@ export function createAcpEventPrivacyBoundary({
     const output = Object.create(null);
     const selectedCursor = includeCursors ? selectAcpPaginationCursorEntry(value) : null;
     for (const [key, entry] of Object.entries(value)) {
-      if (ACP_SESSION_ID_KEYS.has(key)) continue;
-      if (ACP_PROVIDER_SESSION_ID_KEYS.has(key)) {
+      const sessionIdKey = classifyAcpSessionIdKey(key);
+      if (sessionIdKey === "raw") continue;
+      if (sessionIdKey === "provider") {
         const providerSessionId = validateAcpProviderSessionId(entry, profileId);
         if (providerSessionId) output[key] = providerSessionId;
         continue;

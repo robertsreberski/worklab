@@ -312,6 +312,26 @@ describe("sanitizeAcpOperationResult", () => {
     expect(JSON.stringify(result)).not.toContain(rawSessionId);
   });
 
+  it("redacts camelCase and snake-case URL fields from interaction schemas", () => {
+    const privateUrl = "https://login.example/continue?code=PRIVATE_CODE#PRIVATE_FRAGMENT";
+
+    expect(sanitizeAcpInteractionSchema({
+      callbackUrl: privateUrl,
+      loginUrl: privateUrl,
+      redirectUri: privateUrl,
+      callback_url: privateUrl,
+      source_href: privateUrl,
+      curl: "curl --version",
+    })).toEqual({
+      callbackUrl: "[redacted]",
+      loginUrl: "[redacted]",
+      redirectUri: "[redacted]",
+      callback_url: "[redacted]",
+      source_href: "[redacted]",
+      curl: "curl --version",
+    });
+  });
+
   it("redacts raw ids across list metadata and rejects cursors that repeat them", () => {
     const rawSessionId = "RAW_LIST_CURSOR_SESSION";
     const providerSessionId = opaqueSessionId(rawSessionId);
