@@ -65,6 +65,7 @@ import { findDrainedResumeCandidates, reconcileStaleRunningRuns } from "./watche
 import { createLeadCycleCoordinator } from "./watcher/lead-cycle-coordinator.js";
 import { createWorktreeReconciler } from "./watcher/worktree-reconciler.js";
 import { createRecoveryContinuation } from "./watcher/recovery-continuation.js";
+import { validateWorklabResultSemantics } from "../core/worklab-result/contract.js";
 import { buildDelegationContextBlock } from "./watcher/delegation-context.js";
 import { planBodySideEffect } from "./watcher/plan-body.js";
 import {
@@ -936,7 +937,7 @@ export function createTaskWatcher({
     const run = getRunById(db, runId);
     if (!run) return;
 
-    const processStatus = runProcessStatus(res);
+    let processStatus = runProcessStatus(res);
 
     if (run.kind === "lead_cycle") {
       leadCycle.handleLeadCycleExit(taskId, runId, res, task, run);
@@ -951,6 +952,28 @@ export function createTaskWatcher({
       broker.broadcast("global", endedEventLead);
       events?.emit?.("run:ended", endedEventLead);
       return;
+    }
+
+    const result = res.worklabResult || safeParseJson(run.result_json, null);
+    const acpResultValidation = run.provider_kind === "acp" && result
+      ? validateWorklabResultSemantics(result, { allowDelegation: false })
+      : { ok: true };
+    if (!acpResultValidation.ok) {
+      db.prepare(`
+        UPDATE task_runs
+        SET status = 'error', process_status = 'failed', failure_kind = 'invalid_result',
+            error_text = ?, result_json = NULL, decision = NULL, summary = NULL, details = NULL
+        WHERE id = ?
+      `).run(acpResultValidation.error, runId);
+      res = {
+        ...res,
+        status: "error",
+        processStatus: "failed",
+        worklabResult: null,
+        error: acpResultValidation.error,
+        failureKind: "invalid_result",
+      };
+      processStatus = "failed";
     }
 
     try {

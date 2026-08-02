@@ -839,7 +839,10 @@ export function spawnWorker({
       const allWarnings = [...warnings, ...finalWarnings];
       const todoStateJson = currentTodoStateJson();
       if (result && !resultError) {
-        const validation = validateWorklabResultSemantics(result, { todoState: todoStateJson });
+        const validation = validateWorklabResultSemantics(result, {
+          todoState: todoStateJson,
+          allowDelegation: env.WORKLAB_ACP_PROFILE_ID ? false : true,
+        });
         if (!validation.ok) {
           resultError = validation.error || "invalid worklab_result";
           explicitFailureKind = "invalid_result";

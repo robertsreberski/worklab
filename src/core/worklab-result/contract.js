@@ -348,6 +348,10 @@ export function validateWorklabResultSemantics(result, options = {}) {
   const questions = Array.isArray(value.questions) ? value.questions.filter(Boolean) : [];
   const subtasks = Array.isArray(value.subtasks) ? value.subtasks.filter(Boolean) : [];
 
+  if (options.allowDelegation === false && (decision === "delegate" || subtasks.length > 0)) {
+    return { ok: false, error: "delegation is unavailable for this agent runtime" };
+  }
+
   if (decision !== "pause" && pendingActions.length > 0) {
     return { ok: false, error: `pending_actions can only be used with decision "pause" (got "${decision}")` };
   }

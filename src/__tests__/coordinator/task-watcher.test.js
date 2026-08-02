@@ -1046,6 +1046,59 @@ describe("task-watcher", () => {
     expect(child).toMatchObject({ project_id: project.id, title: "Child work" });
   });
 
+  it("rejects ACP delegation before creating child tasks", async () => {
+    const db = makeTestDb();
+    const profile = createAcpProfile({
+      db,
+      input: {
+        agentName: "no-delegation-acp",
+        displayName: "No delegation ACP",
+        command: process.execPath,
+        cwd: process.cwd(),
+      },
+    });
+    const taskId = seedTask(db, { owner: profile.agentName });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((resolve) => { resolveDone = resolve; }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      workspace: process.cwd(),
+      repoRoot: process.cwd(),
+    });
+    const { runId } = await watcher.handleRunRequested(taskId);
+
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      worklabResult: {
+        schema: "worklab.v2",
+        stage: "execute",
+        decision: "delegate",
+        summary: "Create an unauthorized child.",
+        details: "",
+        artifacts: {},
+        blocking_issues: [],
+        pending_actions: [],
+        subtasks: [{ title: "Unauthorized child", instructions: "Do work." }],
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(db.prepare("SELECT id FROM tasks WHERE parent_task_id = ?").all(taskId)).toEqual([]);
+    expect(db.prepare("SELECT process_status, failure_kind FROM task_runs WHERE id = ?").get(runId))
+      .toMatchObject({ process_status: "failed", failure_kind: "invalid_result" });
+    expect(db.prepare("SELECT stage, error_text FROM tasks WHERE id = ?").get(taskId))
+      .toMatchObject({ stage: "execute", error_text: "delegation is unavailable for this agent runtime" });
+  });
+
   it("adds delegated acceptance criteria and expected artifact to child instructions", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
