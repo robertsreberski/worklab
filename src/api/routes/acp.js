@@ -6,6 +6,7 @@ import {
   getAcpProfiles,
   normalizeMonoDiscovery,
   normalizeAcpAuthMethodId,
+  normalizeAcpProviderSessionId,
   rowToAcpInteraction,
   rowToAcpOperation,
   updateAcpProfileRecord,
@@ -275,11 +276,16 @@ export function registerAcpRoutes(app, {
   app.post("/api/acp/profiles/:id/sessions:list", (req, res) => (
     startOperation(res, acpOperationManager, req.params.id, "list_sessions")
   ));
-  app.delete("/api/acp/profiles/:id/sessions/:sessionId", (req, res) => (
-    startOperation(res, acpOperationManager, req.params.id, "delete_session", {
-      remoteSessionId: req.params.sessionId,
-    })
-  ));
+  app.delete("/api/acp/profiles/:id/sessions/:sessionId", (req, res) => {
+    try {
+      const providerSessionId = normalizeAcpProviderSessionId(req.params.sessionId, req.params.id);
+      return startOperation(res, acpOperationManager, req.params.id, "delete_session", {
+        remoteSessionId: providerSessionId,
+      });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
 
   app.get("/api/acp/profiles/:id/operations", (req, res) => {
     try {

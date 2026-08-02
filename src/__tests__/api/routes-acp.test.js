@@ -191,6 +191,7 @@ describe("ACP API", () => {
 
   it("starts control operations with 202 and exposes sanitized operation state", async () => {
     const cwd = workspace();
+    const rawSessionId = "session/one";
     let deletedSession;
     const controls = {
       probe: async () => ({
@@ -204,12 +205,24 @@ describe("ACP API", () => {
           accessToken: "method-secret",
         }],
       }),
-      deleteSession: async ({ remoteSessionId }) => {
-        deletedSession = remoteSessionId;
-        return { deleted: true, sessionId: remoteSessionId, token: "delete-secret" };
+      listSessions: async ({ profile: activeProfile }) => ({
+        sessions: [{
+          sessionId: rawSessionId,
+          providerSessionId: `acp:v1:${activeProfile.id}:${Buffer.from(rawSessionId).toString("base64url")}`,
+          title: "Listed session",
+        }],
+      }),
+      deleteSession: async ({ providerSessionId }) => {
+        deletedSession = providerSessionId;
+        return {
+          deleted: true,
+          providerSessionId,
+          sessionId: rawSessionId,
+          token: "delete-secret",
+        };
       },
     };
-    const { agent, acpOperationManager } = makeTestServer({ acpControls: controls });
+    const { agent, db, acpOperationManager } = makeTestServer({ acpControls: controls });
     const profile = (await createGeneric(agent, cwd)).body.profile;
 
     const started = await agent.post(`/api/acp/profiles/${profile.id}/probe`).expect(202);
@@ -224,15 +237,34 @@ describe("ACP API", () => {
       authMethods: [{ id: "browser-login", name: "Browser login", type: "agent" }],
     });
     expect(JSON.stringify(fetched.body)).not.toMatch(/probe-secret|method-secret/u);
+    const probedProfile = await agent.get(`/api/acp/profiles/${profile.id}`).expect(200);
+    expect(probedProfile.body.profile.lastProbe.result.authMethods).toEqual([
+      { id: "browser-login", name: "Browser login", type: "agent" },
+    ]);
+    expect(JSON.stringify(probedProfile.body)).not.toMatch(/probe-secret|method-secret/u);
 
-    const deleted = await agent.delete(`/api/acp/profiles/${profile.id}/sessions/session%2Fone`).expect(202);
+    const listed = await agent.post(`/api/acp/profiles/${profile.id}/sessions:list`).expect(202);
+    await vi.waitFor(() => {
+      expect(acpOperationManager.get(listed.body.operation.id)?.state).toBe("succeeded");
+    });
+    const listedResult = acpOperationManager.get(listed.body.operation.id).result;
+    const publicId = `acp:v1:${profile.id}:${Buffer.from(rawSessionId).toString("base64url")}`;
+    expect(listedResult.sessions).toEqual([{ id: publicId, title: "Listed session" }]);
+    expect(JSON.stringify(listedResult)).not.toContain(rawSessionId);
+
+    const deleted = await agent.delete(
+      `/api/acp/profiles/${profile.id}/sessions/${encodeURIComponent(listedResult.sessions[0].id)}`,
+    ).expect(202);
     await vi.waitFor(() => {
       expect(acpOperationManager.get(deleted.body.operation.id)?.state).toBe("succeeded");
     });
-    expect(deletedSession).toBe("session/one");
+    expect(deletedSession).toBe(publicId);
     const deleteResult = acpOperationManager.get(deleted.body.operation.id);
-    expect(deleteResult.result).toEqual({ deleted: true, sessionId: "session/one" });
-    expect(JSON.stringify(deleteResult)).not.toContain("delete-secret");
+    expect(deleteResult.request).toEqual({ providerSessionId: publicId });
+    expect(deleteResult.result).toEqual({ deleted: true, id: publicId });
+    expect(JSON.stringify(deleteResult)).not.toMatch(/delete-secret|session\/one/u);
+    expect(JSON.stringify(db.prepare("SELECT * FROM acp_operations ORDER BY created_at").all()))
+      .not.toMatch(/delete-secret|session\/one/u);
   });
 
   it("responds to operation interactions without persisting or echoing form answers", async () => {

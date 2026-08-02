@@ -3,6 +3,7 @@ import { assertAcpProfileBinding } from "../core/acp-profiles.js";
 import {
   acpInteractionDisposition,
   normalizeAcpAuthMethodId,
+  normalizeAcpProviderSessionId,
   rowToAcpInteraction,
   rowToAcpOperation,
   sanitizeAcpInteractionSchema,
@@ -116,17 +117,14 @@ export class AcpOperationManager {
         status: 409,
       });
     }
-    const sessionId = remoteSessionId == null
-      ? null
-      : boundedIdentifier(remoteSessionId, "remoteSessionId", 2000);
-    if (kind === "delete_session" && !sessionId) {
-      throw managerError("remoteSessionId is required", { code: "validation", status: 400 });
-    }
+    const providerSessionId = kind === "delete_session"
+      ? normalizeAcpProviderSessionId(remoteSessionId, profileId)
+      : null;
     const methodId = kind === "authenticate" ? normalizeAcpAuthMethodId(authMethodId) : null;
     const now = this.now();
     const id = newAcpOperationId();
-    const request = sessionId
-      ? { remoteSessionId: sessionId }
+    const request = providerSessionId
+      ? { providerSessionId }
       : methodId
         ? { authMethodId: methodId }
         : {};
@@ -134,7 +132,7 @@ export class AcpOperationManager {
       id,
       profileId,
       kind,
-      remoteSessionId: sessionId,
+      remoteSessionId: providerSessionId,
       requestJson: JSON.stringify(request),
       createdAt: now,
       updatedAt: now,
@@ -143,7 +141,8 @@ export class AcpOperationManager {
       id,
       profile,
       kind,
-      remoteSessionId: sessionId,
+      remoteSessionId: providerSessionId,
+      providerSessionId,
       authMethodId: methodId,
       controller: new AbortController(),
       pending: new Map(),
@@ -177,6 +176,7 @@ export class AcpOperationManager {
         profile: record.profile,
         operation: this.get(record.id),
         remoteSessionId: record.remoteSessionId,
+        providerSessionId: record.providerSessionId,
         authMethodId: record.authMethodId,
         signal: record.controller.signal,
         onInteraction: (request) => this.#requestInteraction(record, request),
