@@ -18,8 +18,13 @@ const ACTIVE_READ_PATHS = new Set([
 const ACTIVE_READ_PATH_PATTERNS = Object.freeze([
   /^\/goals(?:\/[^/]+)?$/u,
   /^\/projects\/[^/]+$/u,
+  /^\/runs\/(?!cost-summary$)[^/]+$/u,
+  /^\/tasks\/[^/]+$/u,
+  /^\/tasks\/[^/]+\/run-preview$/u,
   /^\/teams\/[^/]+(?:\/goals)?$/u,
 ]);
+const TASK_RUN_HISTORY_PATH = /^\/tasks\/[^/]+\/runs$/u;
+const TASK_SCOPED_FILE_PATHS = new Set(["/files/read", "/files/suggest"]);
 const CORS_METHODS = "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS";
 const CORS_HEADERS = "Authorization, Content-Type, Last-Event-ID, X-Attachment-Filename, X-Skill-Filename";
 const ACP_URL_OPEN_PATH = /^\/acp\/interactions\/[^/]+\/url:open$/iu;
@@ -135,11 +140,22 @@ function decodedRequestPath(req) {
   }
 }
 
-function activeReadPath(decodedPath, rawPath) {
-  return ACTIVE_READ_PATHS.has(decodedPath)
+function activeReadRequest(req, decodedPath, rawPath) {
+  if (ACTIVE_READ_PATHS.has(decodedPath)
     // Match dynamic route segments before decoding so an encoded slash stays
     // inside the same Express parameter instead of bypassing the path shape.
-    || ACTIVE_READ_PATH_PATTERNS.some((pattern) => pattern.test(rawPath));
+    || ACTIVE_READ_PATH_PATTERNS.some((pattern) => pattern.test(rawPath))) {
+    return true;
+  }
+  if (TASK_RUN_HISTORY_PATH.test(rawPath)) {
+    const requestedView = req.query?.view;
+    const view = requestedView == null || requestedView === "" ? "full" : String(requestedView);
+    return view === "full";
+  }
+  if (TASK_SCOPED_FILE_PATHS.has(decodedPath)) {
+    return String(req.query?.task_id || req.query?.task || "").trim().length > 0;
+  }
+  return false;
 }
 
 /**
@@ -165,7 +181,7 @@ export function createApiMutationBoundary({
     const rawRequestPath = normalizedRequestPath(req);
     const requestPath = decodedRequestPath(req);
     const activeRead = new Set(["GET", "HEAD"]).has(req.method)
-      && activeReadPath(requestPath, rawRequestPath);
+      && activeReadRequest(req, requestPath, rawRequestPath);
     if (req.method === "OPTIONS") {
       if (!req.get("origin")) {
         next();
