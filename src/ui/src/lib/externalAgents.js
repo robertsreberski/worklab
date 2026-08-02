@@ -103,7 +103,6 @@ export function normalizeAcpProfile(profile = {}) {
       network: bool(permissionsPolicy.network),
       mcp: bool(permissionsPolicy.mcp),
     },
-    configPolicy: plainObject(firstDefined(profile.configPolicy, profile.config_policy)),
     sessionPolicy: plainObject(firstDefined(profile.sessionPolicy, profile.session_policy)),
   };
 }
@@ -132,7 +131,6 @@ export function externalAgentDraft({ agent = {}, profile = {} } = {}) {
     canonicalWorkspace: normalized.canonicalWorkspace,
     probeTimeoutMs: normalized.probeTimeoutMs,
     allowNetwork: normalized.permissionsPolicy.network,
-    configPolicyText: jsonObjectText(normalized.configPolicy),
     sessionPolicyText: jsonObjectText(normalized.sessionPolicy),
   };
 }
@@ -163,7 +161,9 @@ export function externalAgentPayload(draft = {}) {
       network: !!draft.allowNetwork,
       mcp: false,
     },
-    configPolicy: parseJsonObject(draft.configPolicyText, "Configuration policy"),
+    // Generic ACP profiles have no supported opaque configuration channel.
+    // Credentials are referenced by env key name and values never enter UI state.
+    configPolicy: {},
     sessionPolicy: parseJsonObject(draft.sessionPolicyText, "Session policy"),
   };
 }
