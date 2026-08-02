@@ -76,10 +76,17 @@ function transitionOperation(db, id, fromStates, state, fields = {}) {
   `).run(...values);
 }
 
-export function markAcpOperationRunning(db, id, { startedAt = Date.now() } = {}) {
-  return transitionOperation(db, id, ["queued", "waiting_for_interaction"], "running", {
+export function markAcpOperationRunning(db, id, {
+  startedAt = Date.now(),
+  updatedAt = startedAt,
+} = {}) {
+  const queued = transitionOperation(db, id, ["queued"], "running", {
     startedAt,
-    updatedAt: startedAt,
+    updatedAt,
+  });
+  if (queued.changes === 1) return queued;
+  return transitionOperation(db, id, ["waiting_for_interaction"], "running", {
+    updatedAt,
   });
 }
 

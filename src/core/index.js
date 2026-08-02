@@ -152,6 +152,15 @@ export {
   updateAcpProfileRecord,
 } from "./acp-profiles.js";
 
+export {
+  acpInteractionDisposition,
+  rowToAcpInteraction,
+  rowToAcpOperation,
+  sanitizeAcpInteractionSchema,
+  sanitizeAcpOperationError,
+  sanitizeAcpOperationResult,
+} from "./acp-operations.js";
+
 // ---------- Settings + runtime ----------
 export {
   DEFAULT_SETTINGS,
