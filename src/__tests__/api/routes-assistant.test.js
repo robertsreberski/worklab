@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { makeTestServer } from "../helpers/test-server.js";
 import { writeSettings } from "../../core/settings.js";
 import { DEFAULT_ASSISTANT_THREAD_ID } from "../../core/index.js";
+import { SUBAGENT_ACTIVITY_ROW_LIMIT } from "../../core/run-events.js";
 
 function makeConfig(dataDir) {
   return {
@@ -511,7 +512,7 @@ describe("assistant routes", () => {
     expect(run.body.run.error_text).toMatch(/max turns/);
   });
 
-  it("returns tail assistant run events with truncation metadata", async () => {
+  it("returns tail assistant visible items with truncation metadata", async () => {
     const { agent, assistant } = setup({
       runAgent: vi.fn(async (_systemPrompt, options) => {
         options.onEvent?.({ type: "assistant", message: { content: [{ type: "thinking", text: "One" }] } });
@@ -531,8 +532,61 @@ describe("assistant routes", () => {
     await assistant.waitIdle();
 
     const run = await agent.get(`/api/assistant/runs/${started.body.run.id}?events=tail&limit=2`).expect(200);
-    expect(run.body.run.events).toHaveLength(2);
+    // Consecutive thinking frames are one visible item, so the two-item tail
+    // intentionally carries all three raw frames plus the terminal event.
+    expect(run.body.run.events).toHaveLength(4);
     expect(run.body.run.event_count).toBeGreaterThan(2);
+    expect(run.body.run.events_truncated).toBe(true);
+  });
+
+  it("bounds one assistant subagent group even when the requested tail is wider", async () => {
+    const nestedCount = SUBAGENT_ACTIVITY_ROW_LIMIT + 25;
+    const { agent, assistant } = setup({
+      runAgent: vi.fn(async (_systemPrompt, options) => {
+        options.onEvent?.({
+          type: "assistant",
+          message: { content: [{ type: "tool_use", id: "spawn-assistant", name: "Agent", input: {} }] },
+        });
+        options.onEvent?.({
+          type: "subagent_activity",
+          phase: "agent_started",
+          id: "agent:spawn-assistant",
+          subagent: { id: "spawn-assistant", name: "reviewer", callIndex: 0 },
+        });
+        for (let index = 0; index < nestedCount; index += 1) {
+          options.onEvent?.({
+            type: "subagent_activity",
+            phase: "message",
+            id: `agent:spawn-assistant:message-${index}`,
+            kind: "text",
+            content: `child ${index}`,
+            subagent: { id: "spawn-assistant", name: "reviewer", callIndex: 0 },
+          });
+        }
+        options.onEvent?.({
+          type: "subagent_activity",
+          phase: "agent_completed",
+          id: "agent:spawn-assistant",
+          subagent: { id: "spawn-assistant", name: "reviewer", callIndex: 0 },
+        });
+        return {
+          text: assistantJson({ reply_text: "Done.", summary: "Done." }),
+          events: [],
+          usage: {},
+          durationMs: 1,
+          numTurns: 1,
+        };
+      }),
+    });
+
+    const started = await agent.post("/api/assistant/messages").send({ body: "Use a helper." }).expect(202);
+    await assistant.waitIdle();
+    const run = await agent.get(`/api/assistant/runs/${started.body.run.id}?events=tail&limit=500`).expect(200);
+    const activity = run.body.run.events.filter((event) => event.type === "subagent_activity");
+
+    expect(activity.filter((event) => event.phase === "message")).toHaveLength(SUBAGENT_ACTIVITY_ROW_LIMIT);
+    expect(activity.find((event) => event.phase === "agent_started")?._worklab_subagent_omitted_rows).toBe(25);
+    expect(activity.at(-1)?.phase).toBe("agent_completed");
     expect(run.body.run.events_truncated).toBe(true);
   });
 

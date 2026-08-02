@@ -139,7 +139,8 @@ describe("run event visible tail", () => {
     };
     const later = Array.from({ length: 9 }, (_, index) => textEvent(nested.length + 4 + index));
 
-    const tail = tailRunEventsByVisibleItems([parent, opened, ...nested, closed, ...later], 10);
+    const events = [parent, opened, ...nested, closed, ...later];
+    const tail = tailRunEventsByVisibleItems(events, 10);
 
     expect(tail[0]).toBe(parent);
     expect(tail).toContain(closed);
@@ -148,6 +149,14 @@ describe("run event visible tail", () => {
     expect(retainedNested).toHaveLength(SUBAGENT_ACTIVITY_ROW_LIMIT);
     expect(tail.find((event) => event.phase === "agent_started")?._worklab_subagent_omitted_rows).toBe(25);
     expect(tail.slice(-9)).toEqual(later);
+
+    // The nested-row cap is independent of the outer visible-item limit.
+    // A caller asking for more items than the raw event count must not bypass
+    // the live-memory bound.
+    const wideTail = tailRunEventsByVisibleItems(events, 500);
+    expect(wideTail.filter((event) => event.type === "subagent_activity"
+      && !event.phase.startsWith("agent_"))).toHaveLength(SUBAGENT_ACTIVITY_ROW_LIMIT);
+    expect(wideTail.find((event) => event.phase === "agent_started")?._worklab_subagent_omitted_rows).toBe(25);
   });
 
   it("does not attach subagent rows to a colliding non-spawn tool id", () => {

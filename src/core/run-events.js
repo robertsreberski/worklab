@@ -208,7 +208,7 @@ function ensureUnit(units, key, order, index) {
 export function tailRunEventsByVisibleItems(events = [], limit = null) {
   if (limit === null) return events;
   const parsed = Number(limit);
-  if (!Number.isFinite(parsed) || parsed < 1 || events.length <= parsed) return events;
+  if (!Number.isFinite(parsed) || parsed < 1) return events;
 
   const units = new Map();
   const subagentContext = subagentTailContext(events);

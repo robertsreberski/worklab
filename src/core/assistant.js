@@ -32,6 +32,7 @@ import {
 } from "./assistant/logging.js";
 import { renderAssistantViewContext } from "./assistant/view-context.js";
 import { expandMentionsForLlm } from "./mentions/index.js";
+import { tailRunEventsByVisibleItems } from "./run-events.js";
 
 export const DEFAULT_ASSISTANT_THREAD_ID = "personal";
 export const ASSISTANT_HISTORY_PAGE_SIZE = 5;
@@ -130,7 +131,7 @@ export class WorklabAssistantService {
     `).get(runId);
     const events = parseJson(log?.events, []) || [];
     if (!limit) return { events };
-    const tail = events.slice(-eventLimit(limit));
+    const tail = tailRunEventsByVisibleItems(events, eventLimit(limit));
     return {
       events: tail,
       event_count: events.length,

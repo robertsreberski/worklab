@@ -72,7 +72,9 @@ function notifyAssistantRunState(entry) {
 function applyAssistantHydration(entry, data) {
   if (data?.run) entry.run = data.run;
   const events = Array.isArray(data?.run?.events) ? data.run.events : [];
-  if (events.length) entry.events = mergeRunEvents(entry.events, events);
+  if (events.length) {
+    entry.events = mergeRunEvents(entry.events, events, { limit: entry.initialEventLimit });
+  }
   const hydratedCount = Number(data?.run?.event_count ?? entry.events.length);
   entry.eventCount = Math.max(Number(entry.eventCount || 0), hydratedCount, entry.events.length);
   entry.eventsTruncated = Boolean(data?.run?.events_truncated) || entry.events.length < entry.eventCount;
@@ -136,7 +138,7 @@ function openAssistantGlobalStream(runId, entry) {
   entry.streamUnsubscribe = subscribeSSE("global", (payload) => {
     if (!payload || payload.run_id !== runId) return;
     if (payload.type === "assistant_run_event" && payload.event) {
-      entry.events = mergeRunEvents(entry.events, [payload.event]);
+      entry.events = mergeRunEvents(entry.events, [payload.event], { limit: entry.initialEventLimit });
       const seq = Number(payload.event_seq ?? payload.event?._event_seq);
       entry.eventCount = Math.max(
         Number(entry.eventCount || 0),
