@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { spawnWorker } from "../../coordinator/spawn-worker.js";
+import { structuralAcpProviderSessionId } from "../helpers/acp-tokens.js";
 import { makeTestDb } from "../helpers/test-db.js";
 import { newRunId, newTaskId } from "../../core/ids.js";
 
@@ -36,7 +37,7 @@ describe("coordinator drain — clean drain within timeout", () => {
     const db = makeTestDb();
     const broker = stubBroker();
     const { taskId, runId } = seedTaskAndRun(db);
-    const providerSessionId = "acp:v1:external:ZHJhaW5lZC1zZXNzaW9u";
+    const providerSessionId = structuralAcpProviderSessionId("external", "drained-session");
     const script = {
       events: [
         { type: "started", runId },

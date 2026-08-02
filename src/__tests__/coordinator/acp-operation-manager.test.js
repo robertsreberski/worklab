@@ -10,6 +10,10 @@ import {
   ACP_PRIVATE_URL_HANDOFF,
   createAcpUrlHandoffStore,
 } from "../../core/acp-url-handoff.js";
+import {
+  structuralAcpProviderSessionId,
+  structuralAcpSessionCursor,
+} from "../helpers/acp-tokens.js";
 
 const cleanup = [];
 
@@ -1047,7 +1051,7 @@ describe("AcpOperationManager", () => {
         return {
           sessions: [{
             sessionId: rawSessionId,
-            providerSessionId: `acp:v1:${activeProfile.id}:${Buffer.from(rawSessionId).toString("base64url")}`,
+            providerSessionId: structuralAcpProviderSessionId(activeProfile.id, rawSessionId),
             title: `Listed session ${page + 1}`,
             updatedAt: rawSessionId,
             token: "drop-list-secret",
@@ -1066,10 +1070,10 @@ describe("AcpOperationManager", () => {
         };
       },
     });
-    const pageCursor = `acp-cursor:v1:${profile.id}:${Buffer.from(rawPageCursor).toString("base64url")}`;
+    const pageCursor = structuralAcpSessionCursor(profile.id, rawPageCursor);
     const listedOperation = manager.start({ profileId: profile.id, kind: "list_sessions" });
     const listed = await waitForOperation(manager, listedOperation.id, "succeeded");
-    const firstPublicId = `acp:v1:${profile.id}:${Buffer.from(rawSessionIds[0]).toString("base64url")}`;
+    const firstPublicId = structuralAcpProviderSessionId(profile.id, rawSessionIds[0]);
     expect(listed.result).toEqual({
       sessions: [{ id: firstPublicId, title: "Listed session 1" }],
       nextCursor: pageCursor,
@@ -1083,7 +1087,7 @@ describe("AcpOperationManager", () => {
     });
     expect(secondOperation.request).toEqual({ cursor: pageCursor });
     const secondPage = await waitForOperation(manager, secondOperation.id, "succeeded");
-    const publicId = `acp:v1:${profile.id}:${Buffer.from(rawSessionIds[1]).toString("base64url")}`;
+    const publicId = structuralAcpProviderSessionId(profile.id, rawSessionIds[1]);
     expect(secondPage.result).toEqual({
       sessions: [{ id: publicId, title: "Listed session 2" }],
       truncated: false,
@@ -1112,7 +1116,7 @@ describe("AcpOperationManager", () => {
     const { db, profile, events, manager } = setup({
       listSessions: async ({ profile: activeProfile }) => ({
         sessions: [{
-          providerSessionId: `acp:v1:${activeProfile.id}:${Buffer.from(rawSessionId).toString("base64url")}`,
+          providerSessionId: structuralAcpProviderSessionId(activeProfile.id, rawSessionId),
           title: `Continue ${rawCursor}`,
           status: rawCursor,
         }],
@@ -1122,7 +1126,7 @@ describe("AcpOperationManager", () => {
 
     const operation = manager.start({ profileId: profile.id, kind: "list_sessions" });
     const completed = await waitForOperation(manager, operation.id, "succeeded");
-    const providerSessionId = `acp:v1:${profile.id}:${Buffer.from(rawSessionId).toString("base64url")}`;
+    const providerSessionId = structuralAcpProviderSessionId(profile.id, rawSessionId);
     expect(completed.result).toEqual({
       sessions: [{
         id: providerSessionId,
@@ -1151,14 +1155,14 @@ describe("AcpOperationManager", () => {
           sessions: Array.from({ length: 201 }, (_, index) => {
             const rawSessionId = `remote/${index}`;
             return {
-              providerSessionId: `acp:v1:${activeProfile.id}:${Buffer.from(rawSessionId).toString("base64url")}`,
+              providerSessionId: structuralAcpProviderSessionId(activeProfile.id, rawSessionId),
               title: `Session ${index}`,
             };
           }),
         };
       },
     });
-    const validCursor = `acp-cursor:v1:${profile.id}:${Buffer.from("page-2").toString("base64url")}`;
+    const validCursor = structuralAcpSessionCursor(profile.id, "page-2");
 
     const capped = manager.start({ profileId: profile.id, kind: "list_sessions" });
     const cappedResult = await waitForOperation(manager, capped.id, "succeeded");
@@ -1239,7 +1243,7 @@ describe("AcpOperationManager", () => {
     expect(() => manager.start({
       profileId: profile.id,
       kind: "list_sessions",
-      cursor: `acp-cursor:v1:other-profile:${Buffer.from("page-2").toString("base64url")}`,
+      cursor: structuralAcpSessionCursor("other-profile", "page-2"),
     })).toThrowError("cursor is invalid");
   });
 });

@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { emitCancelledEvent, emitFinalResult } from "../../worker/result-emitter.js";
+import { structuralAcpProviderSessionId } from "../helpers/acp-tokens.js";
 
-const PROVIDER_SESSION_ID = "acp:v1:profile-1:opaque-session";
+const PROVIDER_SESSION_ID = structuralAcpProviderSessionId("profile-1", "opaque-session");
 const RAW_PROTOCOL_RESULT = {
   sessionId: "upstream-session-id",
   messages: [{ role: "assistant", content: "raw protocol output must stay private" }],

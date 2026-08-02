@@ -11,6 +11,10 @@ import {
   finalizeAcpInteractionResponse,
   insertAcpInteractionRequest,
 } from "../../core/db/queries/acp-interactions.js";
+import {
+  structuralAcpProviderSessionId,
+  structuralAcpSessionCursor,
+} from "../helpers/acp-tokens.js";
 import { makeTestServer } from "../helpers/test-server.js";
 
 const cleanup = [];
@@ -529,7 +533,7 @@ describe("ACP API", () => {
         return {
           sessions: [{
             sessionId: rawSessionId,
-            providerSessionId: `acp:v1:${activeProfile.id}:${Buffer.from(rawSessionId).toString("base64url")}`,
+            providerSessionId: structuralAcpProviderSessionId(activeProfile.id, rawSessionId),
             title: page === 0 ? "Listed session 1" : rawSessionId,
             updatedAt: rawSessionId,
           }],
@@ -548,7 +552,7 @@ describe("ACP API", () => {
     };
     const { agent, db, acpOperationManager } = makeAcpTestServer({ acpControls: controls });
     const profile = (await createGeneric(agent, cwd)).body.profile;
-    pageCursor = `acp-cursor:v1:${profile.id}:${Buffer.from(rawPageCursor).toString("base64url")}`;
+    pageCursor = structuralAcpSessionCursor(profile.id, rawPageCursor);
 
     const started = await agent.post(`/api/acp/profiles/${profile.id}/probe`).expect(202);
     expect(started.body.operation.state).toBe("queued");
@@ -573,7 +577,7 @@ describe("ACP API", () => {
       expect(acpOperationManager.get(listed.body.operation.id)?.state).toBe("succeeded");
     });
     const listedResult = acpOperationManager.get(listed.body.operation.id).result;
-    const firstPublicId = `acp:v1:${profile.id}:${Buffer.from(rawSessionIds[0]).toString("base64url")}`;
+    const firstPublicId = structuralAcpProviderSessionId(profile.id, rawSessionIds[0]);
     expect(listedResult).toEqual({
       sessions: [{ id: firstPublicId, title: "Listed session 1" }],
       nextCursor: pageCursor,
@@ -589,7 +593,7 @@ describe("ACP API", () => {
       expect(acpOperationManager.get(secondPage.body.operation.id)?.state).toBe("succeeded");
     });
     const secondResult = acpOperationManager.get(secondPage.body.operation.id).result;
-    const publicId = `acp:v1:${profile.id}:${Buffer.from(rawSessionIds[1]).toString("base64url")}`;
+    const publicId = structuralAcpProviderSessionId(profile.id, rawSessionIds[1]);
     expect(secondResult).toEqual({
       sessions: [{ id: publicId }],
       truncated: false,
@@ -688,7 +692,7 @@ describe("ACP API", () => {
       remoteSessionId: null,
       request: {},
       result: {
-        sessions: [{ id: providerSessionId, title: "Legacy [redacted]" }],
+        sessions: [],
         truncated: true,
       },
       error: { code: "protocol", message: "ACP list_sessions operation failed." },

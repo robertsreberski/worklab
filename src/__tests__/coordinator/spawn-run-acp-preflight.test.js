@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { spawnTaskRun } from "../../coordinator/watcher/spawn-run.js";
+import { structuralAcpProviderSessionId } from "../helpers/acp-tokens.js";
 import { makeTestDb } from "../helpers/test-db.js";
 import { newRunId, newTaskId } from "../../core/ids.js";
 
@@ -81,7 +82,7 @@ describe("spawnTaskRun ACP preflight", () => {
     try {
       const task = setup(db, dataDir);
       const parentRunId = newRunId();
-      const providerSessionId = `acp:v1:profile-1:${Buffer.from("remote-session").toString("base64url")}`;
+      const providerSessionId = structuralAcpProviderSessionId("profile-1", "remote-session");
       db.prepare(`
         INSERT INTO task_runs
           (id, task_id, mode, stage, agent_name, provider_kind, started_at, status, process_status, provider_session_id)
@@ -115,8 +116,8 @@ describe("spawnTaskRun ACP preflight", () => {
 
   it.each([
     ["raw remote id", "remote-session"],
-    ["wrong profile", `acp:v1:profile-2:${Buffer.from("remote-session").toString("base64url")}`],
-    ["non-canonical base64url", "acp:v1:profile-1:A"],
+    ["wrong profile", structuralAcpProviderSessionId("profile-2", "remote-session")],
+    ["non-canonical base64url", "acp:v2:profile-1:A"],
   ])("does not reuse a %s during ACP recovery", (_label, providerSessionId) => {
     const db = makeTestDb();
     const dataDir = mkdtempSync(join(tmpdir(), "worklab-acp-spawn-"));

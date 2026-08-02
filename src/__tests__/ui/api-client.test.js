@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../ui/src/lib/api.js";
+import { structuralAcpProviderSessionId } from "../helpers/acp-tokens.js";
 
 function uiSourceFiles(dir) {
   const files = [];
@@ -269,6 +270,7 @@ describe("ui API client", () => {
 
   it("uses named ACP profile, operation, and mono discovery helpers", async () => {
     const controller = new AbortController();
+    const providerSessionId = structuralAcpProviderSessionId("profile-1", "opaque");
     global.fetch = vi.fn(async () => ({
       ok: true,
       status: 200,
@@ -283,7 +285,7 @@ describe("ui API client", () => {
     await api.authenticateAcpProfile("profile/1", "oauth-browser");
     await api.logoutAcpProfile("profile/1");
     await api.listAcpProfileSessions("profile/1");
-    await api.deleteAcpProfileSession("profile/1", "acp:v1:profile-1:opaque");
+    await api.deleteAcpProfileSession("profile/1", providerSessionId);
     await api.listAcpProfileOperations("profile/1", { limit: 25, signal: controller.signal });
     await api.getAcpOperation("operation/1");
     await api.cancelAcpOperation("operation/1");
@@ -302,7 +304,7 @@ describe("ui API client", () => {
       "/api/acp/profiles/profile%2F1/authenticate",
       "/api/acp/profiles/profile%2F1/logout",
       "/api/acp/profiles/profile%2F1/sessions:list",
-      "/api/acp/profiles/profile%2F1/sessions/acp%3Av1%3Aprofile-1%3Aopaque",
+      `/api/acp/profiles/profile%2F1/sessions/${encodeURIComponent(providerSessionId)}`,
       "/api/acp/profiles/profile%2F1/operations?limit=25",
       "/api/acp/operations/operation%2F1",
       "/api/acp/operations/operation%2F1/cancel",

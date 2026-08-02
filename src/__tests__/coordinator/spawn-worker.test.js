@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawnWorker } from "../../coordinator/spawn-worker.js";
+import { structuralAcpProviderSessionId } from "../helpers/acp-tokens.js";
 import { makeTestDb } from "../helpers/test-db.js";
 import { newRunId, newTaskId } from "../../core/ids.js";
 
@@ -1012,7 +1013,7 @@ describe("spawnWorker", () => {
     const db = makeTestDb();
     const broker = stubBroker();
     const { taskId, runId } = seedTaskAndRun(db);
-    const providerSessionId = `acp:v1:external:${Buffer.from(`remote-${runId}`).toString("base64url")}`;
+    const providerSessionId = structuralAcpProviderSessionId("external", `remote-${runId}`);
     const script = {
       events: [{ ...terminalEvent, provider_session_id: providerSessionId }],
       exitCode,

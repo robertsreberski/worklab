@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { structuralAcpProviderSessionId } from "../helpers/acp-tokens.js";
 import { makeTestDb } from "../helpers/test-db.js";
 import { createTaskWatcher } from "../../coordinator/task-watcher.js";
 import { newRunId, newTaskId } from "../../core/ids.js";
@@ -107,7 +108,7 @@ describe("coordinator resume — drained-snapshot recovery", () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
     const taskId = seedTask(db);
-    const providerSessionId = "acp:v1:external:ZHJhaW5lZC1zZXNzaW9u";
+    const providerSessionId = structuralAcpProviderSessionId("external", "drained-session");
     const drainedRunId = seedDrainedRun(db, taskId, { providerSessionId });
 
     const broker = stubBroker();

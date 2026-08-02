@@ -13,6 +13,7 @@ import {
 import { insertAcpInteractionRequest } from "../../core/db/queries/acp-interactions.js";
 import { createServer } from "../../api/server.js";
 import { createAdminToolHandlers } from "../../mcp/admin/tools/index.js";
+import { structuralAcpProviderSessionId } from "../helpers/acp-tokens.js";
 import { makeTestDb } from "../helpers/test-db.js";
 import { sameOriginTestAgent } from "../helpers/test-server.js";
 import { newRunId, newTaskId } from "../../core/ids.js";
@@ -579,7 +580,7 @@ describe("spawnWorker ACP interactions", () => {
     try {
       const { taskId, runId } = seed(db);
       const rawSessionId = "RAW_TOO_DEEP_SESSION";
-      const providerSessionId = `acp:v1:profile-1:${Buffer.from(rawSessionId).toString("base64url")}`;
+      const providerSessionId = structuralAcpProviderSessionId("profile-1", rawSessionId);
       let nested = { sessionId: rawSessionId };
       for (let depth = 0; depth < 25; depth += 1) nested = { nested };
       const handle = spawnWorker({
