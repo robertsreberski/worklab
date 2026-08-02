@@ -119,7 +119,7 @@ describe("legacy ACP session privacy migration", () => {
         type: "sdk_event",
         sessionId: rawSession,
         providerSessionId,
-        message: `${rawSession} ${handleOnlySession}`,
+        message: `${rawSession} ${handleOnlySession} ${rawPageToken}`,
       }),
       `{"type":"partial","sessionId":"${malformedLineSession}"`,
       "",
@@ -177,6 +177,19 @@ describe("legacy ACP session privacy migration", () => {
         'complete', 'succeeded', 4, ?, ?)
     `).run(JSON.stringify({ sessionId: nonAcpSession }), nonAcpSession);
     db.prepare(`
+      UPDATE tasks
+      SET plan_body = ?, error_text = ?, pending_actions_json = ?
+      WHERE id = 'task-acp'
+    `).run(
+      `promoted ${rawPageToken}`,
+      `promoted ${malformedProviderId}`,
+      JSON.stringify([{ label: rawPageCursor }]),
+    );
+    db.prepare(`
+      INSERT INTO tasks (id, title, created_at, updated_at)
+      VALUES ('task-unrelated-copy', 'Unrelated copy holder', 1, 1)
+    `).run();
+    db.prepare(`
       INSERT INTO agent_logs (id, task_run_id, events, status, created_at)
       VALUES ('log-raw', 'run-raw', ?, 'complete', 1)
     `).run(JSON.stringify([{ type: "message", text: rawSession, session_id: rawSession }]));
@@ -185,9 +198,17 @@ describe("legacy ACP session privacy migration", () => {
       VALUES ('log-handle', 'run-handle', ?, 'complete', 2)
     `).run(JSON.stringify([{ type: "message", text: handleOnlySession, provider_session_id: providerSessionId }]));
     db.prepare(`
+      INSERT INTO agent_logs (id, task_run_id, events, status, created_at)
+      VALUES ('log-unrelated-copy', 'run-non-acp', ?, 'complete', 3)
+    `).run(JSON.stringify([{ type: "message", text: `copied ${rawPageToken}` }]));
+    db.prepare(`
       INSERT INTO task_comments (id, task_id, author_type, body, created_at)
       VALUES ('comment-acp', 'task-acp', 'system', ?, 1)
     `).run(`copied ${rawSession} ${handleOnlySession} ${malformedLineSession}`);
+    db.prepare(`
+      INSERT INTO task_comments (id, task_id, author_type, body, created_at)
+      VALUES ('comment-unrelated-copy', 'task-unrelated-copy', 'system', ?, 2)
+    `).run(`copied ${rawPageToken}`);
     db.prepare(`
       INSERT INTO run_compactions (
         id, task_run_id, seq, trigger, summary, metadata_json, error_text, created_at
@@ -217,6 +238,53 @@ describe("legacy ACP session privacy migration", () => {
         'hash-unrelated', 1, 1
       )
     `).run();
+    db.prepare(`
+      INSERT INTO embeddings (
+        id, kind, ref, source_ref, title, chunk_text, vector_present,
+        content_hash, created_at, updated_at
+      ) VALUES (
+        'embedding-unrelated-copy', 'kb', 'knowledge/copy.md#chunk-0',
+        'knowledge/copy.md#chunk-0', 'Copied cursor', ?, 0,
+        'hash-unrelated-copy', 1, 1
+      )
+    `).run(`copied ${rawPageToken}`);
+    db.prepare(`
+      INSERT INTO embeddings_fts (id, kind, source_ref, title, chunk_text)
+      VALUES (
+        'embedding-unrelated-copy', 'kb', 'knowledge/copy.md#chunk-0',
+        'Copied cursor', ?
+      )
+    `).run(`copied ${rawPageToken}`);
+    db.prepare(`
+      INSERT INTO agent_memories (
+        id, agent_name, kind, scope, status, content, content_key, evidence,
+        task_id, run_id, source, metadata_json, created_at, updated_at
+      ) VALUES (
+        'memory-acp-copy', 'external', 'learning', 'task', 'active', ?,
+        'memory-acp-copy-key', ?, 'task-acp', 'run-raw', 'run', ?, 1, 1
+      )
+    `).run(
+      `learned ${malformedProviderId}`,
+      `evidence ${rawPageToken}`,
+      JSON.stringify({ copied: rawPageCursor }),
+    );
+    db.prepare(`
+      INSERT INTO embeddings (
+        id, kind, ref, source_ref, title, chunk_text, vector_present,
+        content_hash, created_at, updated_at
+      ) VALUES (
+        'embedding-memory-acp-copy', 'agent_memory',
+        'agent_memories/memory-acp-copy', 'agent_memories/memory-acp-copy',
+        'Memory', ?, 0, 'hash-memory-copy', 1, 1
+      )
+    `).run(`learned ${malformedProviderId}`);
+    db.prepare(`
+      INSERT INTO embeddings_fts (id, kind, source_ref, title, chunk_text)
+      VALUES (
+        'embedding-memory-acp-copy', 'agent_memory',
+        'agent_memories/memory-acp-copy', 'Memory', ?
+      )
+    `).run(`learned ${malformedProviderId}`);
     db.prepare(`
       INSERT INTO embeddings_fts (id, kind, source_ref, title, chunk_text)
       VALUES (
@@ -331,14 +399,26 @@ describe("legacy ACP session privacy migration", () => {
       .toEqual([{ type: "message", text: "[redacted]" }]);
     expect(JSON.parse(db.prepare("SELECT events FROM agent_logs WHERE id = 'log-handle'").get().events))
       .toEqual([{ type: "message", text: "[redacted]", provider_session_id: providerSessionId }]);
+    expect(JSON.parse(db.prepare("SELECT events FROM agent_logs WHERE id = 'log-unrelated-copy'").get().events))
+      .toEqual([{ type: "message", text: "copied [redacted]" }]);
     expect(db.prepare("SELECT body FROM task_comments WHERE id = 'comment-acp'").get().body)
       .toBe("copied [redacted] [redacted] [redacted]");
+    expect(db.prepare("SELECT body FROM task_comments WHERE id = 'comment-unrelated-copy'").get().body)
+      .toBe("copied [redacted]");
+    expect(db.prepare(`
+      SELECT plan_body, error_text, pending_actions_json FROM tasks WHERE id = 'task-acp'
+    `).get()).toEqual({
+      plan_body: "promoted [redacted]",
+      error_text: "promoted [redacted]",
+      pending_actions_json: '[{"label":"[redacted]"}]',
+    });
     expect(db.prepare("SELECT summary, metadata_json, error_text FROM run_compactions WHERE id = 'compact-acp'").get())
       .toEqual({ summary: "[redacted]", metadata_json: '{"copied":"[redacted]"}', error_text: "[redacted]" });
     expect(db.prepare("SELECT id FROM embeddings ORDER BY id").all())
       .toEqual([{ id: "embedding-unrelated" }]);
     expect(db.prepare("SELECT id FROM embeddings_fts ORDER BY id").all())
       .toEqual([{ id: "embedding-unrelated" }]);
+    expect(db.prepare("SELECT id FROM agent_memories ORDER BY id").all()).toEqual([]);
     expect(db.prepare("SELECT protocol_request_id, request_schema_json, disposition FROM acp_interactions WHERE id = 'interaction-acp'").get())
       .toEqual({
         protocol_request_id: "legacy-redacted:interaction-acp",

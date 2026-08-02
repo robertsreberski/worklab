@@ -14,12 +14,20 @@ import {
   createAcpEventPrivacyBoundary,
   validateAcpProviderSessionId,
 } from "../../acp-privacy.js";
-import { normalizeAcpPaginationCursorKey } from "../../acp-session-cursors.js";
+import {
+  normalizeAcpPaginationCursorKey,
+  parseAcpSessionCursor,
+} from "../../acp-session-cursors.js";
 import { runLogPathInsideDataDir } from "../../run-event-store.js";
 
 const ACP_PRIVACY_COMPACTION_KEY = "acp_legacy_session_privacy_compacted_v1";
 const PROFILE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const MAX_RAW_LOG_BYTES = 16 * 1024 * 1024;
+const MAX_GLOBAL_PRIVATE_VALUES = 4_096;
+const MAX_GLOBAL_PRIVATE_VALUE_CHARS = 16 * 1024;
+const GLOBAL_PRIVATE_VALUE_BATCH_SIZE = 96;
+const MIN_GLOBAL_COPY_VALUE_CHARS = 8;
+const GLOBAL_PRIVACY_PROFILE_ID = "legacy-acp-global-copy";
 const LEGACY_PRIVACY_EVENT = Object.freeze({
   type: "privacy_redaction",
   reason: "legacy_acp_session_data",
@@ -39,6 +47,18 @@ const RUN_JSON_DEFAULTS = new Map([
   ["tool_usage_summary_json", null],
 ]);
 const RUN_TEXT_COLUMNS = ["error_text", "summary", "details"];
+const TASK_JSON_DEFAULTS = new Map([
+  ["goal_contract_json", {}],
+  ["pending_actions_json", []],
+  ["pending_questions_json", []],
+  ["blocking_issues_json", []],
+]);
+const TASK_TEXT_COLUMNS = [
+  "goal_status_reason",
+  "stage_reason",
+  "plan_body",
+  "error_text",
+];
 const EXPLICIT_PRIVATE_VALUE_RE = /"((?:\\.|[^"\\])*)"\s*:\s*"((?:\\.|[^"\\])*)"/gu;
 const EXPLICIT_SESSION_KEYS = new Set([
   "sessionId",
@@ -113,6 +133,108 @@ function explicitSessionSeeds(text) {
     }
   }
   return seeds;
+}
+
+function decodedProviderSessionSeed(value) {
+  if (typeof value !== "string") return null;
+  const match = /^acp:v1:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([A-Za-z0-9_-]+)$/u.exec(value);
+  if (!match || !validateAcpProviderSessionId(value, match[1])) return null;
+  try {
+    const bytes = Buffer.from(match[2], "base64url");
+    const decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return bytes.length > 0
+      && bytes.toString("base64url") === match[2]
+      && decoded
+      && decoded.trim() === decoded
+      && !decoded.includes("\0")
+      ? decoded
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function addGlobalPrivateValue(values, candidate, { cursor = false, provider = false } = {}) {
+  if (candidate == null || candidate === "") return;
+  if (typeof candidate !== "string") return;
+  const value = cursor
+    ? (parseAcpSessionCursor(candidate)?.rawValue ?? candidate)
+    : provider
+      ? (decodedProviderSessionSeed(candidate) ?? candidate)
+      : candidate;
+  if (!value || values.has(value)) return;
+  if (value.length > MAX_GLOBAL_PRIVATE_VALUE_CHARS) {
+    throw new Error("ACP privacy migration exceeded the private-value size limit");
+  }
+  if (values.size >= MAX_GLOBAL_PRIVATE_VALUES) {
+    throw new Error("ACP privacy migration exceeded the private-value count limit");
+  }
+  values.add(value);
+}
+
+function collectPrivateValuesFromObject(value, values, {
+  includeCursors = false,
+  parentKey = "",
+  depth = 0,
+  nodes = { value: 0 },
+} = {}) {
+  if (depth > 32 || nodes.value > 50_000) {
+    throw new Error("ACP privacy migration exceeded the private-value traversal limit");
+  }
+  nodes.value += 1;
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      collectPrivateValuesFromObject(entry, values, {
+        includeCursors,
+        parentKey,
+        depth: depth + 1,
+        nodes,
+      });
+    }
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  for (const [key, entry] of Object.entries(value)) {
+    if (key === "sessionId" || key === "session_id") addGlobalPrivateValue(values, entry);
+    if (key === "providerSessionId" || key === "provider_session_id") {
+      addGlobalPrivateValue(values, entry, { provider: true });
+    }
+    if (parentKey === "sessions" && key === "id") addGlobalPrivateValue(values, entry, { provider: true });
+    if (includeCursors && normalizeAcpPaginationCursorKey(key)) {
+      addGlobalPrivateValue(values, entry, { cursor: true });
+    }
+    collectPrivateValuesFromObject(entry, values, {
+      includeCursors,
+      parentKey: key,
+      depth: depth + 1,
+      nodes,
+    });
+  }
+}
+
+function collectPrivateValuesFromText(text, values, { includeCursors = false } = {}) {
+  if (text == null) return;
+  const serialized = String(text);
+  if (serialized.length > MAX_RAW_LOG_BYTES) {
+    throw new Error("ACP privacy migration exceeded the private-value source limit");
+  }
+  for (const match of serialized.matchAll(EXPLICIT_PRIVATE_VALUE_RE)) {
+    try {
+      const key = JSON.parse(`"${match[1]}"`);
+      const value = JSON.parse(`"${match[2]}"`);
+      if (key === "sessionId" || key === "session_id") addGlobalPrivateValue(values, value);
+      if (key === "providerSessionId" || key === "provider_session_id") {
+        addGlobalPrivateValue(values, value, { provider: true });
+      }
+      if (includeCursors && normalizeAcpPaginationCursorKey(key)) {
+        addGlobalPrivateValue(values, value, { cursor: true });
+      }
+    } catch {
+      // The owning ACP JSON value is replaced by its existing fail-closed path.
+    }
+  }
+  const parsed = parseJson(text, null);
+  if (parsed.valid) collectPrivateValuesFromObject(parsed.value, values, { includeCursors });
 }
 
 function profileIdFromHandle(value) {
@@ -264,6 +386,49 @@ function relatedRows(db, run) {
   return { logs, comments, compactions, interactions, embeddings };
 }
 
+function collectGlobalAcpPrivateValues(db, runs, jsonColumns, dataDir) {
+  const values = new Set();
+  if (tableExists(db, "acp_operations")) {
+    const operations = db.prepare(`
+      SELECT kind, remote_session_id, request_json, result_json, error_json
+      FROM acp_operations ORDER BY rowid ASC
+    `).all();
+    for (const operation of operations) {
+      addGlobalPrivateValue(values, operation.remote_session_id, { provider: true });
+      for (const column of ["request_json", "result_json", "error_json"]) {
+        collectPrivateValuesFromText(operation[column], values, {
+          includeCursors: operation.kind === "list_sessions",
+        });
+      }
+    }
+  }
+
+  for (const run of runs) {
+    addGlobalPrivateValue(values, run.provider_session_id, { provider: true });
+    for (const column of jsonColumns) {
+      collectPrivateValuesFromText(run[column], values, { includeCursors: true });
+    }
+    const related = relatedRows(db, run);
+    for (const log of related.logs) {
+      collectPrivateValuesFromText(log.events, values, { includeCursors: true });
+    }
+    for (const compaction of related.compactions) {
+      collectPrivateValuesFromText(compaction.metadata_json, values, { includeCursors: true });
+    }
+    for (const interaction of related.interactions) {
+      collectPrivateValuesFromText(interaction.request_schema_json, values, { includeCursors: true });
+    }
+    const rawLog = rawLogForRun(run.raw_output_path, dataDir);
+    for (const event of rawLog.events) {
+      collectPrivateValuesFromObject(event, values, { includeCursors: true });
+    }
+    for (const seed of rawLog.seeds) {
+      collectPrivateValuesFromObject(seed, values, { includeCursors: true });
+    }
+  }
+  return [...values].sort((left, right) => right.length - left.length);
+}
+
 function preparedRunValue(run, jsonColumns, textColumns, related, rawLog) {
   const seeds = [...rawLog.seeds];
   const runJson = {};
@@ -333,6 +498,77 @@ function serializedJson(value, fallback) {
   } catch {
     return JSON.stringify(fallback);
   }
+}
+
+function serializedContainsPrivateValue(value, privateValues) {
+  const text = String(value ?? "");
+  return privateValues.some((privateValue) => {
+    if (text.includes(privateValue)) return true;
+    const escaped = JSON.stringify(privateValue).slice(1, -1);
+    return escaped !== privateValue && text.includes(escaped);
+  });
+}
+
+function sanitizePrivateCopies(value, privateValues, failureValue, profileId = GLOBAL_PRIVACY_PROFILE_ID) {
+  let sanitized = value;
+  for (let offset = 0; offset < privateValues.length; offset += GLOBAL_PRIVATE_VALUE_BATCH_SIZE) {
+    const batch = privateValues.slice(offset, offset + GLOBAL_PRIVATE_VALUE_BATCH_SIZE);
+    const boundary = createAcpEventPrivacyBoundary({
+      profileId,
+      failureValue: null,
+    });
+    const wrapped = boundary.sanitizeEvent({
+      privateSeeds: batch.map((privateValue) => ({ sessionId: privateValue })),
+      value: sanitized,
+    });
+    if (!wrapped) return failureValue;
+    sanitized = wrapped.value;
+  }
+  return sanitized;
+}
+
+function scrubPrivateText(value, privateValues, fallback = "[redacted]") {
+  if (value == null || !serializedContainsPrivateValue(value, privateValues)) return value;
+  return sanitizePrivateCopies(String(value), privateValues, fallback);
+}
+
+function scrubPrivateJson(value, privateValues, fallback, profileId = GLOBAL_PRIVACY_PROFILE_ID) {
+  if (value == null || !serializedContainsPrivateValue(value, privateValues)) return value;
+  const parsed = parseJson(value, fallback);
+  if (!parsed.valid) return serializedJson(fallback, fallback);
+  return serializedJson(
+    sanitizePrivateCopies(parsed.value, privateValues, fallback, profileId),
+    fallback,
+  );
+}
+
+function embeddingReferencesMemory(row, memoryIds) {
+  if (!memoryIds.size) return false;
+  for (const value of [row.ref, row.source_ref]) {
+    const segments = referenceSegments(value);
+    if (segments.some((segment) => memoryIds.has(segment))) return true;
+  }
+  return false;
+}
+
+function deleteEmbeddingRows(db, rows) {
+  if (!rows.length) return 0;
+  const ftsTriggerBacked = !!db.prepare(`
+    SELECT name FROM sqlite_master
+    WHERE type = 'trigger' AND tbl_name = 'embeddings'
+      AND lower(sql) LIKE '%embeddings_fts%'
+    LIMIT 1
+  `).get();
+  const deleteFts = !ftsTriggerBacked && tableExists(db, "embeddings_fts")
+    ? db.prepare("DELETE FROM embeddings_fts WHERE id = ?")
+    : null;
+  const remove = db.prepare("DELETE FROM embeddings WHERE id = ?");
+  let changes = 0;
+  for (const row of rows) {
+    deleteFts?.run(row.id);
+    changes += remove.run(row.id).changes;
+  }
+  return changes;
 }
 
 function applyRunPlan(db, run, plan, jsonColumns, textColumns, related) {
@@ -558,6 +794,263 @@ function scrubStandaloneAcpOperations(db) {
   return changes;
 }
 
+function scrubDurableAcpPrivateCopies(db, runs, privateValues) {
+  if (!privateValues.length) return 0;
+  const globallyDistinctive = privateValues.filter((value) => value.length >= MIN_GLOBAL_COPY_VALUE_CHARS);
+  const runIds = new Set(runs.map((run) => run.id));
+  const runProfiles = new Map(runs.map((run) => [run.id, profileIdForRun(run)]));
+  const taskIds = new Set(runs.map((run) => run.task_id).filter(Boolean));
+  const linkedCommentIds = new Set();
+  let changes = 0;
+
+  const transaction = db.transaction(() => {
+    if (tableExists(db, "tasks")) {
+      const jsonColumns = [...TASK_JSON_DEFAULTS.keys()].filter((column) => hasColumn(db, "tasks", column));
+      const textColumns = TASK_TEXT_COLUMNS.filter((column) => hasColumn(db, "tasks", column));
+      const columns = [...jsonColumns, ...textColumns];
+      if (columns.length) {
+        const update = db.prepare(`
+          UPDATE tasks SET ${columns.map((column) => `${column} = ?`).join(", ")} WHERE id = ?
+        `);
+        for (const row of db.prepare(`SELECT id, ${columns.join(", ")} FROM tasks`).all()) {
+          const values = taskIds.has(row.id) ? privateValues : globallyDistinctive;
+          if (!values.length) continue;
+          const scrubbed = [
+            ...jsonColumns.map((column) => scrubPrivateJson(row[column], values, TASK_JSON_DEFAULTS.get(column))),
+            ...textColumns.map((column) => scrubPrivateText(row[column], values)),
+          ];
+          if (columns.some((column, index) => scrubbed[index] !== row[column])) {
+            changes += update.run(...scrubbed, row.id).changes;
+          }
+        }
+      }
+    }
+
+    if (tableExists(db, "task_comments") && hasColumn(db, "task_comments", "body")) {
+      const update = db.prepare("UPDATE task_comments SET body = ? WHERE id = ?");
+      for (const row of db.prepare("SELECT id, task_id, body FROM task_comments").all()) {
+        const linked = taskIds.has(row.task_id);
+        if (linked) linkedCommentIds.add(row.id);
+        const values = linked ? privateValues : globallyDistinctive;
+        const body = scrubPrivateText(row.body, values);
+        if (body !== row.body) changes += update.run(body, row.id).changes;
+      }
+    }
+
+    if (tableExists(db, "task_runs")) {
+      const jsonColumns = [...RUN_JSON_DEFAULTS.keys()].filter((column) => hasColumn(db, "task_runs", column));
+      const textColumns = RUN_TEXT_COLUMNS.filter((column) => hasColumn(db, "task_runs", column));
+      const columns = [...jsonColumns, ...textColumns];
+      if (columns.length) {
+        const update = db.prepare(`
+          UPDATE task_runs SET ${columns.map((column) => `${column} = ?`).join(", ")} WHERE id = ?
+        `);
+        for (const row of db.prepare(`SELECT id, ${columns.join(", ")} FROM task_runs`).all()) {
+          const values = runIds.has(row.id) ? privateValues : globallyDistinctive;
+          if (!values.length) continue;
+          const scrubbed = [
+            ...jsonColumns.map((column) => scrubPrivateJson(
+              row[column],
+              values,
+              RUN_JSON_DEFAULTS.get(column),
+              runProfiles.get(row.id),
+            )),
+            ...textColumns.map((column) => scrubPrivateText(row[column], values)),
+          ];
+          if (columns.some((column, index) => scrubbed[index] !== row[column])) {
+            changes += update.run(...scrubbed, row.id).changes;
+          }
+        }
+      }
+    }
+
+    if (tableExists(db, "agent_logs") && hasColumn(db, "agent_logs", "events")) {
+      const update = db.prepare("UPDATE agent_logs SET events = ? WHERE id = ?");
+      for (const row of db.prepare("SELECT id, task_run_id, events FROM agent_logs").all()) {
+        const values = runIds.has(row.task_run_id) ? privateValues : globallyDistinctive;
+        const events = scrubPrivateJson(
+          row.events,
+          values,
+          [],
+          runProfiles.get(row.task_run_id),
+        );
+        if (events !== row.events) changes += update.run(events, row.id).changes;
+      }
+    }
+
+    if (tableExists(db, "run_compactions")) {
+      const update = db.prepare(`
+        UPDATE run_compactions SET summary = ?, metadata_json = ?, error_text = ? WHERE id = ?
+      `);
+      for (const row of db.prepare(`
+        SELECT id, task_run_id, summary, metadata_json, error_text FROM run_compactions
+      `).all()) {
+        const values = runIds.has(row.task_run_id) ? privateValues : globallyDistinctive;
+        const scrubbed = {
+          summary: scrubPrivateText(row.summary, values),
+          metadata: scrubPrivateJson(
+            row.metadata_json,
+            values,
+            {},
+            runProfiles.get(row.task_run_id),
+          ),
+          error: scrubPrivateText(row.error_text, values),
+        };
+        if (scrubbed.summary !== row.summary
+          || scrubbed.metadata !== row.metadata_json
+          || scrubbed.error !== row.error_text) {
+          changes += update.run(scrubbed.summary, scrubbed.metadata, scrubbed.error, row.id).changes;
+        }
+      }
+    }
+
+    if (tableExists(db, "acp_profiles") && hasColumn(db, "acp_profiles", "last_probe_result_json")) {
+      const update = db.prepare(`
+        UPDATE acp_profiles SET last_probe_result_json = ?, last_probe_error_json = ? WHERE id = ?
+      `);
+      for (const row of db.prepare(`
+        SELECT id, last_probe_result_json, last_probe_error_json FROM acp_profiles
+      `).all()) {
+        const result = scrubPrivateJson(row.last_probe_result_json, privateValues, {}, row.id);
+        const error = scrubPrivateJson(row.last_probe_error_json, privateValues, {}, row.id);
+        if (result !== row.last_probe_result_json || error !== row.last_probe_error_json) {
+          changes += update.run(result, error, row.id).changes;
+        }
+      }
+    }
+
+    if (tableExists(db, "acp_operations")) {
+      const update = db.prepare(`
+        UPDATE acp_operations SET request_json = ?, result_json = ?, error_json = ? WHERE id = ?
+      `);
+      for (const row of db.prepare(`
+        SELECT id, profile_id, request_json, result_json, error_json FROM acp_operations
+      `).all()) {
+        const request = scrubPrivateJson(row.request_json, privateValues, {}, row.profile_id);
+        const result = scrubPrivateJson(row.result_json, privateValues, {}, row.profile_id);
+        const error = scrubPrivateJson(row.error_json, privateValues, {}, row.profile_id);
+        if (request !== row.request_json || result !== row.result_json || error !== row.error_json) {
+          changes += update.run(request, result, error, row.id).changes;
+        }
+      }
+    }
+
+    if (tableExists(db, "acp_interactions")) {
+      const update = db.prepare(`
+        UPDATE acp_interactions
+        SET protocol_request_id = ?, request_schema_json = ?, disposition = ?
+        WHERE id = ?
+      `);
+      for (const row of db.prepare(`
+        SELECT id, profile_id, protocol_request_id, request_schema_json, disposition FROM acp_interactions
+      `).all()) {
+        const protocolRequestId = scrubPrivateText(row.protocol_request_id, privateValues);
+        const requestSchema = scrubPrivateJson(
+          row.request_schema_json,
+          privateValues,
+          {},
+          row.profile_id,
+        );
+        const disposition = scrubPrivateText(row.disposition, privateValues);
+        if (protocolRequestId !== row.protocol_request_id
+          || requestSchema !== row.request_schema_json
+          || disposition !== row.disposition) {
+          changes += update.run(
+            protocolRequestId,
+            requestSchema,
+            disposition,
+            row.id,
+          ).changes;
+        }
+      }
+    }
+
+    if (tableExists(db, "task_run_approvals")) {
+      const update = db.prepare(`
+        UPDATE task_run_approvals SET arguments_summary = ?, model = ?, reason = ? WHERE id = ?
+      `);
+      for (const row of db.prepare(`
+        SELECT id, task_run_id, arguments_summary, model, reason FROM task_run_approvals
+      `).all()) {
+        if (!runIds.has(row.task_run_id)) continue;
+        const summary = scrubPrivateText(row.arguments_summary, privateValues);
+        const model = scrubPrivateText(row.model, privateValues);
+        const reason = scrubPrivateText(row.reason, privateValues);
+        if (summary !== row.arguments_summary || model !== row.model || reason !== row.reason) {
+          changes += update.run(summary, model, reason, row.id).changes;
+        }
+      }
+    }
+
+    if (tableExists(db, "slack_delivery_log")) {
+      const update = db.prepare(`
+        UPDATE slack_delivery_log SET text = ?, error_text = ?, response_json = ? WHERE id = ?
+      `);
+      for (const row of db.prepare(`
+        SELECT id, task_run_id, text, error_text, response_json FROM slack_delivery_log
+      `).all()) {
+        if (!runIds.has(row.task_run_id)) continue;
+        const text = scrubPrivateText(row.text, privateValues);
+        const error = scrubPrivateText(row.error_text, privateValues);
+        const response = scrubPrivateJson(row.response_json, privateValues, {});
+        if (text !== row.text || error !== row.error_text || response !== row.response_json) {
+          changes += update.run(text, error, response, row.id).changes;
+        }
+      }
+    }
+
+    const memoryIds = new Set();
+    if (tableExists(db, "agent_memories")) {
+      for (const row of db.prepare("SELECT id, run_id, task_id FROM agent_memories").all()) {
+        if (runIds.has(row.run_id) || taskIds.has(row.task_id)) memoryIds.add(row.id);
+      }
+    }
+
+    if (tableExists(db, "embeddings")) {
+      const rows = db.prepare(`
+        SELECT id, kind, ref, source_ref, agent, title, chunk_text, model, content_hash, indexing_error
+        FROM embeddings ORDER BY rowid ASC
+      `).all();
+      const remove = rows.filter((row) => {
+        const linkedTask = referenceLinksEntity(
+          row.source_ref,
+          taskIds,
+          TASK_REFERENCE_SEGMENTS,
+          row.kind,
+        ) || referenceLinksEntity(row.ref, taskIds, TASK_REFERENCE_SEGMENTS, row.kind);
+        const linkedComment = referenceLinksEntity(
+          row.source_ref,
+          linkedCommentIds,
+          COMMENT_REFERENCE_SEGMENTS,
+          row.kind,
+        ) || referenceLinksEntity(row.ref, linkedCommentIds, COMMENT_REFERENCE_SEGMENTS, row.kind);
+        const copiedGlobalValue = [
+          row.ref,
+          row.source_ref,
+          row.agent,
+          row.title,
+          row.chunk_text,
+          row.model,
+          row.content_hash,
+          row.indexing_error,
+        ].some((value) => serializedContainsPrivateValue(value, globallyDistinctive));
+        return linkedTask
+          || linkedComment
+          || embeddingReferencesMemory(row, memoryIds)
+          || copiedGlobalValue;
+      });
+      changes += deleteEmbeddingRows(db, remove);
+    }
+
+    if (memoryIds.size) {
+      const remove = db.prepare("DELETE FROM agent_memories WHERE id = ?");
+      for (const id of memoryIds) changes += remove.run(id).changes;
+    }
+  });
+  transaction();
+  return changes;
+}
+
 /**
  * Remove raw protocol session identifiers written by pre-boundary ACP task
  * runs. The same bounded privacy primitive used by live event sinks performs
@@ -577,6 +1070,7 @@ export function scrubLegacyAcpSessionData(db) {
   const runs = acpRuns(db, jsonColumns, textColumns);
   const legacyFootprint = hasLegacyAcpFootprint(db, runs);
   const dataDir = databaseDataDir(db);
+  const privateValues = collectGlobalAcpPrivateValues(db, runs, jsonColumns, dataDir);
   let databaseChanges = 0;
   let filesChanged = 0;
   const previousSecureDelete = db.pragma("secure_delete", { simple: true });
@@ -590,6 +1084,12 @@ export function scrubLegacyAcpSessionData(db) {
       const prepared = preparedRunValue(run, jsonColumns, textColumns, related, rawLog);
       const sanitized = rawLog.forceFailure ? null : boundary.sanitizeEvent(prepared);
       const plan = sanitized || failedClosedValue(run, jsonColumns, textColumns, related, rawLog, profileId);
+      plan.rawEvents = sanitizePrivateCopies(
+        plan.rawEvents,
+        privateValues,
+        [LEGACY_PRIVACY_EVENT],
+        profileId,
+      );
       if (rawLog.detach) plan.rawOutputPath = null;
       filesChanged += rewriteRawLog(rawLog, plan.rawEvents) ? 1 : 0;
       const transaction = db.transaction(() => {
@@ -599,6 +1099,7 @@ export function scrubLegacyAcpSessionData(db) {
     }
     databaseChanges += scrubAcpProfileProbeData(db);
     databaseChanges += scrubStandaloneAcpOperations(db);
+    databaseChanges += scrubDurableAcpPrivateCopies(db, runs, privateValues);
   } finally {
     db.pragma(`secure_delete = ${Number(previousSecureDelete) || 0}`);
   }
