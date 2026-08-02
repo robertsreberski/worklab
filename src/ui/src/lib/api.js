@@ -184,6 +184,10 @@ export const api = {
   logoutAcpProfile: (id) => request("POST", `/acp/profiles/${pathSegment(id)}/logout`),
   listAcpProfileSessions: (id, data = {}) => request("POST", `/acp/profiles/${pathSegment(id)}/sessions:list`, data),
   deleteAcpProfileSession: (id, sessionId) => request("DELETE", `/acp/profiles/${pathSegment(id)}/sessions/${pathSegment(sessionId)}`),
+  listAcpProfileOperations: (id, query, options) => {
+    [query, options] = splitQueryAndOptions(query, options);
+    return request("GET", withQuery(`/acp/profiles/${pathSegment(id)}/operations`, query), null, options);
+  },
   getAcpOperation: (id, options) => request("GET", `/acp/operations/${pathSegment(id)}`, null, options),
   cancelAcpOperation: (id) => request("POST", `/acp/operations/${pathSegment(id)}/cancel`),
   listAcpOperationInteractions: (id, options) => request("GET", `/acp/operations/${pathSegment(id)}/interactions`, null, options),

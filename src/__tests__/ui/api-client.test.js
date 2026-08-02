@@ -281,7 +281,10 @@ describe("ui API client", () => {
     await api.patchAcpProfile("profile/1", { cwd: "/workspace" });
     await api.probeAcpProfile("profile/1");
     await api.authenticateAcpProfile("profile/1", "oauth-browser");
+    await api.logoutAcpProfile("profile/1");
     await api.listAcpProfileSessions("profile/1");
+    await api.deleteAcpProfileSession("profile/1", "acp:v1:profile-1:opaque");
+    await api.listAcpProfileOperations("profile/1", { limit: 25, signal: controller.signal });
     await api.getAcpOperation("operation/1");
     await api.cancelAcpOperation("operation/1");
     await api.listAcpOperationInteractions("operation/1");
@@ -297,7 +300,10 @@ describe("ui API client", () => {
       "/api/acp/profiles/profile%2F1",
       "/api/acp/profiles/profile%2F1/probe",
       "/api/acp/profiles/profile%2F1/authenticate",
+      "/api/acp/profiles/profile%2F1/logout",
       "/api/acp/profiles/profile%2F1/sessions:list",
+      "/api/acp/profiles/profile%2F1/sessions/acp%3Av1%3Aprofile-1%3Aopaque",
+      "/api/acp/profiles/profile%2F1/operations?limit=25",
       "/api/acp/operations/operation%2F1",
       "/api/acp/operations/operation%2F1/cancel",
       "/api/acp/operations/operation%2F1/interactions",
@@ -307,11 +313,12 @@ describe("ui API client", () => {
       "/api/acp/discovery/mono",
     ]);
     expect(global.fetch.mock.calls.map(([, options]) => options.method)).toEqual([
-      "GET", "GET", "POST", "PATCH", "POST", "POST", "POST", "GET", "POST", "GET", "GET", "POST", "POST", "GET",
+      "GET", "GET", "POST", "PATCH", "POST", "POST", "POST", "POST", "DELETE", "GET", "GET", "POST", "GET", "GET", "POST", "POST", "GET",
     ]);
     expect(global.fetch.mock.calls[0][1].signal).toBe(controller.signal);
     expect(global.fetch.mock.calls[5][1].body).toBe(JSON.stringify({ authMethodId: "oauth-browser" }));
-    expect(global.fetch.mock.calls[13][1].signal).toBe(controller.signal);
+    expect(global.fetch.mock.calls[9][1].signal).toBe(controller.signal);
+    expect(global.fetch.mock.calls[16][1].signal).toBe(controller.signal);
   });
 
   it("imports mono-agent discovery by source id only", async () => {
