@@ -123,6 +123,10 @@ export function externalAgentDraft({ agent = {}, profile = {} } = {}) {
 }
 
 export function externalAgentPayload(draft = {}) {
+  const envKeys = [...new Set(stringList(draft.envKeysText))];
+  if (!externalEnvKeysValid(envKeys)) {
+    throw new Error("Environment entries must contain key names only, one per line.");
+  }
   return {
     agentName: text(draft.agentName) || undefined,
     displayName: text(draft.displayName),
@@ -132,7 +136,7 @@ export function externalAgentPayload(draft = {}) {
     command: text(draft.command),
     args: stringList(draft.argsText),
     cwd: text(draft.cwd) || null,
-    envKeys: [...new Set(stringList(draft.envKeysText))],
+    envKeys,
     configurationOwner: owner(draft.configurationOwner),
     workspaceOwner: owner(draft.workspaceOwner),
     mcpOwner: owner(draft.mcpOwner),
@@ -147,6 +151,10 @@ export function externalAgentPayload(draft = {}) {
     configPolicy: parseJsonObject(draft.configPolicyText, "Configuration policy"),
     sessionPolicy: parseJsonObject(draft.sessionPolicyText, "Session policy"),
   };
+}
+
+export function externalEnvKeysValid(value) {
+  return stringList(value).every((key) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key));
 }
 
 export function externalAgentMutationPayload(draft = {}, existingProfile = null) {
@@ -207,7 +215,7 @@ function promptContent(value) {
 }
 
 export function normalizeMonoDiscovery(response = {}) {
-  const schema = text(firstDefined(response.schema, response.contract, response.version));
+  const schema = text(firstDefined(response.schema, response.contract, response.version, response.discovery?.schema));
   const sources = discoveryItems(response).map((entry) => {
     const source = entry?.source && typeof entry.source === "object" ? entry.source : entry;
     const sourceId = text(firstDefined(source?.sourceId, source?.source_id, entry?.sourceId, entry?.source_id));
@@ -217,7 +225,7 @@ export function normalizeMonoDiscovery(response = {}) {
     return {
       sourceId,
       label: text(firstDefined(source?.label, source?.displayName, source?.display_name, entry?.label)) || sourceId,
-      health: text(firstDefined(source?.health, source?.status, entry?.health, entry?.status)) || "unknown",
+      health: text(firstDefined(source?.health, source?.status, entry?.health, entry?.status)).toLowerCase() || "unknown",
       ready: bool(firstDefined(source?.ready, entry?.ready), false),
       imported: bool(firstDefined(source?.imported, entry?.imported), false),
       capabilities: {
