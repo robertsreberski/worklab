@@ -9,6 +9,7 @@ import {
   externalAgentDraft,
   externalEnvKeysValid,
   externalAgentMutationPayload,
+  externalAgentSlugValid,
   normalizeAcpProfile,
   UNSUPPORTED_ACP_CLIENT_CAPABILITIES,
 } from "../lib/externalAgents.js";
@@ -55,6 +56,213 @@ const SESSION_RESUME_OPTIONS = [
   { value: "resume", label: "Resume", description: "Resume the existing session through ACP." },
 ];
 
+const OPAQUE_SESSION_RE = /^acp:v1:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):[A-Za-z0-9_-]+$/u;
+const OPAQUE_CURSOR_RE = /^acp-cursor:v1:([A-Za-z0-9][A-Za-z0-9._-]{0,127}):[A-Za-z0-9_-]+$/u;
+const ACTIVE_OPERATION_STATES = new Set(["queued", "pending", "running", "waiting_for_interaction"]);
+
+function operationState(operation) {
+  return String(operation?.state || operation?.status || "").trim().toLowerCase();
+}
+
+function operationLabel(kind) {
+  return ({
+    probe: "Connection test",
+    authenticate: "Authentication",
+    logout: "Logout",
+    list_sessions: "Session list",
+    delete_session: "Session deletion",
+  })[kind] || "ACP operation";
+}
+
+function operationSucceeded(operation) {
+  return ["success", "succeeded", "complete", "completed"].includes(operationState(operation));
+}
+
+function operationList(result) {
+  return Array.isArray(result?.operations) ? result.operations.filter((operation) => (
+    operation && typeof operation === "object" && Boolean(acpOperationId(operation))
+  )) : [];
+}
+
+function opaqueTokenForProfile(value, pattern, profileId) {
+  if (typeof value !== "string" || value.length > 5_600) return null;
+  const match = pattern.exec(value);
+  if (!match || (profileId && match[1] !== profileId)) return null;
+  return value;
+}
+
+function normalizedSession(session, profileId) {
+  if (!session || typeof session !== "object") return null;
+  const id = opaqueTokenForProfile(session.id, OPAQUE_SESSION_RE, profileId);
+  if (!id) return null;
+  const safeDate = (value) => {
+    if (typeof value !== "string" || !value) return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : value;
+  };
+  return {
+    id,
+    title: typeof session.title === "string" ? session.title : "",
+    status: typeof session.status === "string" ? session.status : "",
+    createdAt: safeDate(session.createdAt),
+    updatedAt: safeDate(session.updatedAt),
+  };
+}
+
+function normalizedSessionResult(operation, profileId) {
+  if (!operationSucceeded(operation) || operation?.kind !== "list_sessions") return null;
+  const result = operation.result && typeof operation.result === "object" ? operation.result : {};
+  const sessions = Array.isArray(result.sessions)
+    ? result.sessions.map((session) => normalizedSession(session, profileId)).filter(Boolean)
+    : [];
+  return {
+    sessions,
+    nextCursor: opaqueTokenForProfile(result.nextCursor, OPAQUE_CURSOR_RE, profileId),
+    truncated: result.truncated === true,
+  };
+}
+
+function operationCursor(operation, profileId) {
+  return opaqueTokenForProfile(operation?.request?.cursor, OPAQUE_CURSOR_RE, profileId);
+}
+
+function createdAtNumber(operation) {
+  const value = Number(operation?.createdAt);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function operationTime(operation) {
+  const value = operation?.completedAt || operation?.updatedAt || operation?.createdAt;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
+}
+
+function operationSummary(operation) {
+  if (operation?.error?.message) return operation.error.message;
+  const result = operation?.result && typeof operation.result === "object" ? operation.result : {};
+  if (operation?.kind === "list_sessions") {
+    const count = Array.isArray(result.sessions) ? result.sessions.length : 0;
+    return `${count} session${count === 1 ? "" : "s"} returned${result.nextCursor ? "; more available" : ""}.`;
+  }
+  if (operation?.kind === "delete_session") return result.deleted ? "Remote session deleted." : "Session deletion completed.";
+  if (operation?.kind === "probe") {
+    return [result.status, result.installedVersion || result.installed_version]
+      .filter((value) => typeof value === "string" && value)
+      .join(" · ");
+  }
+  if (typeof result.status === "string" && result.status) return result.status;
+  return "";
+}
+
+export function restoreAcpSessionListing(operations = [], profileId = null) {
+  const completed = operations
+    .map((operation) => ({ operation, page: normalizedSessionResult(operation, profileId) }))
+    .filter((entry) => entry.page)
+    .sort((left, right) => createdAtNumber(left.operation) - createdAtNumber(right.operation));
+  if (!completed.length) return { sessions: [], nextCursor: null, truncated: false, restored: false };
+
+  const roots = completed.filter(({ operation }) => !operationCursor(operation, profileId));
+  let current = roots.at(-1) || completed.at(-1);
+  const chain = [current];
+  const visited = new Set([acpOperationId(current.operation)]);
+  while (current.page.nextCursor) {
+    const next = completed.find(({ operation }) => (
+      !visited.has(acpOperationId(operation))
+      && createdAtNumber(operation) >= createdAtNumber(current.operation)
+      && operationCursor(operation, profileId) === current.page.nextCursor
+    ));
+    if (!next) break;
+    chain.push(next);
+    visited.add(acpOperationId(next.operation));
+    current = next;
+  }
+  const sessions = [];
+  const seen = new Set();
+  for (const { page } of chain) {
+    for (const session of page.sessions) {
+      if (seen.has(session.id)) continue;
+      seen.add(session.id);
+      sessions.push(session);
+    }
+  }
+  const last = chain.at(-1).page;
+  return {
+    sessions,
+    nextCursor: last.nextCursor,
+    truncated: last.truncated,
+    restored: true,
+  };
+}
+
+export function recoverAcpManagementState(result = {}, profileId = null) {
+  const operations = operationList(result);
+  const activeOperation = operations.find((operation) => ACTIVE_OPERATION_STATES.has(operationState(operation))) || null;
+  const coordinatorRestartOperation = operations.find((operation) => (
+    operation?.error?.code === "coordinator_restarted"
+  )) || null;
+  return {
+    operations,
+    activeOperation,
+    latestOperation: activeOperation || operations[0] || null,
+    sessionListing: restoreAcpSessionListing(operations, profileId),
+    coordinatorRestartOperation,
+  };
+}
+
+export function externalAgentDraftValidation(draft = {}, { isNew = false, driver = "generic" } = {}) {
+  const agentName = String(draft.agentName || "").trim();
+  const displayName = String(draft.displayName || "").trim();
+  const description = String(draft.description || "").trim();
+  const canonicalWorkspace = String(draft.canonicalWorkspace || "").trim();
+  const configurationOwner = draft.configurationOwner === "agent" ? "agent" : "client";
+  const commandRequired = driver === "generic" && (isNew || configurationOwner === "client");
+  const errors = {
+    agentName: isNew && !externalAgentSlugValid(agentName)
+      ? "Use a lowercase slug of 1–64 letters, numbers, or hyphens."
+      : null,
+    displayName: !displayName
+      ? "Display name is required."
+      : displayName.length > 200
+        ? "Use at most 200 characters."
+        : null,
+    description: description.length > 2_000 ? "Use at most 2,000 characters." : null,
+    configurationOwner: isNew && driver === "generic" && configurationOwner === "agent"
+      ? "New generic profiles must keep launch configuration in Worklab."
+      : null,
+    command: commandRequired && !String(draft.command || "").trim().startsWith("/")
+      ? "Use an absolute executable path."
+      : null,
+    cwd: configurationOwner === "client"
+      && String(draft.cwd || "").trim()
+      && !String(draft.cwd || "").trim().startsWith("/")
+      ? "Use an absolute directory path."
+      : null,
+    workspace: draft.workspaceOwner === "agent" && !canonicalWorkspace
+      ? "Canonical workspace is required when the external agent owns the workspace."
+      : canonicalWorkspace && !canonicalWorkspace.startsWith("/")
+        ? "Use an absolute directory path."
+        : null,
+    envKeys: configurationOwner === "client" && !externalEnvKeysValid(draft.envKeysText)
+      ? "Use environment key names only; values and '=' are not accepted."
+      : null,
+    probeTimeout: !Number.isInteger(Number(draft.probeTimeoutMs))
+      || Number(draft.probeTimeoutMs) < 1_000
+      || Number(draft.probeTimeoutMs) > 300_000
+      ? "Enter a timeout from 1,000 to 300,000 ms."
+      : null,
+    sessionMode: draft.sessionModeId
+      && (draft.sessionModeId.trim().length > 200 || /[\u0000-\u001f\u007f]/u.test(draft.sessionModeId))
+      ? "Use at most 200 characters without control characters."
+      : null,
+  };
+  return { errors, valid: Object.values(errors).every((error) => !error) };
+}
+
+export function opaqueSessionReference(value) {
+  const text = typeof value === "string" ? value : "";
+  return text.length > 34 ? `${text.slice(0, 22)}…${text.slice(-8)}` : text;
+}
+
 function emptyDraft() {
   return externalAgentDraft({ profile: { driver: "generic" } });
 }
@@ -90,9 +298,18 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
   const [unsupported, setUnsupported] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [managementOperation, setManagementOperation] = useState(null);
+  const [operationHistory, setOperationHistory] = useState([]);
   const [operationContext, setOperationContext] = useState(null);
+  const [operationNotice, setOperationNotice] = useState("");
   const [probing, setProbing] = useState(false);
   const [authenticatingMethodId, setAuthenticatingMethodId] = useState(null);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [listingSessions, setListingSessions] = useState(false);
+  const [sessions, setSessions] = useState([]);
+  const [sessionsNextCursor, setSessionsNextCursor] = useState(null);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
+  const [deletingSessionId, setDeletingSessionId] = useState(null);
+  const [pendingSessionDeleteId, setPendingSessionDeleteId] = useState(null);
   const [cancellingOperation, setCancellingOperation] = useState(false);
   const pollTimerRef = useRef(null);
 
@@ -105,6 +322,11 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
       setBaseline(next);
       setProfile(null);
       setAgentResource(null);
+      setManagementOperation(null);
+      setOperationHistory([]);
+      setSessions([]);
+      setSessionsNextCursor(null);
+      setSessionsLoaded(false);
       setLoading(false);
       return;
     }
@@ -137,6 +359,7 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
         setDraft(next);
         setBaseline(next);
       }
+      await hydrateOperationHistory(rawProfile.id);
     } catch (err) {
       if (acpEndpointUnsupported(err)) setUnsupported(true);
       else setLoadError(err?.message || "External agent unavailable");
@@ -151,6 +374,11 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
   }, []);
 
   const formSave = useFormSave(async () => {
+    const driver = normalizeAcpProfile(profile || {}).driver || draft.driver || "generic";
+    const validation = externalAgentDraftValidation(draft, { isNew, driver });
+    if (!validation.valid) {
+      throw new Error(Object.values(validation.errors).find(Boolean) || "External agent configuration is invalid.");
+    }
     const payload = externalAgentMutationPayload(draft, profile);
     const result = isNew
       ? await api.createAcpProfile(payload)
@@ -175,128 +403,230 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
     Escape: cancel,
   });
 
-  async function refreshVolatileProfile() {
-    if (!profile?.id) return;
+  function contextForOperation(operation, profileId = profile?.id) {
+    return {
+      profileId,
+      kind: operation?.kind || "probe",
+      authMethodId: operation?.request?.authMethodId || null,
+      append: Boolean(operationCursor(operation, profileId)),
+      sessionId: operation?.request?.providerSessionId || null,
+    };
+  }
+
+  function setOperationBusy(context, busy) {
+    const value = busy === true;
+    if (context.kind === "probe") setProbing(value);
+    if (context.kind === "authenticate") setAuthenticatingMethodId(value ? context.authMethodId : null);
+    if (context.kind === "logout") setLoggingOut(value);
+    if (context.kind === "list_sessions") setListingSessions(value);
+    if (context.kind === "delete_session") setDeletingSessionId(value ? context.sessionId : null);
+  }
+
+  function putOperationInHistory(operation) {
+    if (!acpOperationId(operation)) return;
+    setOperationHistory((current) => [
+      operation,
+      ...current.filter((candidate) => acpOperationId(candidate) !== acpOperationId(operation)),
+    ].sort((left, right) => createdAtNumber(right) - createdAtNumber(left)));
+  }
+
+  async function refreshVolatileProfile(profileId = profile?.id) {
+    if (!profileId) return;
     try {
-      const result = await api.getAcpProfile(profile.id);
+      const result = await api.getAcpProfile(profileId);
       setProfile(profileBody(result));
     } catch {
       // A failed refresh must not replace an otherwise usable saved profile.
     }
   }
 
-  function pollOperation(id, { kind = "probe", authMethodId = null } = {}) {
+  async function refreshOperationHistory(profileId = profile?.id) {
+    if (!profileId) return [];
+    try {
+      const result = await api.listAcpProfileOperations(profileId, { limit: 50 });
+      const operations = operationList(result);
+      setOperationHistory(operations);
+      return operations;
+    } catch {
+      return [];
+    }
+  }
+
+  async function hydrateOperationHistory(profileId) {
+    try {
+      const result = await api.listAcpProfileOperations(profileId, { limit: 50 });
+      const recovered = recoverAcpManagementState(result, profileId);
+      const { operations } = recovered;
+      setOperationHistory(operations);
+      const restored = recovered.sessionListing;
+      if (restored.restored) {
+        setSessions(restored.sessions);
+        setSessionsNextCursor(restored.nextCursor);
+        setSessionsLoaded(true);
+      }
+      const active = recovered.activeOperation;
+      setManagementOperation(recovered.latestOperation);
+      const restarted = recovered.coordinatorRestartOperation;
+      if (restarted) {
+        setOperationNotice(restarted.error.message || "Worklab restarted before an ACP operation completed.");
+      }
+      if (active) {
+        const context = contextForOperation(active, profileId);
+        setOperationContext(context);
+        setOperationBusy(context, true);
+        setOperationNotice(`Resumed monitoring the active ${operationLabel(active.kind).toLowerCase()} operation.`);
+        pollOperation(acpOperationId(active), context);
+      }
+    } catch (error) {
+      setOperationNotice(`ACP operation history could not be loaded: ${error.message}`);
+    }
+  }
+
+  async function finishOperation(operation, context) {
+    setManagementOperation(operation);
+    putOperationInHistory(operation);
+    setOperationContext(null);
+    setCancellingOperation(false);
+    setOperationBusy(context, false);
+
+    const state = operationState(operation);
+    const cancelled = ["cancelled", "canceled"].includes(state);
+    const failed = ["failed", "error"].includes(state);
+    const restarted = operation?.error?.code === "coordinator_restarted";
+    const label = operationLabel(context.kind);
+    if (restarted) {
+      setOperationNotice(operation.error.message || "Worklab restarted before the ACP operation completed.");
+    } else if (failed) {
+      setOperationNotice(operation?.error?.message || `${label} failed.`);
+    } else if (cancelled) {
+      setOperationNotice(`${label} cancelled.`);
+    } else {
+      setOperationNotice(`${label} completed.`);
+    }
+
+    if (["probe", "authenticate", "logout"].includes(context.kind)) {
+      await refreshVolatileProfile(context.profileId);
+    }
+    if (context.kind === "list_sessions" && operationSucceeded(operation)) {
+      const page = normalizedSessionResult(operation, context.profileId);
+      if (page) {
+        setSessions((current) => {
+          const candidates = context.append ? [...current, ...page.sessions] : page.sessions;
+          return [...new Map(candidates.map((session) => [session.id, session])).values()];
+        });
+        setSessionsNextCursor(page.nextCursor);
+        setSessionsLoaded(true);
+      }
+    }
+    if (context.kind === "delete_session" && operationSucceeded(operation)) {
+      setSessions((current) => current.filter((session) => session.id !== context.sessionId));
+      setPendingSessionDeleteId(null);
+    }
+    await refreshOperationHistory(context.profileId);
+    pushToast(
+      restarted ? "ACP operation interrupted by Worklab restart" : `${label} ${cancelled ? "cancelled" : failed ? "failed" : "completed"}`,
+      { variant: failed || restarted ? "error" : "success" },
+    );
+  }
+
+  function pollOperation(id, context, retry = 0) {
     if (!id) return;
     pollTimerRef.current = setTimeout(async () => {
       try {
         const result = await api.getAcpOperation(id);
         const operation = operationBody(result);
         setManagementOperation(operation);
-        if (acpOperationFinished(operation)) {
-          setOperationContext(null);
-          setCancellingOperation(false);
-          if (kind === "probe") setProbing(false);
-          else setAuthenticatingMethodId(null);
-          await refreshVolatileProfile();
-          if (kind === "authenticate") {
-            const terminalStatus = String(operation?.status || operation?.state || "").toLowerCase();
-            const cancelled = ["cancelled", "canceled"].includes(terminalStatus);
-            const failed = ["failed", "error"].includes(terminalStatus);
-            pushToast(
-              cancelled ? "Authentication cancelled" : failed ? "Authentication failed" : "Authentication completed",
-              { variant: failed ? "error" : "success" },
-            );
-          }
-        } else {
-          pollOperation(id, { kind, authMethodId });
-        }
+        putOperationInHistory(operation);
+        if (acpOperationFinished(operation)) await finishOperation(operation, context);
+        else pollOperation(id, context);
       } catch (err) {
+        if (retry < 3) {
+          setOperationNotice(`Reconnecting to ${operationLabel(context.kind).toLowerCase()} status…`);
+          pollOperation(id, context, retry + 1);
+          return;
+        }
         setOperationContext(null);
         setCancellingOperation(false);
-        if (kind === "probe") setProbing(false);
-        else setAuthenticatingMethodId(null);
-        pushToast(`${kind === "probe" ? "Probe" : "Authentication"} status failed: ${err.message}`, { variant: "error" });
+        setOperationBusy(context, false);
+        setOperationNotice(`${operationLabel(context.kind)} status could not be refreshed: ${err.message}`);
+        pushToast(`${operationLabel(context.kind)} status failed: ${err.message}`, { variant: "error" });
       }
-    }, 800);
+    }, retry ? 1_200 : 800);
   }
 
-  async function probe() {
-    if (!profile?.id) return;
+  async function startOperation(context, start) {
+    if (!context.profileId) return;
     if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-    setProbing(true);
+    setOperationBusy(context, true);
     setCancellingOperation(false);
+    setOperationNotice(`${operationLabel(context.kind)} started.`);
     try {
-      const result = await api.probeAcpProfile(profile.id);
+      const result = await start();
       const operation = operationBody(result);
       setManagementOperation(operation);
+      putOperationInHistory(operation);
       const id = acpOperationId(operation);
       if (id && !acpOperationFinished(operation)) {
-        setOperationContext({ kind: "probe", authMethodId: null });
-        pollOperation(id, { kind: "probe" });
+        setOperationContext(context);
+        pollOperation(id, context);
       } else {
-        setOperationContext(null);
-        setProbing(false);
-        await refreshVolatileProfile();
+        await finishOperation(operation, context);
       }
     } catch (err) {
       setOperationContext(null);
-      setProbing(false);
-      pushToast(`Connection test failed: ${err.message}`, { variant: "error" });
+      setOperationBusy(context, false);
+      setOperationNotice(`${operationLabel(context.kind)} failed to start: ${err.message}`);
+      pushToast(`${operationLabel(context.kind)} failed: ${err.message}`, { variant: "error" });
     }
   }
 
-  async function authenticate(authMethodId) {
-    if (!profile?.id || !authMethodId) return;
-    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-    setAuthenticatingMethodId(authMethodId);
-    setCancellingOperation(false);
-    try {
-      const result = await api.authenticateAcpProfile(profile.id, authMethodId);
-      const operation = operationBody(result);
-      setManagementOperation(operation);
-      const id = acpOperationId(operation);
-      if (id && !acpOperationFinished(operation)) {
-        setOperationContext({ kind: "authenticate", authMethodId });
-        pollOperation(id, { kind: "authenticate", authMethodId });
-      } else {
-        setOperationContext(null);
-        setAuthenticatingMethodId(null);
-        await refreshVolatileProfile();
-        const terminalStatus = String(operation?.status || operation?.state || "").toLowerCase();
-        const cancelled = ["cancelled", "canceled"].includes(terminalStatus);
-        const failed = ["failed", "error"].includes(terminalStatus);
-        pushToast(
-          cancelled ? "Authentication cancelled" : failed ? "Authentication failed" : "Authentication completed",
-          { variant: failed ? "error" : "success" },
-        );
-      }
-    } catch (err) {
-      setOperationContext(null);
-      setAuthenticatingMethodId(null);
-      pushToast(`Authentication failed: ${err.message}`, { variant: "error" });
-    }
+  function probe() {
+    const profileId = profile?.id;
+    return startOperation({ profileId, kind: "probe" }, () => api.probeAcpProfile(profileId));
+  }
+
+  function authenticate(authMethodId) {
+    const profileId = profile?.id;
+    if (!authMethodId) return undefined;
+    return startOperation(
+      { profileId, kind: "authenticate", authMethodId },
+      () => api.authenticateAcpProfile(profileId, authMethodId),
+    );
+  }
+
+  function logout() {
+    const profileId = profile?.id;
+    return startOperation({ profileId, kind: "logout" }, () => api.logoutAcpProfile(profileId));
+  }
+
+  function listSessions(cursor = null) {
+    const profileId = profile?.id;
+    return startOperation(
+      { profileId, kind: "list_sessions", append: Boolean(cursor) },
+      () => api.listAcpProfileSessions(profileId, cursor ? { cursor } : {}),
+    );
+  }
+
+  function deleteSession(sessionId) {
+    const profileId = profile?.id;
+    return startOperation(
+      { profileId, kind: "delete_session", sessionId },
+      () => api.deleteAcpProfileSession(profileId, sessionId),
+    );
   }
 
   async function cancelOperation() {
     const id = acpOperationId(managementOperation);
     if (!id || !acpOperationCancellable(managementOperation)) return;
     if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-    const context = operationContext || {
-      kind: authenticatingMethodId ? "authenticate" : "probe",
-      authMethodId: authenticatingMethodId,
-    };
+    const context = operationContext || contextForOperation(managementOperation);
     setCancellingOperation(true);
     try {
       const result = await api.cancelAcpOperation(id);
       const operation = operationBody(result) || { ...managementOperation, status: "cancelling" };
       setManagementOperation(operation);
       if (acpOperationFinished(operation)) {
-        setOperationContext(null);
-        setProbing(false);
-        setAuthenticatingMethodId(null);
-        setCancellingOperation(false);
-        await refreshVolatileProfile();
-        pushToast("ACP operation cancelled", { variant: "success" });
+        await finishOperation(operation, context);
       } else {
         setOperationContext(context);
         pollOperation(id, context);
@@ -323,18 +653,16 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
   if (loading) return <LoadingState caption="Loading external agent…" />;
 
   const normalizedProfile = normalizeAcpProfile(profile || {});
-  const isMono = normalizedProfile.driver === "mono";
+  const isMono = (profile ? normalizedProfile.driver : draft.driver) === "mono";
+  const runtimeIdentityLocked = !isNew && !isMono;
   const agentManaged = draft.configurationOwner === "agent";
-  const commandValid = agentManaged || draft.command.trim().startsWith("/");
-  const cwdValid = agentManaged || !draft.cwd.trim() || draft.cwd.trim().startsWith("/");
   const workspaceManaged = draft.workspaceOwner === "agent";
-  const workspaceValid = workspaceManaged || !draft.canonicalWorkspace.trim() || draft.canonicalWorkspace.trim().startsWith("/");
-  const envKeysValid = agentManaged || externalEnvKeysValid(draft.envKeysText);
-  const probeTimeoutValid = Number(draft.probeTimeoutMs) >= 1000 && Number(draft.probeTimeoutMs) <= 300000;
-  const sessionModeIdValid = !draft.sessionModeId
-    || (draft.sessionModeId.trim().length <= 200 && !/[\u0000-\u001f\u007f]/u.test(draft.sessionModeId));
+  const validation = externalAgentDraftValidation(draft, {
+    isNew,
+    driver: isMono ? "mono" : "generic",
+  });
   const title = isNew ? "New external agent" : (draft.displayName || draft.agentName || name);
-  const canSave = !!draft.displayName.trim() && commandValid && cwdValid && workspaceValid && envKeysValid && probeTimeoutValid && sessionModeIdValid && !unsupported;
+  const canSave = validation.valid && !unsupported;
   const saveButtonLabel = isNew ? "Create" : "Save";
   const saveButtonVariant = isDirty || isNew ? "primary" : "secondary";
   const headerActions = (
@@ -354,6 +682,124 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
       </Button>
     </>
   );
+  const managementActive = acpOperationCancellable(managementOperation);
+  const coordinatorRestartOperation = operationHistory.find((operation) => (
+    operation?.error?.code === "coordinator_restarted"
+  ));
+
+  function renderSessionsCard() {
+    if (isNew) return null;
+    return (
+      <Card
+        variant="spacious"
+        title="ACP sessions"
+        headerRight={listingSessions ? <StatusPill status="running" label="Loading" size="sm" /> : null}
+        class="entity-rail-card acp-sessions-card"
+      >
+        <div class="acp-session-actions">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => listSessions()}
+            loading={listingSessions && !operationContext?.append}
+            disabled={managementActive}
+          >
+            {sessionsLoaded ? "Refresh sessions" : "List sessions"}
+          </Button>
+        </div>
+        {sessions.length > 0 ? (
+          <ul class="acp-session-list" aria-label="Opaque ACP sessions">
+            {sessions.map((session) => (
+              <li class="acp-session-row" key={session.id}>
+                <div class="acp-session-copy">
+                  <strong>{session.title || "Untitled session"}</strong>
+                  <code title={session.id}>{opaqueSessionReference(session.id)}</code>
+                  {(session.status || session.updatedAt) && (
+                    <small>{[session.status, session.updatedAt ? new Date(session.updatedAt).toLocaleString() : ""].filter(Boolean).join(" · ")}</small>
+                  )}
+                </div>
+                {pendingSessionDeleteId === session.id ? (
+                  <div class="acp-session-delete-confirm" role="group" aria-label={`Confirm deletion of ${session.title || "untitled session"}`}>
+                    <Button size="sm" variant="ghost" onClick={() => setPendingSessionDeleteId(null)}>Cancel</Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      loading={deletingSessionId === session.id}
+                      disabled={managementActive && deletingSessionId !== session.id}
+                      onClick={() => deleteSession(session.id)}
+                    >
+                      Confirm delete
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={managementActive}
+                    onClick={() => setPendingSessionDeleteId(session.id)}
+                  >
+                    Delete
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div class="acp-health-empty">
+            {sessionsLoaded ? "No sessions were reported." : "List sessions to inspect opaque ACP references."}
+          </div>
+        )}
+        {sessionsNextCursor && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => listSessions(sessionsNextCursor)}
+            loading={listingSessions && operationContext?.append}
+            disabled={managementActive}
+          >
+            Load more
+          </Button>
+        )}
+      </Card>
+    );
+  }
+
+  function renderOperationHistory() {
+    if (isNew) return null;
+    return (
+      <Card variant="spacious" title="Recent ACP activity" class="entity-rail-card acp-operation-history-card">
+        {coordinatorRestartOperation && (
+          <Banner
+            variant="error"
+            title="Operation interrupted by Worklab restart"
+            detail={coordinatorRestartOperation.error.message || "Worklab restarted before the ACP operation completed."}
+            dismissible={false}
+          />
+        )}
+        {operationNotice && (
+          <div class="acp-operation-notice" role="status" aria-live="polite" aria-atomic="true">
+            {operationNotice}
+          </div>
+        )}
+        {operationHistory.length > 0 ? (
+          <ol class="acp-operation-history" aria-label="Recent sanitized ACP operations">
+            {operationHistory.slice(0, 8).map((operation) => (
+              <li key={acpOperationId(operation)}>
+                <div class="acp-operation-history-heading">
+                  <strong>{operationLabel(operation.kind)}</strong>
+                  <StatusPill status={operationState(operation)} size="sm" />
+                </div>
+                {operationSummary(operation) && <span>{operationSummary(operation)}</span>}
+                {operationTime(operation) && <time>{operationTime(operation)}</time>}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <div class="acp-health-empty">No ACP management operations yet.</div>
+        )}
+      </Card>
+    );
+  }
 
   function renderRail() {
     return (
@@ -383,9 +829,14 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
           canProbe={!isNew && !!profile?.id}
           onAuthenticate={!isNew && profile?.id ? authenticate : undefined}
           authenticatingMethodId={authenticatingMethodId}
+          onLogout={!isNew && profile?.id ? logout : undefined}
+          loggingOut={loggingOut}
           onCancelOperation={cancelOperation}
           cancellingOperation={cancellingOperation}
+          statusMessage={operationNotice}
         />
+        {renderSessionsCard()}
+        {renderOperationHistory()}
         {!isNew && (
           <Card collapsible={{ summary: "More actions", count: 1 }} class="entity-rail-card">
             <Button variant="destructive" onClick={() => setDeleteOpen(true)}>Delete agent</Button>
@@ -416,7 +867,7 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
         title={title}
         meta={<ExternalAgentBadge driver={normalizedProfile.driver || "generic"} />}
         actions={headerActions}
-        subBar={<MobilePillRow railLabel="Status" railCount={3} sections={EXTERNAL_AGENT_SECTIONS} />}
+        subBar={<MobilePillRow railLabel="Status" railCount={isNew ? 3 : 6} sections={EXTERNAL_AGENT_SECTIONS} />}
       />
       <div class="pane-detail-body entity-detail-body agent-detail-body">
         {unsupported && (
@@ -429,12 +880,30 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
             <SectionMarker id="external-agent-identity" num="01" kicker="Identity" meta="Agent" />
             <FormSection kicker="Identity" title="Profile">
               <FormGrid columns={3} class="agent-profile-grid">
-                <FormField label="Display name" required>
-                  <Input aria-label="Display name" value={draft.displayName} onInput={(event) => update({ displayName: event.currentTarget.value })} />
+                <FormField
+                  label="Agent slug"
+                  required
+                  hint={isNew ? "Permanent lowercase id; 1–64 letters, numbers, or hyphens." : "Permanent after creation."}
+                  error={validation.errors.agentName}
+                >
+                  <Input
+                    aria-label="Agent slug"
+                    value={draft.agentName}
+                    placeholder="my-external-agent"
+                    disabled={!isNew}
+                    readOnly={!isNew}
+                    invalid={Boolean(validation.errors.agentName)}
+                    onInput={(event) => update({ agentName: event.currentTarget.value })}
+                  />
                 </FormField>
-                <FormField label="Description">
-                  <Input aria-label="Description" value={draft.description} onInput={(event) => update({ description: event.currentTarget.value })} />
+                <FormField label="Display name" required error={validation.errors.displayName}>
+                  <Input aria-label="Display name" value={draft.displayName} invalid={Boolean(validation.errors.displayName)} onInput={(event) => update({ displayName: event.currentTarget.value })} />
                 </FormField>
+                <FormField label="Description" error={validation.errors.description}>
+                  <Input aria-label="Description" value={draft.description} invalid={Boolean(validation.errors.description)} onInput={(event) => update({ description: event.currentTarget.value })} />
+                </FormField>
+              </FormGrid>
+              <FormGrid columns={1}>
                 <FormField switchInside class="agent-availability-field">
                   <Switch checked={draft.enabled} onChange={(enabled) => update({ enabled })} label="Available for assignment" description="Disabled agents remain configured but cannot be assigned." />
                 </FormField>
@@ -443,7 +912,15 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
 
             <SectionMarker id="external-agent-launch" num="02" kicker="Launch" meta="stdio" />
             <FormSection kicker="Launch" title="ACP process" description="Worklab starts the executable directly and keeps stdout reserved for ACP JSON-RPC messages.">
-              {agentManaged ? (
+              {runtimeIdentityLocked && (
+                <Banner
+                  variant="info"
+                  title="Runtime identity is locked"
+                  detail="Command, arguments, environment keys, launch directory, ownership, workspace, and session policy cannot change after creation. Recreate this external agent to use a different runtime identity."
+                  dismissible={false}
+                />
+              )}
+              {agentManaged && !runtimeIdentityLocked ? (
                 <Banner
                   variant="info"
                   title="Launch configuration is agent-owned"
@@ -452,19 +929,19 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
                 />
               ) : (
                 <>
-                  <FormField label="Command path" required error={commandValid ? null : "Use an absolute executable path."}>
-                    <Input aria-label="Command path" value={draft.command} placeholder="/usr/local/bin/acp-agent" invalid={!commandValid} onInput={(event) => update({ command: event.currentTarget.value })} />
+                  <FormField label="Command path" required error={validation.errors.command}>
+                    <Input aria-label="Command path" value={draft.command} placeholder="/usr/local/bin/acp-agent" disabled={runtimeIdentityLocked} readOnly={runtimeIdentityLocked} invalid={Boolean(validation.errors.command)} onInput={(event) => update({ command: event.currentTarget.value })} />
                   </FormField>
                   <FormGrid columns={2}>
                     <FormField label="Arguments" hint="One argument per line. Worklab never invokes a shell. Credentials belong in Environment key names, never arguments.">
-                      <Textarea aria-label="Arguments" rows={6} monospace value={draft.argsText} onInput={(event) => update({ argsText: event.currentTarget.value })} />
+                      <Textarea aria-label="Arguments" rows={6} monospace value={draft.argsText} disabled={runtimeIdentityLocked} readOnly={runtimeIdentityLocked} onInput={(event) => update({ argsText: event.currentTarget.value })} />
                     </FormField>
-                    <FormField label="Environment key names" hint="Names only, one per line. Values come from Worklab's process environment and are never shown here." error={envKeysValid ? null : "Use environment key names only; values and '=' are not accepted."}>
-                      <Textarea aria-label="Environment key names" rows={6} monospace value={draft.envKeysText} placeholder="AGENT_TOKEN\nPATH" aria-invalid={!envKeysValid} onInput={(event) => update({ envKeysText: event.currentTarget.value })} />
+                    <FormField label="Environment key names" hint="Names only, one per line. Values come from Worklab's process environment and are never shown here." error={validation.errors.envKeys}>
+                      <Textarea aria-label="Environment key names" rows={6} monospace value={draft.envKeysText} placeholder="AGENT_TOKEN\nPATH" disabled={runtimeIdentityLocked} readOnly={runtimeIdentityLocked} aria-invalid={Boolean(validation.errors.envKeys)} onInput={(event) => update({ envKeysText: event.currentTarget.value })} />
                     </FormField>
                   </FormGrid>
-                  <FormField label="Launch directory" hint="Optional absolute cwd used when starting the process." error={cwdValid ? null : "Use an absolute directory path."}>
-                    <Input aria-label="Launch directory" value={draft.cwd} placeholder="/workspace" invalid={!cwdValid} onInput={(event) => update({ cwd: event.currentTarget.value })} />
+                  <FormField label="Launch directory" hint="Optional absolute cwd used when starting the process." error={validation.errors.cwd}>
+                    <Input aria-label="Launch directory" value={draft.cwd} placeholder="/workspace" disabled={runtimeIdentityLocked} readOnly={runtimeIdentityLocked} invalid={Boolean(validation.errors.cwd)} onInput={(event) => update({ cwd: event.currentTarget.value })} />
                   </FormField>
                 </>
               )}
@@ -473,28 +950,28 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
             <SectionMarker id="external-agent-ownership" num="03" kicker="Ownership" meta="Boundaries" />
             <FormSection kicker="Ownership" title="Control boundaries" description="Each boundary has exactly one authority. Agent-owned controls are not duplicated in Worklab.">
               <FormGrid columns={3}>
-                <FormField label="Configuration">
-                  <Select ariaLabel="Configuration owner" variant="native" value={draft.configurationOwner} options={OWNER_OPTIONS} disabled={isMono} onChange={(configurationOwner) => update({ configurationOwner })} />
+                <FormField label="Configuration" error={validation.errors.configurationOwner}>
+                  <Select ariaLabel="Configuration owner" variant="native" value={draft.configurationOwner} options={OWNER_OPTIONS} disabled={isMono || runtimeIdentityLocked || isNew} onChange={(configurationOwner) => update({ configurationOwner })} />
                 </FormField>
                 <FormField label="Workspace">
-                  <Select ariaLabel="Workspace owner" variant="native" value={draft.workspaceOwner} options={OWNER_OPTIONS} disabled={isMono} onChange={(workspaceOwner) => update({ workspaceOwner })} />
+                  <Select ariaLabel="Workspace owner" variant="native" value={draft.workspaceOwner} options={OWNER_OPTIONS} disabled={isMono || runtimeIdentityLocked} onChange={(workspaceOwner) => update({ workspaceOwner })} />
                 </FormField>
                 <FormField label="MCP servers">
-                  <Select ariaLabel="MCP owner" variant="native" value={draft.mcpOwner} options={OWNER_OPTIONS} disabled={isMono} onChange={(mcpOwner) => update({ mcpOwner })} />
+                  <Select ariaLabel="MCP owner" variant="native" value={draft.mcpOwner} options={OWNER_OPTIONS} disabled={isMono || runtimeIdentityLocked} onChange={(mcpOwner) => update({ mcpOwner })} />
                 </FormField>
               </FormGrid>
-              {workspaceManaged ? (
+              {isMono && workspaceManaged ? (
                 <Banner variant="info" title="Workspace is agent-owned" detail="The canonical workspace is supplied by the external agent and is intentionally read-only in Worklab." dismissible={false} />
               ) : (
-                <FormField label="Canonical workspace" hint="Optional absolute root used to validate task workspaces and ACP session cwd." error={workspaceValid ? null : "Use an absolute directory path."}>
-                  <Input aria-label="Canonical workspace" value={draft.canonicalWorkspace} placeholder="/workspace" invalid={!workspaceValid} onInput={(event) => update({ canonicalWorkspace: event.currentTarget.value })} />
+                <FormField label="Canonical workspace" required={workspaceManaged} hint="Absolute root used to validate task workspaces and ACP session cwd; required when the external agent owns the workspace." error={validation.errors.workspace}>
+                  <Input aria-label="Canonical workspace" value={draft.canonicalWorkspace} placeholder="/workspace" disabled={runtimeIdentityLocked} readOnly={runtimeIdentityLocked} invalid={Boolean(validation.errors.workspace)} onInput={(event) => update({ canonicalWorkspace: event.currentTarget.value })} />
                 </FormField>
               )}
             </FormSection>
 
             <SectionMarker id="external-agent-policy" num="04" kicker="Permissions" meta="Client policy" />
             <FormSection kicker="Permissions" title="ACP client access" description="Worklab keeps unavailable ACP client services disabled and exposes only policies it can enforce.">
-              {agentManaged ? (
+              {agentManaged && !runtimeIdentityLocked ? (
                 <Banner
                   variant="info"
                   title={isMono ? "Mono capabilities are agent-owned" : "Permissions are agent-owned"}
@@ -524,16 +1001,18 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
                   />
                   <FormGrid columns={2}>
                     <FormField label="Session resume strategy" hint="Choose how Worklab reuses an existing ACP session.">
-                      <Select ariaLabel="Session resume strategy" variant="native" value={draft.sessionResumeStrategy} options={SESSION_RESUME_OPTIONS} onChange={(sessionResumeStrategy) => update({ sessionResumeStrategy })} />
+                      <Select ariaLabel="Session resume strategy" variant="native" value={draft.sessionResumeStrategy} options={SESSION_RESUME_OPTIONS} disabled={runtimeIdentityLocked} onChange={(sessionResumeStrategy) => update({ sessionResumeStrategy })} />
                     </FormField>
-                    <FormField label="Session mode id" hint="Optional agent-advertised mode identifier; maximum 200 characters." error={sessionModeIdValid ? null : "Use at most 200 characters without control characters."}>
-                      <Input aria-label="Session mode id" value={draft.sessionModeId} maxLength={200} invalid={!sessionModeIdValid} onInput={(event) => update({ sessionModeId: event.currentTarget.value })} />
+                    <FormField label="Session mode id" hint="Optional agent-advertised mode identifier; maximum 200 characters." error={validation.errors.sessionMode}>
+                      <Input aria-label="Session mode id" value={draft.sessionModeId} maxLength={200} disabled={runtimeIdentityLocked} readOnly={runtimeIdentityLocked} invalid={Boolean(validation.errors.sessionMode)} onInput={(event) => update({ sessionModeId: event.currentTarget.value })} />
                     </FormField>
                   </FormGrid>
-                  <FormField label="Probe timeout (ms)" hint="1,000–300,000 ms. Default 30,000." error={probeTimeoutValid ? null : "Enter a timeout from 1,000 to 300,000 ms."}>
-                    <Input aria-label="Probe timeout" type="number" min={1000} max={300000} value={String(draft.probeTimeoutMs)} invalid={!probeTimeoutValid} onInput={(event) => update({ probeTimeoutMs: Number(event.currentTarget.value) || 0 })} />
-                  </FormField>
                 </>
+              )}
+              {!isMono && (
+                <FormField label="Probe timeout (ms)" hint="1,000–300,000 ms. Default 30,000. This safety deadline can be changed without replacing the runtime identity." error={validation.errors.probeTimeout}>
+                  <Input aria-label="Probe timeout" type="number" min={1000} max={300000} value={String(draft.probeTimeoutMs)} invalid={Boolean(validation.errors.probeTimeout)} onInput={(event) => update({ probeTimeoutMs: Number(event.currentTarget.value) || 0 })} />
+                </FormField>
               )}
             </FormSection>
           </main>

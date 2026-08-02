@@ -380,11 +380,56 @@
 .acp-auth-method-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
 .acp-auth-method-copy span { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .acp-auth-method-copy small { color: var(--text-muted); line-height: 1.35; }
+.acp-sessions-card,
+.acp-operation-history-card { display: flex; flex-direction: column; gap: var(--sp-3); }
+.acp-session-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.acp-session-list,
+.acp-operation-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.acp-session-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+  border-top: 1px solid var(--border);
+}
+.acp-session-row:first-child { padding-top: 0; border-top: 0; }
+.acp-session-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.acp-session-copy strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.acp-session-copy code { overflow: hidden; color: var(--text-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.acp-session-copy small { color: var(--text-muted); font-size: 10px; line-height: 1.35; }
+.acp-session-delete-confirm { display: flex; flex: 0 0 auto; flex-direction: column; gap: 4px; }
+.acp-operation-notice {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.acp-operation-history li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border);
+}
+.acp-operation-history li:first-child { padding-top: 0; border-top: 0; }
+.acp-operation-history-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+.acp-operation-history-heading strong { font-size: 11px; }
+.acp-operation-history li > span,
+.acp-operation-history time { color: var(--text-muted); font-size: 10px; line-height: 1.35; }
 
 @media (max-width: 720px) {
   .agent-create-choices { grid-template-columns: 1fr; }
   .agent-create-choice { min-height: 0; }
   .mono-discovery-source { align-items: flex-start; flex-direction: column; }
+  .acp-session-row { flex-direction: column; }
+  .acp-session-delete-confirm { flex-direction: row; }
 }
 
 /* 2. Keyframes (§2.6.3) ---------------------------------------- */
