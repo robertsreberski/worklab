@@ -251,6 +251,29 @@ export function acpEndpointUnsupported(error) {
     || ["not_found", "method_not_found", "not_implemented", "unsupported"].includes(String(error?.code || "").toLowerCase());
 }
 
+const ACP_TERMINAL_OPERATION_STATES = new Set([
+  "success",
+  "succeeded",
+  "complete",
+  "completed",
+  "failed",
+  "error",
+  "cancelled",
+  "canceled",
+]);
+
+export function acpOperationId(operation) {
+  return text(firstDefined(operation?.id, operation?.operationId, operation?.operation_id));
+}
+
+export function acpOperationFinished(operation) {
+  return ACP_TERMINAL_OPERATION_STATES.has(text(firstDefined(operation?.status, operation?.state)).toLowerCase());
+}
+
+export function acpOperationCancellable(operation) {
+  return Boolean(acpOperationId(operation)) && !acpOperationFinished(operation);
+}
+
 function discoveryItems(value) {
   if (Array.isArray(value)) return value;
   if (!value || typeof value !== "object") return [];

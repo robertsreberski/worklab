@@ -185,6 +185,7 @@ export const api = {
   listAcpProfileSessions: (id, data = {}) => request("POST", `/acp/profiles/${pathSegment(id)}/sessions:list`, data),
   deleteAcpProfileSession: (id, sessionId) => request("DELETE", `/acp/profiles/${pathSegment(id)}/sessions/${pathSegment(sessionId)}`),
   getAcpOperation: (id, options) => request("GET", `/acp/operations/${pathSegment(id)}`, null, options),
+  cancelAcpOperation: (id) => request("POST", `/acp/operations/${pathSegment(id)}/cancel`),
   listAcpOperationInteractions: (id, options) => request("GET", `/acp/operations/${pathSegment(id)}/interactions`, null, options),
   listAcpInteractions: (query, options) => request("GET", withQuery("/acp/interactions", query), null, options),
   respondAcpInteraction: (id, data) => request("POST", `/acp/interactions/${pathSegment(id)}/respond`, data),

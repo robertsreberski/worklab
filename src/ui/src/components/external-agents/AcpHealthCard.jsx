@@ -1,4 +1,9 @@
-import { acpAuthMethods, acpProbeStatus, externalAgentVolatileState } from "../../lib/externalAgents.js";
+import {
+  acpAuthMethods,
+  acpOperationCancellable,
+  acpProbeStatus,
+  externalAgentVolatileState,
+} from "../../lib/externalAgents.js";
 import { Card } from "../Card.jsx";
 import { Button } from "../primitives/Button.jsx";
 import { StatusPill } from "../primitives/StatusPill.jsx";
@@ -39,6 +44,8 @@ export function AcpHealthCard({
   canProbe = true,
   onAuthenticate,
   authenticatingMethodId = null,
+  onCancelOperation,
+  cancellingOperation = false,
 }) {
   const volatile = externalAgentVolatileState(profile || {});
   const status = acpProbeStatus(profile || {}, operation);
@@ -48,6 +55,7 @@ export function AcpHealthCard({
   const timestamp = probe?.completedAt || probe?.completed_at || probe?.updatedAt || probe?.updated_at || probe?.at || null;
   const error = probe?.error?.message || probe?.error || probe?.message || null;
   const authMethods = acpAuthMethods(profile || {}, operation);
+  const operationActive = acpOperationCancellable(operation);
 
   return (
     <Card
@@ -83,7 +91,7 @@ export function AcpHealthCard({
                 size="sm"
                 aria-label={`Authenticate with ${method.label}`}
                 loading={authenticatingMethodId === method.id}
-                disabled={!onAuthenticate || (!!authenticatingMethodId && authenticatingMethodId !== method.id)}
+                disabled={!onAuthenticate || operationActive || (!!authenticatingMethodId && authenticatingMethodId !== method.id)}
                 onClick={() => onAuthenticate?.(method.id)}
               >
                 Authenticate
@@ -92,16 +100,31 @@ export function AcpHealthCard({
           ))}
         </div>
       )}
-      <Button
-        variant="secondary"
-        size="sm"
-        iconLeft={<Icon name="refresh-cw" size={13} />}
-        onClick={onProbe}
-        loading={probing || status === "running"}
-        disabled={!canProbe}
-      >
-        Test connection
-      </Button>
+      <div class="acp-health-actions">
+        <Button
+          variant="secondary"
+          size="sm"
+          iconLeft={<Icon name="refresh-cw" size={13} />}
+          onClick={onProbe}
+          loading={probing || status === "running"}
+          disabled={!canProbe || operationActive}
+        >
+          Test connection
+        </Button>
+        {operationActive && (
+          <Button
+            variant="secondary"
+            size="sm"
+            iconLeft={<Icon name="stop" size={13} />}
+            aria-label="Cancel active ACP operation"
+            onClick={onCancelOperation}
+            loading={cancellingOperation}
+            disabled={!onCancelOperation}
+          >
+            Cancel operation
+          </Button>
+        )}
+      </div>
     </Card>
   );
 }

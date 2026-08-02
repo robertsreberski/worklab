@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { api } from "../lib/api.js";
 import {
   acpEndpointUnsupported,
+  acpOperationCancellable,
+  acpOperationFinished,
+  acpOperationId,
   acpProfileForAgent,
   externalAgentDraft,
   externalEnvKeysValid,
@@ -58,15 +61,6 @@ function operationBody(result) {
   return result?.operation || result || null;
 }
 
-function operationId(operation) {
-  return operation?.id || operation?.operationId || operation?.operation_id || null;
-}
-
-function operationFinished(operation) {
-  const status = String(operation?.status || operation?.state || "").toLowerCase();
-  return ["success", "succeeded", "complete", "completed", "failed", "error", "cancelled", "canceled"].includes(status);
-}
-
 function resultAgentName(result, fallback) {
   return result?.agent?.name
     || result?.profile?.agent?.name
@@ -89,9 +83,11 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
   const [loadError, setLoadError] = useState(null);
   const [unsupported, setUnsupported] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [probeOperation, setProbeOperation] = useState(null);
+  const [managementOperation, setManagementOperation] = useState(null);
+  const [operationContext, setOperationContext] = useState(null);
   const [probing, setProbing] = useState(false);
   const [authenticatingMethodId, setAuthenticatingMethodId] = useState(null);
+  const [cancellingOperation, setCancellingOperation] = useState(false);
   const pollTimerRef = useRef(null);
 
   const update = useCallback((patch) => setDraft((current) => ({ ...current, ...patch })), []);
@@ -189,19 +185,28 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
       try {
         const result = await api.getAcpOperation(id);
         const operation = operationBody(result);
-        if (kind === "probe") setProbeOperation(operation);
-        if (operationFinished(operation)) {
+        setManagementOperation(operation);
+        if (acpOperationFinished(operation)) {
+          setOperationContext(null);
+          setCancellingOperation(false);
           if (kind === "probe") setProbing(false);
           else setAuthenticatingMethodId(null);
           await refreshVolatileProfile();
           if (kind === "authenticate") {
-            const failed = ["failed", "error", "cancelled", "canceled"].includes(String(operation?.status || operation?.state || "").toLowerCase());
-            pushToast(failed ? "Authentication failed" : "Authentication completed", { variant: failed ? "error" : "success" });
+            const terminalStatus = String(operation?.status || operation?.state || "").toLowerCase();
+            const cancelled = ["cancelled", "canceled"].includes(terminalStatus);
+            const failed = ["failed", "error"].includes(terminalStatus);
+            pushToast(
+              cancelled ? "Authentication cancelled" : failed ? "Authentication failed" : "Authentication completed",
+              { variant: failed ? "error" : "success" },
+            );
           }
         } else {
           pollOperation(id, { kind, authMethodId });
         }
       } catch (err) {
+        setOperationContext(null);
+        setCancellingOperation(false);
         if (kind === "probe") setProbing(false);
         else setAuthenticatingMethodId(null);
         pushToast(`${kind === "probe" ? "Probe" : "Authentication"} status failed: ${err.message}`, { variant: "error" });
@@ -213,17 +218,22 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
     if (!profile?.id) return;
     if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     setProbing(true);
+    setCancellingOperation(false);
     try {
       const result = await api.probeAcpProfile(profile.id);
       const operation = operationBody(result);
-      setProbeOperation(operation);
-      const id = operationId(operation);
-      if (id && !operationFinished(operation)) pollOperation(id, { kind: "probe" });
-      else {
+      setManagementOperation(operation);
+      const id = acpOperationId(operation);
+      if (id && !acpOperationFinished(operation)) {
+        setOperationContext({ kind: "probe", authMethodId: null });
+        pollOperation(id, { kind: "probe" });
+      } else {
+        setOperationContext(null);
         setProbing(false);
         await refreshVolatileProfile();
       }
     } catch (err) {
+      setOperationContext(null);
       setProbing(false);
       pushToast(`Connection test failed: ${err.message}`, { variant: "error" });
     }
@@ -233,21 +243,63 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
     if (!profile?.id || !authMethodId) return;
     if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     setAuthenticatingMethodId(authMethodId);
+    setCancellingOperation(false);
     try {
       const result = await api.authenticateAcpProfile(profile.id, authMethodId);
       const operation = operationBody(result);
-      const id = operationId(operation);
-      if (id && !operationFinished(operation)) {
+      setManagementOperation(operation);
+      const id = acpOperationId(operation);
+      if (id && !acpOperationFinished(operation)) {
+        setOperationContext({ kind: "authenticate", authMethodId });
         pollOperation(id, { kind: "authenticate", authMethodId });
       } else {
+        setOperationContext(null);
         setAuthenticatingMethodId(null);
         await refreshVolatileProfile();
-        const failed = ["failed", "error", "cancelled", "canceled"].includes(String(operation?.status || operation?.state || "").toLowerCase());
-        pushToast(failed ? "Authentication failed" : "Authentication completed", { variant: failed ? "error" : "success" });
+        const terminalStatus = String(operation?.status || operation?.state || "").toLowerCase();
+        const cancelled = ["cancelled", "canceled"].includes(terminalStatus);
+        const failed = ["failed", "error"].includes(terminalStatus);
+        pushToast(
+          cancelled ? "Authentication cancelled" : failed ? "Authentication failed" : "Authentication completed",
+          { variant: failed ? "error" : "success" },
+        );
       }
     } catch (err) {
+      setOperationContext(null);
       setAuthenticatingMethodId(null);
       pushToast(`Authentication failed: ${err.message}`, { variant: "error" });
+    }
+  }
+
+  async function cancelOperation() {
+    const id = acpOperationId(managementOperation);
+    if (!id || !acpOperationCancellable(managementOperation)) return;
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    const context = operationContext || {
+      kind: authenticatingMethodId ? "authenticate" : "probe",
+      authMethodId: authenticatingMethodId,
+    };
+    setCancellingOperation(true);
+    try {
+      const result = await api.cancelAcpOperation(id);
+      const operation = operationBody(result) || { ...managementOperation, status: "cancelling" };
+      setManagementOperation(operation);
+      if (acpOperationFinished(operation)) {
+        setOperationContext(null);
+        setProbing(false);
+        setAuthenticatingMethodId(null);
+        setCancellingOperation(false);
+        await refreshVolatileProfile();
+        pushToast("ACP operation cancelled", { variant: "success" });
+      } else {
+        setOperationContext(context);
+        pollOperation(id, context);
+        pushToast("ACP operation cancellation requested", { variant: "success" });
+      }
+    } catch (err) {
+      setCancellingOperation(false);
+      pollOperation(id, context);
+      pushToast(`Operation cancellation failed: ${err.message}`, { variant: "error" });
     }
   }
 
@@ -317,12 +369,14 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
         </Card>
         <AcpHealthCard
           profile={profile}
-          operation={probeOperation}
+          operation={managementOperation}
           probing={probing}
           onProbe={probe}
           canProbe={!isNew && !!profile?.id}
           onAuthenticate={!isNew && profile?.id ? authenticate : undefined}
           authenticatingMethodId={authenticatingMethodId}
+          onCancelOperation={cancelOperation}
+          cancellingOperation={cancellingOperation}
         />
         {!isNew && (
           <Card collapsible={{ summary: "More actions", count: 1 }} class="entity-rail-card">
