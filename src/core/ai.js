@@ -15,7 +15,7 @@ import { compactionRecorderFor } from "./run-compactions.js";
 import { runtimePoliciesFromSettings } from "./runtime-policies.js";
 import { projectToolPolicy } from "./tool-policy-projection.js";
 import { withWorklabRuntimeBrand } from "./runtime-brand.js";
-import { getSkillAccessDirs } from "./skills.js";
+import { getSkillAccessDirs, inferSkillsRoot } from "./skills.js";
 import { createToolOutputSink } from "./tool-artifacts.js";
 import { readSettings } from "./settings.js";
 import {
@@ -574,9 +574,17 @@ function optionOrEnv(optionValue, envValue) {
 // silently swallow events.
 export async function generateResponse(systemPrompt, options) {
   const resolved = options.model?.sdk ? options.model : parseModelReference(options.model);
+  const skills = Array.isArray(options.skills) ? options.skills : [];
   const skillDirs = Array.isArray(options.skillDirs)
     ? options.skillDirs
-    : getSkillAccessDirs(options.skills || []);
+    : getSkillAccessDirs(skills);
+  // agent-runtime 0.16+ treats skills as a route capability and requires the
+  // directory containing `<name>/SKILL.md` to build ReadSkill. Worklab loads
+  // every run's disclosed skills from one data-dir root, so thread that root
+  // explicitly instead of relying on the runtime's legacy dataDir fallback.
+  const skillsRoot = skills.length > 0
+    ? optionalOption(options.skillsRoot) ?? optionalOption(inferSkillsRoot(skills))
+    : undefined;
   const settings = options.settings || loadSettingsSafely(options.db);
   let customContext = null;
   if (resolved.sdk === "pi") {
@@ -661,6 +669,7 @@ export async function generateResponse(systemPrompt, options) {
     ...options,
     model: resolved,
     skillDirs,
+    ...(skillsRoot === undefined ? {} : { skillsRoot }),
     settings,
     toolLimits,
     compaction,
