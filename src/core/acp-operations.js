@@ -253,7 +253,7 @@ function sanitizedValue(value, {
   }
   if (typeof value === "string") {
     if (canonicalProviderSessionId(value) || canonicalSessionCursor(value)) {
-      return value;
+      return hasPrivateScalar(privateValues, value) ? "[redacted]" : value;
     }
     return /(?:^|_)(?:url|uri|href)$/iu.test(parentKey)
       ? sanitizedUrl(value, rawSessionIds, privateValues)
@@ -340,6 +340,7 @@ function sanitizeSession(value, {
   } catch {
     return null;
   }
+  if (hasPrivateScalar(privateValues, session.id)) return null;
   for (const [key, limit] of [["title", 500], ["status", 100]]) {
     if (session[key] == null) continue;
     const text = String(session[key]);
@@ -540,6 +541,7 @@ export function sanitizeAcpOperationResult(kind, value, {
     if (result.id !== undefined) {
       try {
         result.id = normalizeAcpProviderSessionId(result.id, profileId);
+        if (hasPrivateScalar(privateValues, result.id)) delete result.id;
       } catch {
         delete result.id;
       }

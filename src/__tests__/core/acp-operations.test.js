@@ -95,6 +95,38 @@ describe("sanitizeAcpOperationResult", () => {
     });
   });
 
+  it("redacts exact private values that are structurally valid v2 handles", () => {
+    const privateSessionId = opaqueSessionId("v2-shaped-form-secret");
+    const privateCursor = opaqueCursor("v2-shaped-cursor-secret");
+    const privateValues = new Set([privateSessionId, privateCursor]);
+
+    expect(sanitizeAcpOperationResult("list_sessions", {
+      sessions: [{ providerSessionId: privateSessionId, title: "Private session" }],
+      nextCursor: privateCursor,
+    }, { profileId: PROFILE_ID, privateValues })).toEqual({
+      sessions: [],
+      truncated: true,
+    });
+    expect(sanitizeAcpOperationResult("delete_session", {
+      deleted: true,
+      providerSessionId: privateSessionId,
+    }, { profileId: PROFILE_ID, privateValues })).toEqual({ deleted: true });
+    expect(sanitizeAcpOperationResult("probe", {
+      warnings: [privateSessionId],
+      capabilities: { cursor: privateCursor },
+    }, { privateValues })).toEqual({
+      warnings: ["[redacted]"],
+      capabilities: { cursor: "[redacted]" },
+    });
+    expect(sanitizeAcpInteractionSchema({
+      title: privateSessionId,
+      nested: { defaultCursor: privateCursor },
+    }, { privateValues })).toEqual({
+      title: "[redacted]",
+      nested: { defaultCursor: "[redacted]" },
+    });
+  });
+
   it("retains a usable bounded session prefix and continuation cursor for large pages", () => {
     const rawCursor = `page-2/${"c".repeat(1_900)}`;
     const nextCursor = opaqueCursor(rawCursor);
