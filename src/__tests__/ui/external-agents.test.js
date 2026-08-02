@@ -9,6 +9,7 @@ import {
   externalAgentPayload,
   externalAgentVolatileState,
   normalizeMonoDiscovery,
+  UNSUPPORTED_ACP_CLIENT_CAPABILITIES,
 } from "../../ui/src/lib/externalAgents.js";
 
 describe("external agent UI helpers", () => {
@@ -51,6 +52,9 @@ describe("external agent UI helpers", () => {
     });
     expect(draft).not.toHaveProperty("lastProbe");
     expect(draft).not.toHaveProperty("capabilities");
+    expect(draft).not.toHaveProperty("allowFilesystem");
+    expect(draft).not.toHaveProperty("allowTerminal");
+    expect(draft).not.toHaveProperty("allowMcp");
     expect(externalAgentVolatileState(profile)).toMatchObject({ health: "healthy", capabilities: { sessions: true } });
   });
 
@@ -73,7 +77,7 @@ describe("external agent UI helpers", () => {
     ]);
   });
 
-  it("builds a structured stdio payload without environment values", () => {
+  it("builds a structured stdio payload without environment values or unsupported client capabilities", () => {
     const payload = externalAgentPayload({
       displayName: "External One",
       enabled: true,
@@ -85,9 +89,9 @@ describe("external agent UI helpers", () => {
       workspaceOwner: "agent",
       mcpOwner: "agent",
       allowFilesystem: true,
-      allowTerminal: false,
-      allowNetwork: false,
-      allowMcp: false,
+      allowTerminal: true,
+      allowNetwork: true,
+      allowMcp: true,
       configPolicyText: '{"mode":"constrained"}',
       sessionPolicyText: "{}",
     });
@@ -99,11 +103,22 @@ describe("external agent UI helpers", () => {
       cwd: "/workspace",
       envKeys: ["AGENT_TOKEN", "PATH"],
       configurationOwner: "client",
-      permissionsPolicy: { filesystem: true, terminal: false, network: false, mcp: false },
+      permissionsPolicy: { filesystem: false, terminal: false, network: true, mcp: false },
       configPolicy: { mode: "constrained" },
       sessionPolicy: {},
     });
     expect(JSON.stringify(payload)).not.toContain("TOKEN=");
+  });
+
+  it("describes every unsupported ACP client capability as unavailable", () => {
+    expect(UNSUPPORTED_ACP_CLIENT_CAPABILITIES.map((capability) => capability.id)).toEqual([
+      "filesystem",
+      "terminal",
+      "mcp",
+    ]);
+    for (const capability of UNSUPPORTED_ACP_CLIENT_CAPABILITIES) {
+      expect(capability.description).toMatch(/^Unavailable/u);
+    }
   });
 
   it("rejects malformed advanced policy JSON", () => {
@@ -132,8 +147,13 @@ describe("external agent UI helpers", () => {
       configurationOwner: "agent",
       workspaceOwner: "agent",
       mcpOwner: "agent",
-      configPolicyText: "{}",
-      sessionPolicyText: "{}",
+      probeTimeoutMs: 12_345,
+      allowFilesystem: true,
+      allowTerminal: true,
+      allowNetwork: true,
+      allowMcp: true,
+      configPolicyText: '{"mode":"descriptor-owned"}',
+      sessionPolicyText: '{"resumeStrategy":"load"}',
     };
 
     const generic = externalAgentMutationPayload(draft, { driver: "generic" });

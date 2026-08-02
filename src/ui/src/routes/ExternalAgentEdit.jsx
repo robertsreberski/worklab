@@ -7,6 +7,7 @@ import {
   externalEnvKeysValid,
   externalAgentMutationPayload,
   normalizeAcpProfile,
+  UNSUPPORTED_ACP_CLIENT_CAPABILITIES,
 } from "../lib/externalAgents.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
@@ -430,16 +431,29 @@ export function ExternalAgentEdit({ name, onSaved, onDeleted }) {
             </FormSection>
 
             <SectionMarker id="external-agent-policy" num="04" kicker="Permissions" meta="Client policy" />
-            <FormSection kicker="Permissions" title="ACP client access" description="All permissions are denied by default. Enable only the client services this external agent should be able to request.">
+            <FormSection kicker="Permissions" title="ACP client access" description="Worklab keeps unavailable ACP client services disabled and exposes only policies it can enforce.">
               {agentManaged ? (
-                <Banner variant="info" title="Permissions are agent-owned" detail="ACP permissions and session policy come from the external agent's sanitized descriptor and are intentionally hidden here." dismissible={false} />
+                <Banner
+                  variant="info"
+                  title={isMono ? "Mono capabilities are agent-owned" : "Permissions are agent-owned"}
+                  detail="ACP client access and session settings are managed by the external profile and are read-only in Worklab."
+                  dismissible={false}
+                />
               ) : (
                 <>
+                  <Banner
+                    variant="info"
+                    title="Client services are unavailable"
+                    detail="Filesystem, terminal, and client-supplied MCP services stay disabled in this Worklab version. Mono capabilities remain agent-owned."
+                    dismissible={false}
+                  />
                   <FormGrid columns={2}>
-                    <FormField switchInside><Switch checked={draft.allowFilesystem} onChange={(allowFilesystem) => update({ allowFilesystem })} label="Filesystem requests" description="Allow scoped Worklab client file reads and writes when implemented." /></FormField>
-                    <FormField switchInside><Switch checked={draft.allowTerminal} onChange={(allowTerminal) => update({ allowTerminal })} label="Terminal requests" description="Allow scoped client terminal lifecycle requests when implemented." /></FormField>
+                    {UNSUPPORTED_ACP_CLIENT_CAPABILITIES.map((capability) => (
+                      <FormField switchInside key={capability.id}>
+                        <Switch checked={false} disabled label={capability.label} description={capability.description} />
+                      </FormField>
+                    ))}
                     <FormField switchInside><Switch checked={draft.allowNetwork} onChange={(allowNetwork) => update({ allowNetwork })} label="Network requests" description="Allow external network-facing client operations." /></FormField>
-                    <FormField switchInside><Switch checked={draft.allowMcp} onChange={(allowMcp) => update({ allowMcp })} label="Client MCP servers" description="Allow Worklab to supply client-side MCP servers to this profile." /></FormField>
                   </FormGrid>
                   <FormGrid columns={2}>
                   <FormField label="Configuration policy (JSON)" hint="Advanced safe constraints only; secret-bearing fields are rejected by the server.">
