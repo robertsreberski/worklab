@@ -9,6 +9,13 @@ import {
 
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const MAX_ACP_LINE_BYTES = 16 * 1024 * 1024;
+const ACP_MANAGEMENT_OPERATIONS = new Set([
+  "probe",
+  "authenticate",
+  "logout",
+  "list_sessions",
+  "delete_session",
+]);
 
 function runtimeProfileError(code, message) {
   return Object.assign(new Error(message), { code, publicMessage: message });
@@ -57,9 +64,12 @@ export function createWorklabAcpProfileResolver({
   env = process.env,
   urlHandoffAvailable = false,
 } = {}) {
-  return async function resolveAcpProfile(profileId) {
+  return async function resolveAcpProfile(profileId, context = {}) {
     const profile = assertAcpProfileBinding({ db, id: profileId });
-    if (!profile.agent.enabled) throw runtimeProfileError("profile_disabled", "ACP profile agent is disabled");
+    const operation = typeof context?.operation === "string" ? context.operation : "";
+    if (!profile.agent.enabled && !ACP_MANAGEMENT_OPERATIONS.has(operation)) {
+      throw runtimeProfileError("profile_disabled", "ACP profile agent is disabled");
+    }
     const unsupported = ["filesystem", "terminal", "network", "mcp"]
       .filter((capability) => profile.permissionsPolicy?.[capability] === true);
     if (unsupported.length) {
@@ -119,16 +129,19 @@ export function createMonoAcpDiscoveryControls({
   command,
   env = process.env,
   discover = discoverMonoAcpAgents,
+  resolveExecutableImpl = resolveExecutable,
 } = {}) {
   const hostEnv = monoAcpHostEnvironment(env);
   const configuredCommand = command || env.WORKLAB_MONO_AGENT_BIN || "mono-agent";
-  const executable = () => resolveExecutable(configuredCommand, hostEnv);
+  const executable = () => resolveExecutableImpl(configuredCommand, hostEnv);
   async function discoverMono(options = {}) {
-    return discover({ ...options, command: executable(), env: hostEnv });
+    const resolvedCommand = executable();
+    return discover({ ...options, command: resolvedCommand, env: hostEnv });
   }
   async function resolveMonoSource({ sourceId, signal, timeoutMs } = {}) {
     if (signal?.aborted) throw signal.reason || runtimeProfileError("cancelled", "mono-agent discovery was cancelled");
-    const discovery = await discoverMono({ signal, timeoutMs });
+    const resolvedCommand = executable();
+    const discovery = await discover({ signal, timeoutMs, command: resolvedCommand, env: hostEnv });
     const descriptor = discovery.sources.find((source) => source.sourceId === sourceId);
     if (!descriptor) throw runtimeProfileError("source_not_found", "mono-agent source was not found");
     if (!descriptor.compatible) throw runtimeProfileError("source_incompatible", "mono-agent source is not compatible");
@@ -137,7 +150,7 @@ export function createMonoAcpDiscoveryControls({
     }
     return {
       descriptor,
-      command: executable(),
+      command: resolvedCommand,
       args: ["bridge", "acp", "--source-id", descriptor.sourceId],
       envKeys: Object.keys(hostEnv),
     };

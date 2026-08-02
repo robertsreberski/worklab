@@ -63,6 +63,40 @@ describe("Worklab ACP runtime profiles", () => {
     }
   });
 
+  it("requires enabled profiles for runs while allowing explicit management operations", async () => {
+    const db = makeTestDb();
+    try {
+      const profile = createGeneric(db);
+      db.prepare("UPDATE agents SET enabled = 0 WHERE name = ?").run(profile.agentName);
+      const resolveProfile = createWorklabAcpProfileResolver({
+        db,
+        env: { TEST_ACP_TOKEN: "private" },
+      });
+
+      for (const operation of [
+        "probe",
+        "authenticate",
+        "logout",
+        "list_sessions",
+        "delete_session",
+      ]) {
+        await expect(resolveProfile(PROFILE_ID, { operation }))
+          .resolves.toMatchObject({ command: process.execPath });
+      }
+      for (const context of [
+        undefined,
+        { operation: "connect" },
+        { operation: "run" },
+        { operation: "unknown" },
+      ]) {
+        await expect(resolveProfile(PROFILE_ID, context))
+          .rejects.toMatchObject({ code: "profile_disabled" });
+      }
+    } finally {
+      db.close();
+    }
+  });
+
   it("fails safely for missing environment or unsupported client capabilities", async () => {
     const missingDb = makeTestDb();
     try {
@@ -189,5 +223,43 @@ describe("Worklab ACP runtime profiles", () => {
     });
     await expect(controls.resolveMonoSource({ sourceId: "personal" }))
       .rejects.toMatchObject({ code: "source_not_running" });
+  });
+
+  it("binds discovery and launch to one executable resolution per call", async () => {
+    const descriptor = {
+      sourceId: "personal",
+      compatible: true,
+      health: "running",
+      workspace: { path: "/tmp", owner: "agent" },
+    };
+    const discover = vi.fn().mockResolvedValue({ sources: [descriptor] });
+    const resolveExecutableImpl = vi.fn()
+      .mockReturnValueOnce("/resolved/mono-agent-A")
+      .mockReturnValueOnce("/resolved/mono-agent-B");
+    const controls = createMonoAcpDiscoveryControls({
+      command: "/configured/mono-agent-link",
+      env: { PATH: "/configured" },
+      discover,
+      resolveExecutableImpl,
+    });
+
+    await expect(controls.resolveMonoSource({ sourceId: "personal" })).resolves.toMatchObject({
+      command: "/resolved/mono-agent-A",
+      args: ["bridge", "acp", "--source-id", "personal"],
+    });
+    expect(resolveExecutableImpl).toHaveBeenCalledTimes(1);
+    expect(discover).toHaveBeenLastCalledWith({
+      signal: undefined,
+      timeoutMs: undefined,
+      command: "/resolved/mono-agent-A",
+      env: { PATH: "/configured" },
+    });
+
+    await controls.discoverMono();
+    expect(resolveExecutableImpl).toHaveBeenCalledTimes(2);
+    expect(discover).toHaveBeenLastCalledWith({
+      command: "/resolved/mono-agent-B",
+      env: { PATH: "/configured" },
+    });
   });
 });

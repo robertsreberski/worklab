@@ -147,6 +147,24 @@ describe("createWorklabAcpControls", () => {
     }
   });
 
+  it("allows list_sessions management for a disabled profile", async () => {
+    const runtime = {
+      listAcpSessions: vi.fn(async (_id, request) => ({ sessions: [], request })),
+    };
+    const { db, profile, controls } = setup(runtime);
+    try {
+      db.prepare("UPDATE agents SET enabled = 0 WHERE name = ?").run(profile.agentName);
+      await expect(controls.listSessions({ profile })).resolves.toMatchObject({ sessions: [] });
+      expect(runtime.listAcpSessions).toHaveBeenCalledWith(
+        PROFILE_ID,
+        {},
+        expect.objectContaining({ resolveAcpProfile: expect.any(Function) }),
+      );
+    } finally {
+      db.close();
+    }
+  });
+
   it("rejects malformed page cursors before invoking the ACP runtime", async () => {
     const runtime = { listAcpSessions: vi.fn() };
     const { db, profile, controls } = setup(runtime);

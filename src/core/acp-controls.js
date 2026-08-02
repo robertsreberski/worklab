@@ -198,7 +198,7 @@ export function createWorklabAcpControls({
       const sessionCursor = normalizeAcpSessionCursor(cursor, id);
       const client = await runtime();
       throwIfAborted(signal);
-      const boundProfile = await resolveAcpProfile(id);
+      const boundProfile = await resolveAcpProfile(id, { operation: "list_sessions" });
       throwIfAborted(signal);
       const sessionCwd = boundProfile.workspaceOwner === "agent"
         ? boundProfile.workspacePath
