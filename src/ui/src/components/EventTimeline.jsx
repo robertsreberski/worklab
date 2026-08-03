@@ -278,7 +278,7 @@ function acpDisplayItems(entries) {
     }));
 }
 
-function normalizeRawAcpSessionUpdate(event) {
+function normalizeRawAcpSessionUpdate(event, { tool: projectedTool = null } = {}) {
   const body = acpUpdateBody(event);
   const updateType = acpUpdateType(event);
   if (ACP_PLAN_UPDATE_TYPES.has(updateType)) return normalizeAcpPlan(body, updateType);
@@ -286,7 +286,14 @@ function normalizeRawAcpSessionUpdate(event) {
 
   if (updateType === "agent_message_chunk") {
     const text = body.content?.type === "text" ? boundedAcpText(body.content.text, 10_000) : "";
-    if (text) return { type: "text", text };
+    if (text) {
+      return {
+        type: "text",
+        text,
+        source: "acp",
+        _acpMessageId: typeof body.messageId === "string" ? body.messageId : null,
+      };
+    }
     return {
       type: "acp_session_update",
       updateType,
@@ -298,8 +305,8 @@ function normalizeRawAcpSessionUpdate(event) {
     return {
       type: "acp_session_update",
       updateType,
-      title: "ACP agent reasoning updated",
-      detail: "Private reasoning content was not displayed.",
+      title: "ACP agent activity",
+      detail: "Private status or reasoning was streamed but is not displayed.",
     };
   }
   if (updateType === "user_message_chunk") {
@@ -311,15 +318,14 @@ function normalizeRawAcpSessionUpdate(event) {
     };
   }
   if (updateType === "tool_call" || updateType === "tool_call_update") {
-    const toolTitle = boundedAcpText(body.title || body.name, 200);
-    const kind = acpIdentifier(body.kind, 64);
-    const status = acpIdentifier(body.status, 64);
+    const toolTitle = boundedAcpText(projectedTool?.title || body.title || body.name, 200);
+    const kind = acpIdentifier(projectedTool?.kind || body.kind, 64);
+    const status = acpIdentifier(projectedTool?.status || body.status, 64);
     return {
       type: "acp_session_update",
       updateType,
-      title: updateType === "tool_call" ? "ACP tool call started" : "ACP tool call updated",
+      title: toolTitle ? `ACP tool · ${toolTitle}` : "ACP tool call",
       items: acpDisplayItems([
-        toolTitle ? { label: "Tool", detail: toolTitle } : null,
         kind ? { label: "Kind", detail: acpUpdateLabel(kind) } : null,
         status ? { label: "Status", detail: acpUpdateLabel(status) } : null,
       ]),
@@ -480,9 +486,9 @@ function isAcpTimelineEvent(event) {
   return String(target.type || "").startsWith("acp_");
 }
 
-export function normalizeAcpTimelineEvent(event) {
+export function normalizeAcpTimelineEvent(event, options = {}) {
   const target = eventTarget(event);
-  if (target.type === "acp_session_update") return normalizeRawAcpSessionUpdate(target);
+  if (target.type === "acp_session_update") return normalizeRawAcpSessionUpdate(target, options);
   if (target.type === "plan" && target.source === "acp") return normalizeAcpPlan(target.update || {}, target.update?.sessionUpdate);
   if (target.type === "context_usage" && target.source === "acp") return normalizeAcpContextUsage(target);
   if (isAcpProviderEvent(target)) return normalizeAcpProviderEvent(target);
@@ -502,7 +508,79 @@ export function normalizeAcpTimelineEvent(event) {
   };
 }
 
+function acpToolEvent(event) {
+  const target = eventTarget(event);
+  if (target?.type !== "acp_session_update") return null;
+  const updateType = acpUpdateType(target);
+  if (updateType !== "tool_call" && updateType !== "tool_call_update") return null;
+  const body = acpUpdateBody(target);
+  const id = typeof body.toolCallId === "string" ? body.toolCallId : "";
+  if (!id) return null;
+  return {
+    id,
+    title: boundedAcpText(body.title || body.name, 200),
+    kind: acpIdentifier(body.kind, 64),
+    status: acpIdentifier(body.status, 64),
+  };
+}
+
+function acpToolTimelineProjection(events) {
+  const latestIndexById = new Map();
+  const summaryById = new Map();
+  events.forEach((event, index) => {
+    const tool = acpToolEvent(event);
+    if (!tool) return;
+    latestIndexById.set(tool.id, index);
+    const previous = summaryById.get(tool.id) || {};
+    summaryById.set(tool.id, {
+      title: tool.title || previous.title || "",
+      kind: tool.kind || previous.kind || "",
+      status: tool.status || previous.status || "",
+    });
+  });
+  return { latestIndexById, summaryById };
+}
+
+function collapseAcpStreamRows(rows) {
+  const collapsed = [];
+  for (const row of rows) {
+    const previous = collapsed[collapsed.length - 1];
+    if (
+      row?.type === "acp_session_update"
+      && row.updateType === "agent_thought_chunk"
+      && previous?.type === "acp_session_update"
+      && previous.updateType === "agent_thought_chunk"
+    ) {
+      continue;
+    }
+    const differentAcpMessages = row?._acpMessageId
+      && previous?._acpMessageId
+      && row._acpMessageId !== previous._acpMessageId;
+    if (
+      row?.type === "text"
+      && row.source === "acp"
+      && previous?.type === "text"
+      && previous.source === "acp"
+      && !differentAcpMessages
+    ) {
+      previous.text = `${previous.text || ""}${row.text || ""}`;
+      continue;
+    }
+    collapsed.push(row);
+  }
+  return collapsed.map((row) => {
+    if (!Object.hasOwn(row || {}, "_acpMessageId")) return row;
+    const safeRow = { ...row };
+    delete safeRow._acpMessageId;
+    return safeRow;
+  });
+}
+
 function isAcpNormalizedCompanion(events, index) {
+  if (
+    events[index]?._worklab_acp_companion === true
+    || eventTarget(events[index])?._worklab_acp_companion === true
+  ) return true;
   const previous = eventTarget(events[index - 1]);
   const current = eventTarget(events[index]);
   if (previous?.type !== "acp_session_update" || !current) return false;
@@ -742,6 +820,7 @@ export function normalizeWorklabEvents(events = []) {
   const visibleTexts = new Set();
   let visibleTextTail = "";
   let thinkingTokens = 0;
+  const acpTools = acpToolTimelineProjection(events);
   const rows = events.map((event, index) => {
     // Hidden thinking-token estimates still carry the only reasoning signal the
     // provider sends, so keep the running total for the block that follows.
@@ -754,6 +833,8 @@ export function normalizeWorklabEvents(events = []) {
     // the strict display projection of the protocol update and discard the
     // companion, which can carry raw tool input/output or private reasoning.
     if (isAcpNormalizedCompanion(events, index)) return null;
+    const acpTool = acpToolEvent(event);
+    if (acpTool && acpTools.latestIndexById.get(acpTool.id) !== index) return null;
     if (followedByMatchingStructuredOutput(events, index)) return null;
     const rawFinalText = String(event?.text || "").trim();
     const normalizedFinalText = normalizeCommentText(rawFinalText);
@@ -762,9 +843,13 @@ export function normalizeWorklabEvents(events = []) {
         ? visibleTexts.has(normalizedFinalText)
         : visibleTexts.size > 0
     );
-    let normalized = normalizeWorklabEvent(event, {
-      compactFinal,
-    });
+    let normalized = isAcpTimelineEvent(event)
+      ? normalizeAcpTimelineEvent(event, {
+        tool: acpTool ? acpTools.summaryById.get(acpTool.id) : null,
+      })
+      : normalizeWorklabEvent(event, {
+        compactFinal,
+      });
     if (!normalized) return null;
     if (hasRedactedThinkingBlock(normalized)) {
       normalized = attachThinkingTokens(normalized, thinkingTokens);
@@ -784,7 +869,7 @@ export function normalizeWorklabEvents(events = []) {
     }
     return normalized;
   }).filter(Boolean);
-  return collapseThinkingProgress(rows);
+  return collapseAcpStreamRows(collapseThinkingProgress(rows));
 }
 
 export function EventTimeline({ events, streaming = false }) {

@@ -106,6 +106,176 @@ describe("spawnWorker ACP interactions", () => {
     expect(JSON.stringify(malformedReasons)).not.toContain("private-secret");
   });
 
+  it("persists semantic ACP display upserts while retaining marked raw companions", async () => {
+    const db = makeTestDb();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-acp-display-"));
+    const broadcasts = [];
+    const privateReasoning = "PRIVATE_REASONING_DISPLAY_SENTINEL";
+    const privateInput = "PRIVATE_TOOL_INPUT_DISPLAY_SENTINEL";
+    const privateOutput = "PRIVATE_TOOL_OUTPUT_DISPLAY_SENTINEL";
+    try {
+      const { taskId, runId } = seed(db);
+      const worklabResult = {
+        schema: "worklab.v2",
+        stage: "execute",
+        decision: "advance",
+        summary: "Done.",
+        details: "",
+        final_text: "Done.",
+        artifacts: {},
+        artifact_entries: [],
+        blocking_issues: [],
+        pending_actions: [],
+        questions: [],
+        subtasks: [],
+        parent_review_policy: null,
+        memory_candidates: [],
+        verification_evidence: [],
+      };
+      const sdkEvent = (event) => ({ type: "sdk_event", event });
+      const update = (body) => sdkEvent({ type: "acp_session_update", update: body });
+      const script = {
+        events: [
+          update({
+            sessionUpdate: "agent_thought_chunk",
+            content: { type: "text", text: privateReasoning },
+          }),
+          sdkEvent({
+            type: "assistant",
+            message: { content: [{ type: "thinking", text: privateReasoning }] },
+          }),
+          update({
+            sessionUpdate: "agent_thought_chunk",
+            content: { type: "text", text: `${privateReasoning}-continued` },
+          }),
+          sdkEvent({
+            type: "assistant",
+            message: { content: [{ type: "thinking", text: `${privateReasoning}-continued` }] },
+          }),
+          update({
+            sessionUpdate: "agent_message_chunk",
+            messageId: "provider-message-private",
+            content: { type: "text", text: "#" },
+          }),
+          sdkEvent({
+            type: "assistant",
+            message: { content: [{ type: "text", text: "#" }] },
+          }),
+          update({
+            sessionUpdate: "agent_message_chunk",
+            messageId: "provider-message-private",
+            content: { type: "text", text: "## Hello" },
+          }),
+          sdkEvent({
+            type: "assistant",
+            message: { content: [{ type: "text", text: "## Hello" }] },
+          }),
+          update({
+            sessionUpdate: "tool_call",
+            toolCallId: "provider-tool-private",
+            title: "Read agenda",
+            kind: "read",
+            status: "in_progress",
+            rawInput: { token: privateInput },
+          }),
+          sdkEvent({
+            type: "assistant",
+            message: {
+              content: [{
+                type: "tool_use",
+                id: "provider-tool-private",
+                name: "Read agenda",
+                input: { token: privateInput },
+              }],
+            },
+          }),
+          update({
+            sessionUpdate: "tool_call_update",
+            toolCallId: "provider-tool-private",
+            status: "completed",
+            rawOutput: privateOutput,
+          }),
+          sdkEvent({
+            type: "user",
+            message: {
+              content: [{
+                type: "tool_result",
+                tool_use_id: "provider-tool-private",
+                content: privateOutput,
+              }],
+            },
+          }),
+          { type: "final", text: "Done.", worklab_result: worklabResult },
+        ],
+      };
+      const handle = spawnWorker({
+        binary: fakeBinary,
+        args: ["--task", taskId, "--mode", "execute", "--agent", "external"],
+        env: {
+          FAKE_WORKER_SCRIPT: JSON.stringify(script),
+          WORKLAB_RUN_ID: runId,
+          WORKLAB_DATA_DIR: dataDir,
+          WORKLAB_ACP_PROFILE_ID: "profile-1",
+        },
+        runId,
+        taskId,
+        broker: {
+          broadcast: (channel, event) => broadcasts.push({ channel, event }),
+          subscribe: () => {},
+          unsubscribe: () => {},
+          size: () => 0,
+        },
+        db,
+        runIdleWarningMs: 0,
+      });
+
+      await handle.done;
+
+      const run = db.prepare("SELECT raw_output_path FROM task_runs WHERE id = ?").get(runId);
+      const displayEvents = JSON.parse(
+        db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runId).events,
+      );
+      const projected = displayEvents.filter((event) => event._worklab_acp_projected === true);
+      const message = projected.find((event) => (
+        event.update?.sessionUpdate === "agent_message_chunk"
+      ));
+      const activity = projected.filter((event) => (
+        event.update?.sessionUpdate === "agent_thought_chunk"
+      ));
+      const tool = projected.find((event) => (
+        event.update?.sessionUpdate === "tool_call_update"
+      ));
+
+      expect(projected).toHaveLength(3);
+      expect(activity).toHaveLength(1);
+      expect(message).toMatchObject({
+        _worklab_display_revision: 2,
+        _worklab_raw_event_count: 2,
+        update: { content: { type: "text", text: "### Hello" } },
+      });
+      expect(tool).toMatchObject({
+        _worklab_display_revision: 2,
+        update: {
+          title: "Read agenda",
+          kind: "read",
+          status: "completed",
+        },
+      });
+      expect(JSON.stringify({ displayEvents, broadcasts })).not.toMatch(
+        /PRIVATE_|provider-message-private|provider-tool-private/u,
+      );
+
+      const rawLog = readFileSync(run.raw_output_path, "utf8");
+      expect(rawLog).toContain(privateReasoning);
+      expect(rawLog).toContain(privateInput);
+      expect(rawLog).toContain(privateOutput);
+      expect(rawLog.match(/"_worklab_acp_companion":true/gu)).toHaveLength(6);
+    } finally {
+      db.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("keeps task-run URL secrets on fd3 and redacts later same-chunk echoes", async () => {
     const db = makeTestDb();
     const dataDir = mkdtempSync(join(tmpdir(), "worklab-acp-url-handoff-"));

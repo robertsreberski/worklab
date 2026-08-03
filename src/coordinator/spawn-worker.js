@@ -131,6 +131,7 @@ export function spawnWorker({
 
   const events = [];
   const rawEvents = [];
+  const displayMetadata = new Map();
   const warnings = [];
   let promptDiagnostics = null;
   const stderrTail = createStderrTail({ limit: stderrTailLimit });
@@ -266,16 +267,49 @@ export function spawnWorker({
     }
   }
 
-  function emitEvent(parsed) {
+  function emitEvent(parsed, projection = {}) {
     const rawEvent = compactStorageEvent(
-      { ...parsed, _event_seq: parsed._event_seq ?? events.length + 1 },
+      { ...parsed, _event_seq: parsed._event_seq ?? rawEvents.length + 1 },
       { limit: RAW_RESULT_STORAGE_LIMIT },
     );
     rawEvents.push(rawEvent);
     const contextWarning = recordContextPayload(rawEvent);
     appendRawEvent(rawEvent);
-    const event = truncateDisplayEvent(rawEvent, { limit: logInlineLimit, rawLogPath });
-    events.push(event);
+    let event = null;
+    if (!projection.suppressDisplay) {
+      const displaySource = projection.displayEvent
+        ? compactStorageEvent(
+          { ...projection.displayEvent, _event_seq: rawEvent._event_seq },
+          { limit: RAW_RESULT_STORAGE_LIMIT },
+        )
+        : rawEvent;
+      event = truncateDisplayEvent(displaySource, { limit: logInlineLimit, rawLogPath });
+      const displayKey = projection.displayKey || event?._worklab_display_key || null;
+      if (displayKey) {
+        const previous = displayMetadata.get(displayKey) || {
+          firstEventSeq: rawEvent._event_seq,
+          revision: 0,
+          rawEventCount: 0,
+        };
+        const metadata = {
+          firstEventSeq: previous.firstEventSeq,
+          revision: previous.revision + 1,
+          rawEventCount: previous.rawEventCount + 1,
+        };
+        displayMetadata.set(displayKey, metadata);
+        event = {
+          ...event,
+          _worklab_display_key: displayKey,
+          _worklab_display_revision: metadata.revision,
+          _worklab_first_event_seq: metadata.firstEventSeq,
+          _worklab_last_event_seq: rawEvent._event_seq,
+          _worklab_raw_event_count: metadata.rawEventCount,
+        };
+        const priorIndex = events.findIndex((candidate) => candidate?._worklab_display_key === displayKey);
+        if (priorIndex >= 0) events.splice(priorIndex, 1);
+      }
+      events.push(event);
+    }
     if (rawEvent.type === "runtime_warning") {
       warnings.push({
         kind: rawEvent.warning_kind || "runtime",
@@ -285,16 +319,18 @@ export function spawnWorker({
         ts: rawEvent.ts || Date.now(),
       });
     }
-    schedulePersist();
-    broker.broadcast(runId, event);
-    broker.broadcast("global", {
-      type: "run_progress",
-      runId,
-      taskId,
-      eventSeq: event._event_seq ?? rawEvent._event_seq ?? events.length,
-      eventCount: events.length,
-      lastEvent: event,
-    });
+    if (event) {
+      schedulePersist();
+      broker.broadcast(runId, event);
+      broker.broadcast("global", {
+        type: "run_progress",
+        runId,
+        taskId,
+        eventSeq: event._event_seq ?? rawEvent._event_seq ?? events.length,
+        eventCount: events.length,
+        lastEvent: event,
+      });
+    }
     resetIdleTimer();
     if (contextWarning) emitEvent(contextWarning);
     // Evaluate the run-turn guardrail after the event has been recorded. The
@@ -670,6 +706,7 @@ export function spawnWorker({
     mergeWorkerDiagnostics,
     writeControlMessage,
     state: stdoutState,
+    displayTextLimit: logInlineLimit,
   });
 
   child.stderr.on("data", (chunk) => {

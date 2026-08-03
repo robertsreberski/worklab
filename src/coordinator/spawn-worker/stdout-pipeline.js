@@ -6,6 +6,7 @@ import {
   sanitizeTaskRunAcpInteractionEvent,
   taskRunEventNeedsUrlHandoff,
 } from "./acp-interactions.js";
+import { createAcpDisplayProjection } from "./acp-display-projection.js";
 
 function isWorklabResult(value) {
   return !!value
@@ -54,8 +55,12 @@ export function createAcpAwareStdoutPipeline({
   mergeWorkerDiagnostics,
   writeControlMessage,
   state,
+  displayTextLimit,
 } = {}) {
   let processing = Promise.resolve();
+  const acpDisplay = acpProfileId
+    ? createAcpDisplayProjection({ textLimit: displayTextLimit })
+    : null;
 
   function processParsed(parsed) {
     const isAcpEvent = String(parsed?.type || "").startsWith("acp_")
@@ -101,7 +106,8 @@ export function createAcpAwareStdoutPipeline({
         return;
       }
     }
-    const { rawEvent } = emitEvent(safeParsed);
+    const projection = acpDisplay?.project(safeParsed) || { rawEvent: safeParsed };
+    const { rawEvent } = emitEvent(projection.rawEvent, projection);
     mergeWorkerDiagnostics(rawEvent.diagnostics);
     if (["final", "error", "cancelled", "worklab_result_error"].includes(rawEvent.type)) {
       const providerSessionId = acpEventBoundary.validateProviderSessionId(

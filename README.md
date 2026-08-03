@@ -214,6 +214,17 @@ canonical workspace for that run. An explicit project workdir must resolve to
 that same canonical workspace, and agent-owned workspaces cannot use a
 Worklab-created per-run worktree.
 
+ACP does not provide a native JSON output-schema field. Worklab therefore puts
+the canonical, stage-scoped `worklab.v2` JSON Schema and a valid empty-field
+skeleton directly in every ACP task handoff, then keeps the normal strict result
+validation as the safety boundary. The activity timeline folds streaming ACP
+message chunks into one growing answer, private status/reasoning chunks into one
+safe activity row per burst, and each tool start/update pair into one named
+lifecycle row. The coordinator persists and streams those rows as bounded,
+stable display upserts while retaining every sanitized protocol event only in
+the explicit raw log. Legacy run-history tails keep raw updates and normalized
+companions together and cap long streams.
+
 The mono-agent integration is an ACP v1 core-session profile: initialization,
 sessions, prompts, typed updates, cancellation, text, resource links, and
 elicitation are supported. Client-supplied MCP servers remain unsupported, so

@@ -4,6 +4,7 @@ import {
   FULL_HISTORY_MAX_EVENTS,
   getRunStreamStateForTests,
   loadFullRunHistory,
+  mergeRunEvents,
   refreshRunState,
   subscribeRunState,
   subscribeRunStream,
@@ -255,6 +256,70 @@ describe("shared run stream subscriptions", () => {
     expect(latest.fullHistoryLoaded).toBe(false);
 
     unsubscribe();
+  });
+
+  it("keeps an incrementally merged ACP message stream atomic past the visible limit", () => {
+    let sequence = 0;
+    const messagePair = (messageId, text) => {
+      const raw = {
+        type: "sdk_event",
+        event: {
+          type: "acp_session_update",
+          sessionId: "session-1",
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            messageId,
+            content: { type: "text", text },
+          },
+        },
+        _event_seq: ++sequence,
+      };
+      const companion = {
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: { content: [{ type: "text", text }] },
+        },
+        _event_seq: ++sequence,
+      };
+      return [raw, companion];
+    };
+    const mergePair = (current, [raw, companion]) => {
+      const withRaw = mergeRunEvents(current, [raw], { limit: 10 });
+      return mergeRunEvents(withRaw, [companion], { limit: 10 });
+    };
+
+    const olderPairs = Array.from(
+      { length: 10 },
+      (_, index) => messagePair(`older-message-${index + 1}`, `older ${index + 1}`),
+    );
+    const currentPairs = Array.from(
+      { length: 12 },
+      (_, index) => messagePair("current-message", `chunk ${index + 1}`),
+    );
+    let liveEvents = [];
+    for (const pair of [...olderPairs, ...currentPairs]) {
+      liveEvents = mergePair(liveEvents, pair);
+    }
+
+    expect(liveEvents).not.toContain(olderPairs[0][0]);
+    expect(liveEvents).not.toContain(olderPairs[0][1]);
+    for (const pair of olderPairs.slice(1)) {
+      expect(liveEvents).toContain(pair[0]);
+      expect(liveEvents).toContain(pair[1]);
+    }
+
+    expect(liveEvents).toContain(currentPairs[0][0]);
+    expect(liveEvents).toContain(currentPairs[0][1]);
+    expect(liveEvents).toContain(currentPairs.at(-1)[0]);
+    expect(liveEvents).toContain(currentPairs.at(-1)[1]);
+    for (const [raw, companion] of [...olderPairs, ...currentPairs]) {
+      expect(liveEvents.includes(companion)).toBe(liveEvents.includes(raw));
+    }
+    expect(liveEvents).toEqual([
+      ...olderPairs.slice(1).flat(),
+      ...currentPairs.flat(),
+    ]);
   });
 
   it("keeps streamed thinking chunks as one live tail item", async () => {

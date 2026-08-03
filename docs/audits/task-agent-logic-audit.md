@@ -80,6 +80,17 @@ state, comments, saved plans, prior outcomes, review evidence, workspace/result
 contracts, and file `resource_link` attachments. They do not receive Worklab
 persona instructions, memory, knowledge, skills, tools, MCP configuration,
 repository instructions, webhooks, resume payloads, or delegation policy.
+Because ACP has no native output-schema request field, the result contract in
+that task-owned handoff includes the canonical stage-scoped `worklab.v2` JSON
+Schema and a valid skeleton before Worklab applies strict result validation.
+
+ACP runtime updates arrive as raw protocol events followed by normalized
+companions. The coordinator keeps every sanitized event in the explicit raw
+log, but persists and streams only stable, bounded display upserts: a cumulative
+answer, a safe status/reasoning activity row with no private thought text, and
+one named lifecycle row per tool id. Companions carry an internal marker so even
+an orphaned full-history event remains hidden. Legacy display tails keep raw
+updates and companions atomic and cap long streams.
 
 ACP provider session identifiers are opaque runtime values. Worklab may store
 and return the encoded identifier, but must not persist the remote raw session

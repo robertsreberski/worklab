@@ -4,6 +4,11 @@ function normalizedProcessStatus(run) {
 
 const CODEX_ITEM_EVENTS = new Set(["item.started", "item.completed"]);
 export const SUBAGENT_ACTIVITY_ROW_LIMIT = 200;
+// Legacy ACP logs store a raw update and normalized companion for every stream
+// chunk. New runs use coordinator-side cumulative display upserts, but keeping
+// this fallback bounded prevents old/live pre-upgrade streams from defeating
+// the UI's event limit and growing quadratically.
+export const ACP_LEGACY_STREAM_EVENT_LIMIT = 1_000;
 
 function normalizeCodexItemType(type) {
   if (type === "commandExecution") return "command_execution";
@@ -71,6 +76,127 @@ function subagentTailContext(events) {
   return { groupKeyByParentId, groupKeyByEventIndex, activityIndexesByGroupKey };
 }
 
+function acpSessionUpdate(event) {
+  const target = eventTarget(event);
+  if (target?.type !== "acp_session_update") return null;
+  const update = target.update;
+  if (!update || typeof update !== "object" || Array.isArray(update)) return null;
+  return update.update?.sessionUpdate ? update.update : update;
+}
+
+function acpCompanionKind(event, expected) {
+  const target = eventTarget(event);
+  const blocks = contentBlocks(event);
+  if (expected === "message") {
+    return target?.type === "assistant" && Array.isArray(target?.message?.content || target?.content);
+  }
+  if (expected === "thought") {
+    return target?.type === "assistant" && blocks.some((block) => block?.type === "thinking");
+  }
+  if (expected === "tool_call") {
+    return target?.type === "assistant" && blocks.some((block) => block?.type === "tool_use");
+  }
+  if (expected === "tool_result") {
+    return target?.type === "user" && blocks.some((block) => block?.type === "tool_result");
+  }
+  if (expected === "usage") return target?.type === "context_usage" && target.source === "acp";
+  if (expected === "plan") return target?.type === "plan" && target.source === "acp";
+  return false;
+}
+
+function acpTailContext(events) {
+  const keyByEventIndex = new Map();
+  const maxEventsByKey = new Map();
+  const rawIndexByCompanionIndex = new Map();
+  let stream = null;
+  let pendingCompanion = null;
+  let lastRawKey = null;
+  let lastRawIndex = null;
+  let sequence = 0;
+  const nextKey = (kind) => `acp:${kind}:${sequence++}`;
+
+  events.forEach((event, index) => {
+    const update = acpSessionUpdate(event);
+    if (update) {
+      const kind = String(update.sessionUpdate || "");
+      if (kind === "agent_message_chunk" || kind === "agent_thought_chunk") {
+        const streamKind = kind === "agent_message_chunk" ? "message" : "thought";
+        const messageId = streamKind === "message" && typeof update.messageId === "string"
+          ? update.messageId
+          : null;
+        if (!stream || stream.kind !== streamKind || (messageId && stream.messageId !== messageId)) {
+          stream = { kind: streamKind, messageId, key: nextKey(streamKind) };
+        }
+        keyByEventIndex.set(index, stream.key);
+        maxEventsByKey.set(stream.key, ACP_LEGACY_STREAM_EVENT_LIMIT);
+        pendingCompanion = { kind: streamKind, key: stream.key, rawIndex: index };
+        lastRawKey = stream.key;
+        lastRawIndex = index;
+        return;
+      }
+
+      stream = null;
+      const toolCallId = typeof update.toolCallId === "string" ? update.toolCallId : "";
+      if ((kind === "tool_call" || kind === "tool_call_update") && toolCallId) {
+        const key = `tool:${toolCallId}`;
+        keyByEventIndex.set(index, key);
+        pendingCompanion = {
+          kind: kind === "tool_call" ? "tool_call" : "tool_result",
+          key,
+          rawIndex: index,
+        };
+        lastRawKey = key;
+        lastRawIndex = index;
+        return;
+      }
+      if (kind === "usage_update") {
+        const key = nextKey("usage");
+        keyByEventIndex.set(index, key);
+        pendingCompanion = { kind: "usage", key, rawIndex: index };
+        lastRawKey = key;
+        lastRawIndex = index;
+        return;
+      }
+      if (kind === "plan" || kind === "plan_update" || kind === "plan_removed") {
+        const key = nextKey("plan");
+        keyByEventIndex.set(index, key);
+        pendingCompanion = { kind: "plan", key, rawIndex: index };
+        lastRawKey = key;
+        lastRawIndex = index;
+        return;
+      }
+      pendingCompanion = null;
+      const key = nextKey(kind || "update");
+      keyByEventIndex.set(index, key);
+      lastRawKey = key;
+      lastRawIndex = index;
+      return;
+    }
+
+    if (event?._worklab_acp_companion === true && lastRawKey) {
+      keyByEventIndex.set(index, lastRawKey);
+      if (lastRawIndex != null) rawIndexByCompanionIndex.set(index, lastRawIndex);
+      pendingCompanion = null;
+      lastRawKey = null;
+      lastRawIndex = null;
+      return;
+    }
+
+    if (pendingCompanion && acpCompanionKind(event, pendingCompanion.kind)) {
+      keyByEventIndex.set(index, pendingCompanion.key);
+      rawIndexByCompanionIndex.set(index, pendingCompanion.rawIndex);
+      pendingCompanion = null;
+      lastRawKey = null;
+      lastRawIndex = null;
+      return;
+    }
+
+    pendingCompanion = null;
+    stream = null;
+  });
+  return { keyByEventIndex, maxEventsByKey, rawIndexByCompanionIndex };
+}
+
 function contentBlocks(event) {
   const target = eventTarget(event);
   if (Array.isArray(target?.message?.content)) return target.message.content;
@@ -110,7 +236,15 @@ function coalescibleKind(block, { direct = false } = {}) {
   return String(text).trim() ? block.type : null;
 }
 
-function eventPieces(event, eventIndex, subagentContext) {
+function eventPieces(event, eventIndex, subagentContext, acpContext) {
+  const acpKey = acpContext.keyByEventIndex.get(eventIndex);
+  if (acpKey) {
+    return [{
+      key: acpKey,
+      eventIndex,
+      maxEvents: acpContext.maxEventsByKey.get(acpKey) || null,
+    }];
+  }
   const subagentGroupKey = subagentContext.groupKeyByEventIndex.get(eventIndex);
   if (subagentGroupKey) return [{ key: subagentGroupKey, eventIndex }];
 
@@ -193,15 +327,20 @@ function eventOrder(event, index) {
   return Number.isFinite(seq) ? seq : index + 1;
 }
 
-function ensureUnit(units, key, order, index) {
+function ensureUnit(units, key, order, index, maxEvents = null) {
   let unit = units.get(key);
   if (!unit) {
-    unit = { key, latestOrder: order, latestIndex: index, eventIndexes: new Set() };
+    unit = { key, latestOrder: order, latestIndex: index, eventIndexes: new Set(), maxEvents };
     units.set(key, unit);
   }
   unit.latestOrder = Math.max(unit.latestOrder, order);
   unit.latestIndex = Math.max(unit.latestIndex, index);
   unit.eventIndexes.add(index);
+  while (unit.maxEvents && unit.eventIndexes.size > unit.maxEvents) {
+    const oldest = unit.eventIndexes.values().next().value;
+    if (oldest === undefined) break;
+    unit.eventIndexes.delete(oldest);
+  }
   return unit;
 }
 
@@ -212,11 +351,12 @@ export function tailRunEventsByVisibleItems(events = [], limit = null) {
 
   const units = new Map();
   const subagentContext = subagentTailContext(events);
+  const acpContext = acpTailContext(events);
   let currentCoalesced = null;
   let coalescedIndex = 0;
   events.forEach((event, index) => {
     const order = eventOrder(event, index);
-    for (const piece of eventPieces(event, index, subagentContext)) {
+    for (const piece of eventPieces(event, index, subagentContext, acpContext)) {
       let key = piece.key;
       if (piece.coalescibleKind) {
         if (currentCoalesced?.kind !== piece.coalescibleKind) {
@@ -230,7 +370,7 @@ export function tailRunEventsByVisibleItems(events = [], limit = null) {
       } else {
         currentCoalesced = null;
       }
-      ensureUnit(units, key, order, index);
+      ensureUnit(units, key, order, index, piece.maxEvents);
     }
   });
 
@@ -240,6 +380,11 @@ export function tailRunEventsByVisibleItems(events = [], limit = null) {
   const selectedEventIndexes = new Set();
   for (const unit of selectedUnits) {
     for (const index of unit.eventIndexes) selectedEventIndexes.add(index);
+  }
+  for (const [companionIndex, rawIndex] of acpContext.rawIndexByCompanionIndex) {
+    if (selectedEventIndexes.has(companionIndex) === selectedEventIndexes.has(rawIndex)) continue;
+    selectedEventIndexes.delete(companionIndex);
+    selectedEventIndexes.delete(rawIndex);
   }
   const replacements = capSelectedSubagentRows(events, selectedEventIndexes, subagentContext);
   return events

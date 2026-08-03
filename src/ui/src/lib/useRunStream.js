@@ -24,6 +24,7 @@ const TOOL_RESULT_EVENT_TYPES = new Set(["tool_result", "toolResult", "tool_outp
 
 function eventKey(event) {
   if (!event) return null;
+  if (event._worklab_display_key) return `display:${event._worklab_display_key}`;
   if (event._event_seq != null) return `seq:${event._event_seq}`;
   if (event.id != null) return `id:${event.id}`;
   try {

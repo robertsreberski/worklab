@@ -65,14 +65,31 @@ describe("worklab event timeline normalization", () => {
     expect(events).toEqual([{
       type: "acp_session_update",
       updateType: "tool_call",
-      title: "ACP tool call started",
+      title: "ACP tool · Run checks",
       items: [
-        { label: "Tool", detail: "Run checks" },
         { label: "Kind", detail: "Execute" },
         { label: "Status", detail: "Pending" },
       ],
     }]);
     expect(JSON.stringify(events)).not.toMatch(/private|rawInput|rawOutput|locations|sessionId|apiKey/);
+  });
+
+  it("suppresses a marked ACP companion without requiring its raw predecessor", () => {
+    const secret = "PRIVATE_ORPHAN_ACP_REASONING";
+    const events = normalizeWorklabEvents([{
+      type: "sdk_event",
+      _worklab_acp_companion: true,
+      _event_seq: 42,
+      event: {
+        type: "assistant",
+        message: {
+          content: [{ type: "thinking", text: secret }],
+        },
+      },
+    }]);
+
+    expect(events).toEqual([]);
+    expect(JSON.stringify(events)).not.toContain(secret);
   });
 
   it("projects raw ACP plan and terminal tool updates without secret-bearing companions", () => {
@@ -128,14 +145,228 @@ describe("worklab event timeline normalization", () => {
       {
         type: "acp_session_update",
         updateType: "tool_call_update",
-        title: "ACP tool call updated",
+        title: "ACP tool · Build",
         items: [
-          { label: "Tool", detail: "Build" },
           { label: "Status", detail: "Completed" },
         ],
       },
     ]);
     expect(JSON.stringify(events)).not.toMatch(/private|rawOutput|response|_meta|sessionId/);
+  });
+
+  it("compacts a realistic ACP stream without exposing private protocol payloads", () => {
+    const events = normalizeWorklabEvents([
+      {
+        type: "sdk_event",
+        event: {
+          type: "acp_session_update",
+          sessionId: "PRIVATE_SESSION_SENTINEL",
+          update: {
+            sessionUpdate: "agent_thought_chunk",
+            content: { type: "text", text: "PRIVATE_REASONING_SENTINEL" },
+            rawInput: "PRIVATE_RAW_INPUT_SENTINEL",
+          },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: {
+            content: [{
+              type: "thinking",
+              thinking: "PRIVATE_REASONING_SENTINEL",
+              signature: "PRIVATE_SESSION_SENTINEL",
+            }],
+          },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "acp_session_update",
+          sessionId: "PRIVATE_SESSION_SENTINEL",
+          update: {
+            sessionUpdate: "agent_thought_chunk",
+            content: { type: "text", text: "PRIVATE_REASONING_SENTINEL" },
+            rawOutput: "PRIVATE_RAW_OUTPUT_SENTINEL",
+          },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: {
+            content: [{
+              type: "thinking",
+              thinking: "PRIVATE_REASONING_SENTINEL",
+              signature: "PRIVATE_SESSION_SENTINEL",
+            }],
+          },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "acp_session_update",
+          sessionId: "PRIVATE_SESSION_SENTINEL",
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "#" },
+            rawInput: "PRIVATE_RAW_INPUT_SENTINEL",
+          },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: { content: [{ type: "text", text: "#" }] },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "acp_session_update",
+          sessionId: "PRIVATE_SESSION_SENTINEL",
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "## Hello" },
+            rawOutput: "PRIVATE_RAW_OUTPUT_SENTINEL",
+          },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: { content: [{ type: "text", text: "## Hello" }] },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "acp_session_update",
+          sessionId: "PRIVATE_SESSION_SENTINEL",
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "tool-1",
+            title: "Run checks",
+            kind: "execute",
+            status: "in_progress",
+            rawInput: { token: "PRIVATE_RAW_INPUT_SENTINEL" },
+          },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: {
+            content: [{
+              type: "tool_use",
+              id: "tool-1",
+              name: "Run checks",
+              input: { token: "PRIVATE_RAW_INPUT_SENTINEL" },
+            }],
+          },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "acp_session_update",
+          sessionId: "PRIVATE_SESSION_SENTINEL",
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "tool-1",
+            status: "completed",
+            rawOutput: "PRIVATE_RAW_OUTPUT_SENTINEL",
+          },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "user",
+          message: {
+            content: [{
+              type: "tool_result",
+              tool_use_id: "tool-1",
+              content: "PRIVATE_RAW_OUTPUT_SENTINEL",
+            }],
+          },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "acp_session_update",
+          sessionId: "PRIVATE_SESSION_SENTINEL",
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "tool-2",
+            title: "Inspect files",
+            kind: "read",
+            status: "pending",
+            rawInput: { path: "PRIVATE_RAW_INPUT_SENTINEL" },
+          },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: {
+            content: [{
+              type: "tool_use",
+              id: "tool-2",
+              name: "Inspect files",
+              input: { path: "PRIVATE_RAW_INPUT_SENTINEL" },
+            }],
+          },
+        },
+      },
+    ]);
+
+    expect(events).toEqual([
+      {
+        type: "acp_session_update",
+        updateType: "agent_thought_chunk",
+        title: "ACP agent activity",
+        detail: "Private status or reasoning was streamed but is not displayed.",
+      },
+      { type: "text", text: "### Hello", source: "acp" },
+      {
+        type: "acp_session_update",
+        updateType: "tool_call_update",
+        title: "ACP tool · Run checks",
+        items: [
+          { label: "Kind", detail: "Execute" },
+          { label: "Status", detail: "Completed" },
+        ],
+      },
+      {
+        type: "acp_session_update",
+        updateType: "tool_call",
+        title: "ACP tool · Inspect files",
+        items: [
+          { label: "Kind", detail: "Read" },
+          { label: "Status", detail: "Pending" },
+        ],
+      },
+    ]);
+
+    const serialized = JSON.stringify(events);
+    for (const sentinel of [
+      "PRIVATE_RAW_INPUT_SENTINEL",
+      "PRIVATE_RAW_OUTPUT_SENTINEL",
+      "PRIVATE_REASONING_SENTINEL",
+      "PRIVATE_SESSION_SENTINEL",
+    ]) {
+      expect(serialized).not.toContain(sentinel);
+    }
   });
 
   it("strictly projects normalized ACP context and provider lifecycle events", () => {
@@ -986,6 +1217,40 @@ describe("run event merging", () => {
       { type: "text", text: "one", _event_seq: 1 },
       { type: "text", text: "two updated", _event_seq: 2 },
     ]);
+  });
+
+  it("upserts coordinator ACP display revisions by stable display key", () => {
+    const merged = mergeRunEvents(
+      [{
+        type: "acp_session_update",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Hel" },
+        },
+        _worklab_display_key: "acp:message:1",
+        _worklab_display_revision: 1,
+        _event_seq: 10,
+      }],
+      [{
+        type: "acp_session_update",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Hello" },
+        },
+        _worklab_display_key: "acp:message:1",
+        _worklab_display_revision: 2,
+        _event_seq: 12,
+      }],
+      { limit: 10 },
+    );
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      _worklab_display_key: "acp:message:1",
+      _worklab_display_revision: 2,
+      _event_seq: 12,
+      update: { content: { text: "Hello" } },
+    });
   });
 });
 

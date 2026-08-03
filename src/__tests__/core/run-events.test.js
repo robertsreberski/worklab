@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { makeTestDb } from "../helpers/test-db.js";
 import {
+  ACP_LEGACY_STREAM_EVENT_LIMIT,
   buildRunLifecycleEvent,
   SUBAGENT_ACTIVITY_ROW_LIMIT,
   tailRunEventsByVisibleItems,
@@ -106,6 +107,206 @@ describe("run event visible tail", () => {
       2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
       15, 16, 17, 18, 19, 20, 21, 22, 23,
     ]);
+  });
+
+  it("keeps ACP streams and raw-companion pairs atomic in a bounded tail", () => {
+    let sequence = 0;
+    const sdkEvent = (event) => ({ type: "sdk_event", event, _event_seq: ++sequence });
+    const acpUpdate = (update) => sdkEvent({
+      type: "acp_session_update",
+      sessionId: "session-private",
+      update,
+    });
+    const assistantCompanion = (content) => sdkEvent({
+      type: "assistant",
+      message: { content },
+    });
+    const privatePairingSentinel = "PRIVATE_ACP_PAIRING_SENTINEL";
+
+    const oldMessageRaw = acpUpdate({
+      sessionUpdate: "agent_message_chunk",
+      messageId: "message-old",
+      content: { type: "text", text: "Old" },
+    });
+    const oldMessageCompanion = assistantCompanion([{ type: "text", text: "Old" }]);
+    const oldText = textEvent(++sequence, "old standalone row");
+
+    const messageRawOne = acpUpdate({
+      sessionUpdate: "agent_message_chunk",
+      messageId: "message-current",
+      content: { type: "text", text: "Current " },
+    });
+    const messageCompanionOne = assistantCompanion([{ type: "text", text: "Current " }]);
+    const messageRawTwo = acpUpdate({
+      sessionUpdate: "agent_message_chunk",
+      messageId: "message-current",
+      content: { type: "text", text: "message" },
+    });
+    const messageCompanionTwo = assistantCompanion([{ type: "text", text: "message" }]);
+    const selectedMessageStream = [
+      messageRawOne,
+      messageCompanionOne,
+      messageRawTwo,
+      messageCompanionTwo,
+    ];
+
+    const thoughtRawOne = acpUpdate({
+      sessionUpdate: "agent_thought_chunk",
+      content: { type: "text", text: "private thought one" },
+    });
+    const thoughtCompanionOne = assistantCompanion([{
+      type: "thinking",
+      thinking: "private thought one",
+    }]);
+    const thoughtRawTwo = acpUpdate({
+      sessionUpdate: "agent_thought_chunk",
+      content: { type: "text", text: "private thought two" },
+    });
+    const thoughtCompanionTwo = assistantCompanion([{
+      type: "thinking",
+      thinking: "private thought two",
+    }]);
+    const selectedThoughtStream = [
+      thoughtRawOne,
+      thoughtCompanionOne,
+      thoughtRawTwo,
+      thoughtCompanionTwo,
+    ];
+
+    const toolCall = acpUpdate({
+      sessionUpdate: "tool_call",
+      toolCallId: "tool-1",
+      title: "Run checks",
+      status: "pending",
+    });
+    const toolCallCompanion = assistantCompanion([{
+      type: "tool_use",
+      id: "tool-1",
+      name: "Run checks",
+      input: { apiKey: privatePairingSentinel },
+    }]);
+    const toolUpdate = acpUpdate({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "tool-1",
+      status: "completed",
+    });
+    const toolResultCompanion = sdkEvent({
+      type: "user",
+      message: {
+        content: [{
+          type: "tool_result",
+          tool_use_id: "tool-1",
+          content: privatePairingSentinel,
+        }],
+      },
+    });
+    const toolLifecycle = [toolCall, toolCallCompanion, toolUpdate, toolResultCompanion];
+    const newestText = textEvent(++sequence, "newest standalone row");
+    const events = [
+      oldMessageRaw,
+      oldMessageCompanion,
+      oldText,
+      ...selectedMessageStream,
+      ...selectedThoughtStream,
+      ...toolLifecycle,
+      newestText,
+    ];
+
+    const tail = tailRunEventsByVisibleItems(events, 4);
+
+    expect(events.length).toBeGreaterThan(4);
+    expect(tail).toEqual([
+      ...selectedMessageStream,
+      ...selectedThoughtStream,
+      ...toolLifecycle,
+      newestText,
+    ]);
+    expect(tail).not.toContain(oldMessageRaw);
+    expect(tail).not.toContain(oldMessageCompanion);
+    expect(tail).not.toContain(oldText);
+    expect(tailRunEventsByVisibleItems(toolLifecycle, 1)).toEqual(toolLifecycle);
+
+    for (const [raw, companion] of [
+      [oldMessageRaw, oldMessageCompanion],
+      [messageRawOne, messageCompanionOne],
+      [messageRawTwo, messageCompanionTwo],
+      [thoughtRawOne, thoughtCompanionOne],
+      [thoughtRawTwo, thoughtCompanionTwo],
+      [toolCall, toolCallCompanion],
+      [toolUpdate, toolResultCompanion],
+    ]) {
+      expect(tail.includes(companion)).toBe(tail.includes(raw));
+    }
+  });
+
+  it("keeps non-text ACP message companions paired at a tail boundary", () => {
+    const secret = "PRIVATE_NON_TEXT_ACP_SENTINEL";
+    const raw = {
+      type: "sdk_event",
+      event: {
+        type: "acp_session_update",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "image", data: secret, mimeType: "image/png" },
+        },
+      },
+      _event_seq: 1,
+    };
+    const companion = {
+      type: "sdk_event",
+      event: {
+        type: "assistant",
+        message: {
+          content: [{ type: "image", data: secret, mimeType: "image/png" }],
+        },
+      },
+      _event_seq: 2,
+    };
+
+    expect(tailRunEventsByVisibleItems([
+      { type: "text", text: "old", _event_seq: 0 },
+      raw,
+      companion,
+    ], 1)).toEqual([raw, companion]);
+  });
+
+  it("bounds retained members of a legacy ACP message stream", () => {
+    const events = [];
+    let sequence = 0;
+    const chunkCount = ACP_LEGACY_STREAM_EVENT_LIMIT + 25;
+    for (let index = 0; index < chunkCount; index += 1) {
+      const text = `chunk-${index}`;
+      events.push({
+        type: "sdk_event",
+        event: {
+          type: "acp_session_update",
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            messageId: "message-long",
+            content: { type: "text", text },
+          },
+        },
+        _event_seq: ++sequence,
+      });
+      events.push({
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: { content: [{ type: "text", text }] },
+        },
+        _event_seq: ++sequence,
+      });
+    }
+
+    const tail = tailRunEventsByVisibleItems(events, 1);
+
+    expect(tail).toHaveLength(ACP_LEGACY_STREAM_EVENT_LIMIT);
+    expect(tail[0].event.type).toBe("acp_session_update");
+    expect(tail.at(-1).event.type).toBe("assistant");
+    for (let index = 0; index < tail.length; index += 2) {
+      expect(tail[index].event.type).toBe("acp_session_update");
+      expect(tail[index + 1].event.type).toBe("assistant");
+    }
   });
 
   it("counts a native subagent group as one item and bounds its nested live rows", () => {
