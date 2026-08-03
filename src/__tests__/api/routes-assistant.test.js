@@ -683,18 +683,29 @@ describe("assistant routes", () => {
     const directAbsent = broadcast.mock.calls.find(([channel, event]) => (
       channel === `assistant:${started.body.run.id}` && event?.id === absent.id
     ))?.[1];
+    const directNonSerializable = broadcast.mock.calls.find(([channel, event]) => (
+      channel === `assistant:${started.body.run.id}` && event?.id === nonSerializable.id
+    ))?.[1];
+    const globalNonSerializable = broadcast.mock.calls.find(([channel, event]) => (
+      channel === "global"
+      && event?.type === "assistant_run_event"
+      && event.event?.id === nonSerializable.id
+    ))?.[1]?.event;
 
     for (const event of [absent, directAbsent]) {
       expect(event).not.toHaveProperty("arguments_truncated");
       expect(event).not.toHaveProperty("arguments_original_length");
       expect(event).not.toHaveProperty("arguments_serialization_error");
     }
-    expect(nonSerializable).toMatchObject({
-      arguments: "[assistant subagent arguments unavailable: value is not JSON-serializable]",
-      arguments_truncated: true,
-      arguments_serialization_error: true,
-    });
-    expect(nonSerializable).not.toHaveProperty("arguments_original_length");
+    for (const event of [nonSerializable, directNonSerializable, globalNonSerializable]) {
+      expect(event).toMatchObject({
+        arguments: "[assistant subagent arguments unavailable: value is not JSON-serializable]",
+        arguments_truncated: true,
+        arguments_serialization_error: true,
+      });
+      expect(event).not.toHaveProperty("arguments_original_length");
+      expect(() => JSON.stringify(event)).not.toThrow();
+    }
 
     const run = db.prepare("SELECT raw_output_path FROM assistant_runs WHERE id = ?").get(started.body.run.id);
     const rawEvents = readFileSync(run.raw_output_path, "utf8").trim().split("\n").map((line) => JSON.parse(line));
