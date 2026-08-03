@@ -278,7 +278,112 @@ function acpDisplayItems(entries) {
     }));
 }
 
-function normalizeRawAcpSessionUpdate(event, { tool: projectedTool = null } = {}) {
+const ACP_PRIVATE_VALUE_KEYS = new Set(["_meta", "sessionId", "session_id"]);
+const ACP_SENSITIVE_VALUE_KEY = /(?:^|[_-])(?:api[_-]?key|authorization|cookie|credential|password|secret|token)(?:$|[_-])/iu;
+const ACP_TERMINAL_TOOL_STATUSES = new Set(["completed", "failed", "cancelled", "canceled"]);
+
+function acpProjectionField(event, key) {
+  const target = eventTarget(event);
+  return target?.[key] ?? event?.[key];
+}
+
+function safeAcpDisplayValue(value, { secrets = [], maxString = 12_000 } = {}) {
+  const rawSecrets = secrets
+    .filter((secret) => typeof secret === "string" && secret.length > 0)
+    .sort((left, right) => right.length - left.length);
+  let nodes = 0;
+
+  const redact = (valueToRedact) => {
+    let result = boundedAcpText(valueToRedact, maxString);
+    for (const secret of rawSecrets) result = result.replaceAll(secret, "[redacted]");
+    return result;
+  };
+
+  const visit = (item, ancestors, depth) => {
+    nodes += 1;
+    if (nodes > 1_024 || depth > 12) return null;
+    if (typeof item === "string") return redact(item);
+    if (typeof item === "number") return Number.isFinite(item) ? item : null;
+    if (typeof item === "boolean" || item == null) return item;
+    if (typeof item === "bigint") return String(item);
+    if (Array.isArray(item)) {
+      if (ancestors.has(item)) return null;
+      ancestors.add(item);
+      const result = item.slice(0, 250).map((entry) => visit(entry, ancestors, depth + 1));
+      ancestors.delete(item);
+      return result;
+    }
+    if (typeof item !== "object") return null;
+    if (ancestors.has(item)) return null;
+    ancestors.add(item);
+    const result = {};
+    for (const [rawKey, entry] of Object.entries(item).slice(0, 250)) {
+      if (nodes >= 1_024) break;
+      if (ACP_PRIVATE_VALUE_KEYS.has(rawKey)) continue;
+      const key = redact(rawKey).slice(0, 200);
+      if (!key || key === "__proto__" || key === "prototype" || key === "constructor") continue;
+      Object.defineProperty(result, key, {
+        value: ACP_SENSITIVE_VALUE_KEY.test(key) ? "[redacted]" : visit(entry, ancestors, depth + 1),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    }
+    ancestors.delete(item);
+    return result;
+  };
+
+  return visit(value, new WeakSet(), 0);
+}
+
+function acpNativeEnvelope(content, displayKey) {
+  return {
+    type: "assistant",
+    source: "acp",
+    message: { content },
+    _worklab_acp_projected: true,
+    _worklab_display_key: displayKey,
+  };
+}
+
+function acpToolOutputText(value) {
+  if (typeof value === "string") return value;
+  if (value == null) return "";
+  try { return JSON.stringify(value); } catch { return String(value); }
+}
+
+function normalizeAcpThought(thought = {}) {
+  const text = boundedAcpText(thought.text, 12_000);
+  const block = String(text).trim()
+    ? { type: "thinking", text }
+    : { type: "thinking", text: "", redacted: true };
+  return acpNativeEnvelope([block], thought.displayKey || "acp:legacy-thought");
+}
+
+function normalizeAcpTool(tool = {}) {
+  const toolUseId = tool.toolUseId || "acp:legacy-tool";
+  const name = boundedAcpText(tool.name || tool.title || tool.kind, 200) || "acp_tool";
+  const content = [{
+    type: "tool_use",
+    id: toolUseId,
+    name,
+    input: tool.hasInput ? tool.input : {},
+  }];
+  if (ACP_TERMINAL_TOOL_STATUSES.has(tool.status)) {
+    content.push({
+      type: "tool_result",
+      tool_use_id: toolUseId,
+      content: tool.hasOutput ? acpToolOutputText(tool.output) : "",
+      is_error: ["failed", "cancelled", "canceled"].includes(tool.status),
+    });
+  }
+  return acpNativeEnvelope(content, tool.displayKey || toolUseId);
+}
+
+function normalizeRawAcpSessionUpdate(event, {
+  thought: projectedThought = null,
+  tool: projectedTool = null,
+} = {}) {
   const body = acpUpdateBody(event);
   const updateType = acpUpdateType(event);
   if (ACP_PLAN_UPDATE_TYPES.has(updateType)) return normalizeAcpPlan(body, updateType);
@@ -302,12 +407,14 @@ function normalizeRawAcpSessionUpdate(event, { tool: projectedTool = null } = {}
     };
   }
   if (updateType === "agent_thought_chunk") {
-    return {
-      type: "acp_session_update",
-      updateType,
-      title: "ACP agent activity",
-      detail: "Private status or reasoning was streamed but is not displayed.",
-    };
+    const target = eventTarget(event);
+    const text = body.content?.type === "text"
+      ? safeAcpDisplayValue(body.content.text, { secrets: [target?.sessionId] })
+      : "";
+    return normalizeAcpThought(projectedThought || {
+      text,
+      displayKey: acpProjectionField(event, "_worklab_display_key") || "acp:legacy-thought",
+    });
   }
   if (updateType === "user_message_chunk") {
     return {
@@ -318,18 +425,27 @@ function normalizeRawAcpSessionUpdate(event, { tool: projectedTool = null } = {}
     };
   }
   if (updateType === "tool_call" || updateType === "tool_call_update") {
-    const toolTitle = boundedAcpText(projectedTool?.title || body.title || body.name, 200);
-    const kind = acpIdentifier(projectedTool?.kind || body.kind, 64);
-    const status = acpIdentifier(projectedTool?.status || body.status, 64);
-    return {
-      type: "acp_session_update",
-      updateType,
-      title: toolTitle ? `ACP tool · ${toolTitle}` : "ACP tool call",
-      items: acpDisplayItems([
-        kind ? { label: "Kind", detail: acpUpdateLabel(kind) } : null,
-        status ? { label: "Status", detail: acpUpdateLabel(status) } : null,
-      ]),
-    };
+    const target = eventTarget(event);
+    const hasInput = hasOwn(body, "rawInput") && body.rawInput != null;
+    const hasRawOutput = hasOwn(body, "rawOutput") && body.rawOutput != null;
+    const hasTerminalContent = ACP_TERMINAL_TOOL_STATUSES.has(acpIdentifier(body.status, 64))
+      && hasOwn(body, "content")
+      && body.content != null;
+    return normalizeAcpTool(projectedTool || {
+      title: boundedAcpText(body.title || body.name, 200),
+      kind: acpIdentifier(body.kind, 64),
+      status: acpIdentifier(body.status, 64),
+      toolUseId: "acp:legacy-tool",
+      displayKey: acpProjectionField(event, "_worklab_display_key") || "acp:legacy-tool",
+      hasInput,
+      input: hasInput ? safeAcpDisplayValue(body.rawInput, { secrets: [target?.sessionId] }) : undefined,
+      hasOutput: hasRawOutput || hasTerminalContent,
+      output: hasRawOutput
+        ? safeAcpDisplayValue(body.rawOutput, { secrets: [target?.sessionId] })
+        : hasTerminalContent
+          ? safeAcpDisplayValue(body.content, { secrets: [target?.sessionId] })
+          : undefined,
+    });
   }
   if (updateType === "available_commands_update") {
     const commands = Array.isArray(body.availableCommands)
@@ -508,19 +624,42 @@ export function normalizeAcpTimelineEvent(event, options = {}) {
   };
 }
 
-function acpToolEvent(event) {
+function acpToolEvent(event, index = 0) {
   const target = eventTarget(event);
   if (target?.type !== "acp_session_update") return null;
   const updateType = acpUpdateType(target);
   if (updateType !== "tool_call" && updateType !== "tool_call_update") return null;
   const body = acpUpdateBody(target);
-  const id = typeof body.toolCallId === "string" ? body.toolCallId : "";
-  if (!id) return null;
+  const providerId = typeof body.toolCallId === "string" ? body.toolCallId : "";
+  const persistedDisplayKey = acpIdentifier(acpProjectionField(event, "_worklab_display_key"), 256);
+  const identity = persistedDisplayKey || providerId || `missing:${index}`;
+  const status = acpIdentifier(body.status, 64);
+  const hasInputPatch = hasOwn(body, "rawInput");
+  const hasOutputPatch = hasOwn(body, "rawOutput")
+    || (ACP_TERMINAL_TOOL_STATUSES.has(status) && hasOwn(body, "content"));
+  const sessionId = target.sessionId;
   return {
-    id,
-    title: boundedAcpText(body.title || body.name, 200),
+    identity,
+    persistedDisplayKey,
+    titlePresent: hasOwn(body, "title"),
+    title: boundedAcpText(body.title, 200),
+    namePresent: hasOwn(body, "name") && body.name != null,
+    name: boundedAcpText(body.name, 200),
+    kindPresent: hasOwn(body, "kind"),
     kind: acpIdentifier(body.kind, 64),
-    status: acpIdentifier(body.status, 64),
+    statusPresent: hasOwn(body, "status"),
+    status,
+    inputPresent: hasInputPatch,
+    input: hasInputPatch && body.rawInput != null
+      ? safeAcpDisplayValue(body.rawInput, { secrets: [sessionId] })
+      : undefined,
+    outputPresent: hasOutputPatch,
+    output: hasOutputPatch
+      ? safeAcpDisplayValue(
+        hasOwn(body, "rawOutput") ? body.rawOutput : body.content,
+        { secrets: [sessionId] },
+      )
+      : undefined,
   };
 }
 
@@ -528,17 +667,99 @@ function acpToolTimelineProjection(events) {
   const latestIndexById = new Map();
   const summaryById = new Map();
   events.forEach((event, index) => {
-    const tool = acpToolEvent(event);
+    const tool = acpToolEvent(event, index);
     if (!tool) return;
-    latestIndexById.set(tool.id, index);
-    const previous = summaryById.get(tool.id) || {};
-    summaryById.set(tool.id, {
-      title: tool.title || previous.title || "",
-      kind: tool.kind || previous.kind || "",
-      status: tool.status || previous.status || "",
-    });
+    latestIndexById.set(tool.identity, index);
+    const fallbackDisplayKey = `acp:legacy-tool:${summaryById.size + 1}`;
+    const displayKey = tool.persistedDisplayKey || fallbackDisplayKey;
+    const previous = summaryById.get(tool.identity) || {
+      toolUseId: displayKey,
+      displayKey,
+      title: "",
+      name: "",
+      kind: "",
+      status: "",
+      hasInput: false,
+      input: undefined,
+      hasOutput: false,
+      output: undefined,
+    };
+    const next = { ...previous };
+    if (tool.titlePresent) next.title = tool.title;
+    if (tool.namePresent) next.name = tool.name;
+    if (tool.kindPresent) next.kind = tool.kind;
+    if (tool.statusPresent) next.status = tool.status;
+    if (tool.inputPresent) {
+      next.hasInput = tool.input != null;
+      next.input = tool.input;
+    }
+    if (tool.outputPresent) {
+      next.hasOutput = tool.output != null;
+      next.output = tool.output;
+    }
+    summaryById.set(tool.identity, next);
   });
   return { latestIndexById, summaryById };
+}
+
+function acpThoughtEvent(event) {
+  const target = eventTarget(event);
+  if (target?.type !== "acp_session_update" || acpUpdateType(target) !== "agent_thought_chunk") return null;
+  const body = acpUpdateBody(target);
+  const displayKey = acpIdentifier(acpProjectionField(event, "_worklab_display_key"), 256);
+  const text = body.content?.type === "text"
+    ? safeAcpDisplayValue(body.content.text, { secrets: [target.sessionId] })
+    : "";
+  return { displayKey, text: typeof text === "string" ? text : "" };
+}
+
+function appendAcpThoughtText(current, chunk, max = 12_000) {
+  if (!chunk || current.length >= max) return current;
+  return `${current}${chunk}`.slice(0, max);
+}
+
+function acpThoughtTimelineProjection(events) {
+  const firstIndexByIndex = new Map();
+  const summaryByFirstIndex = new Map();
+  const keyedStates = new Map();
+  let currentUnkeyed = null;
+  let sequence = 0;
+
+  events.forEach((event, index) => {
+    if (isAcpNormalizedCompanion(events, index)) return;
+    const thought = acpThoughtEvent(event);
+    if (!thought) {
+      currentUnkeyed = null;
+      return;
+    }
+
+    let state;
+    if (thought.displayKey) {
+      state = keyedStates.get(thought.displayKey);
+      if (!state) {
+        state = { firstIndex: index, displayKey: thought.displayKey, text: "" };
+        keyedStates.set(thought.displayKey, state);
+      }
+      currentUnkeyed = null;
+    } else {
+      state = currentUnkeyed;
+      if (!state) {
+        sequence += 1;
+        state = {
+          firstIndex: index,
+          displayKey: `acp:legacy-thought:${sequence}`,
+          text: "",
+        };
+        currentUnkeyed = state;
+      }
+    }
+
+    state.text = appendAcpThoughtText(state.text, thought.text);
+    firstIndexByIndex.set(index, state.firstIndex);
+    summaryByFirstIndex.set(state.firstIndex, state);
+  });
+
+  return { firstIndexByIndex, summaryByFirstIndex };
 }
 
 function collapseAcpStreamRows(rows) {
@@ -578,6 +799,10 @@ function collapseAcpStreamRows(rows) {
 
 function isAcpNormalizedCompanion(events, index) {
   if (
+    events[index]?._worklab_acp_projected === true
+    || eventTarget(events[index])?._worklab_acp_projected === true
+  ) return false;
+  if (
     events[index]?._worklab_acp_companion === true
     || eventTarget(events[index])?._worklab_acp_companion === true
   ) return true;
@@ -594,7 +819,7 @@ function isAcpNormalizedCompanion(events, index) {
       && Array.isArray(content)
       && content.some((block) => block?.type === "tool_use" && block.id === body.toolCallId);
   }
-  if (updateType === "tool_call_update" && ["completed", "failed"].includes(body.status)) {
+  if (updateType === "tool_call_update" && ACP_TERMINAL_TOOL_STATUSES.has(body.status)) {
     return current.type === "user"
       && Array.isArray(content)
       && content.some((block) => block?.type === "tool_result" && block.tool_use_id === body.toolCallId);
@@ -821,6 +1046,7 @@ export function normalizeWorklabEvents(events = []) {
   let visibleTextTail = "";
   let thinkingTokens = 0;
   const acpTools = acpToolTimelineProjection(events);
+  const acpThoughts = acpThoughtTimelineProjection(events);
   const rows = events.map((event, index) => {
     // Hidden thinking-token estimates still carry the only reasoning signal the
     // provider sends, so keep the running total for the block that follows.
@@ -829,12 +1055,15 @@ export function normalizeWorklabEvents(events = []) {
       thinkingTokens = tokens;
       return null;
     }
-    // ACP emits a raw protocol update followed by a convenience event. Keep
-    // the strict display projection of the protocol update and discard the
-    // companion, which can carry raw tool input/output or private reasoning.
+    // Legacy ACP logs contain a raw protocol update followed by an equivalent
+    // convenience event. Project the protocol row into the native timeline and
+    // discard its duplicate companion (including marked orphan companions).
     if (isAcpNormalizedCompanion(events, index)) return null;
-    const acpTool = acpToolEvent(event);
-    if (acpTool && acpTools.latestIndexById.get(acpTool.id) !== index) return null;
+    const acpThought = acpThoughtEvent(event);
+    const acpThoughtFirstIndex = acpThoughts.firstIndexByIndex.get(index);
+    if (acpThought && acpThoughtFirstIndex !== index) return null;
+    const acpTool = acpToolEvent(event, index);
+    if (acpTool && acpTools.latestIndexById.get(acpTool.identity) !== index) return null;
     if (followedByMatchingStructuredOutput(events, index)) return null;
     const rawFinalText = String(event?.text || "").trim();
     const normalizedFinalText = normalizeCommentText(rawFinalText);
@@ -845,7 +1074,10 @@ export function normalizeWorklabEvents(events = []) {
     );
     let normalized = isAcpTimelineEvent(event)
       ? normalizeAcpTimelineEvent(event, {
-        tool: acpTool ? acpTools.summaryById.get(acpTool.id) : null,
+        thought: acpThought
+          ? acpThoughts.summaryByFirstIndex.get(acpThoughtFirstIndex)
+          : null,
+        tool: acpTool ? acpTools.summaryById.get(acpTool.identity) : null,
       })
       : normalizeWorklabEvent(event, {
         compactFinal,

@@ -27,7 +27,7 @@ describe("worklab event timeline normalization", () => {
     expect(JSON.stringify(event)).not.toMatch(/secret|response|values|_meta|sessionId/);
   });
 
-  it("keeps a safe ACP tool summary and drops its raw-input companion", () => {
+  it("projects a legacy ACP tool as a native block and drops its duplicate companion", () => {
     const events = normalizeWorklabEvents([
       {
         type: "sdk_event",
@@ -63,15 +63,20 @@ describe("worklab event timeline normalization", () => {
     ]);
 
     expect(events).toEqual([{
-      type: "acp_session_update",
-      updateType: "tool_call",
-      title: "ACP tool · Run checks",
-      items: [
-        { label: "Kind", detail: "Execute" },
-        { label: "Status", detail: "Pending" },
-      ],
+      type: "assistant",
+      source: "acp",
+      message: {
+        content: [{
+          type: "tool_use",
+          id: "acp:legacy-tool:1",
+          name: "Run checks",
+          input: { apiKey: "[redacted]" },
+        }],
+      },
+      _worklab_acp_projected: true,
+      _worklab_display_key: "acp:legacy-tool:1",
     }]);
-    expect(JSON.stringify(events)).not.toMatch(/private|rawInput|rawOutput|locations|sessionId|apiKey/);
+    expect(JSON.stringify(events)).not.toMatch(/private|rawInput|rawOutput|locations|sessionId|tool-1/);
   });
 
   it("suppresses a marked ACP companion without requiring its raw predecessor", () => {
@@ -92,7 +97,144 @@ describe("worklab event timeline normalization", () => {
     expect(JSON.stringify(events)).not.toContain(secret);
   });
 
-  it("projects raw ACP plan and terminal tool updates without secret-bearing companions", () => {
+  it("passes coordinator-native ACP message, thinking, and tool envelopes through unchanged", () => {
+    const events = [
+      {
+        type: "assistant",
+        source: "acp",
+        message: { content: [{ type: "text", text: "Cumulative answer" }] },
+        _worklab_acp_projected: true,
+        _worklab_display_key: "acp:message:1",
+      },
+      {
+        type: "assistant",
+        source: "acp",
+        message: { content: [{ type: "thinking", text: "Reviewing files" }] },
+        _worklab_acp_projected: true,
+        _worklab_display_key: "acp:thought:2",
+      },
+      {
+        type: "assistant",
+        source: "acp",
+        message: {
+          content: [
+            { type: "tool_use", id: "acp:tool:3", name: "Run checks", input: { command: "npm test" } },
+            {
+              type: "tool_result",
+              tool_use_id: "acp:tool:3",
+              content: "Tests passed",
+              is_error: false,
+            },
+          ],
+        },
+        _worklab_acp_projected: true,
+        _worklab_display_key: "acp:tool:3",
+      },
+    ];
+
+    expect(normalizeWorklabEvents(events)).toEqual(events);
+  });
+
+  it("preserves a legacy ACP programmatic tool name across null partial updates", () => {
+    const events = normalizeWorklabEvents([
+      {
+        type: "acp_session_update",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "provider-tool",
+          title: "Run command",
+          name: "shell",
+          status: "in_progress",
+          rawInput: { command: "npm test" },
+        },
+      },
+      {
+        type: "acp_session_update",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "provider-tool",
+          title: null,
+          name: null,
+          status: "completed",
+          rawOutput: "passed",
+        },
+      },
+    ]);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].message.content).toEqual([
+      {
+        type: "tool_use",
+        id: "acp:legacy-tool:1",
+        name: "shell",
+        input: { command: "npm test" },
+      },
+      {
+        type: "tool_result",
+        tool_use_id: "acp:legacy-tool:1",
+        content: "passed",
+        is_error: false,
+      },
+    ]);
+  });
+
+  it("renders payload-less legacy safe projections as native redacted and empty blocks", () => {
+    const events = normalizeWorklabEvents([
+      {
+        type: "acp_session_update",
+        update: { sessionUpdate: "agent_thought_chunk" },
+        _worklab_acp_projected: true,
+        _worklab_display_key: "acp:activity:1",
+      },
+      {
+        type: "acp_session_update",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "acp:tool:2",
+          title: "Run checks",
+          status: "completed",
+        },
+        _worklab_acp_projected: true,
+        _worklab_display_key: "acp:tool:2",
+      },
+    ]);
+
+    expect(events).toEqual([
+      {
+        type: "assistant",
+        source: "acp",
+        message: {
+          content: [{ type: "thinking", text: "", redacted: true, estimated_tokens: null }],
+        },
+        _worklab_acp_projected: true,
+        _worklab_display_key: "acp:activity:1",
+      },
+      {
+        type: "assistant",
+        source: "acp",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id: "acp:tool:2",
+              name: "Run checks",
+              input: {},
+            },
+            {
+              type: "tool_result",
+              tool_use_id: "acp:tool:2",
+              content: "",
+              is_error: false,
+            },
+          ],
+        },
+        _worklab_acp_projected: true,
+        _worklab_display_key: "acp:tool:2",
+      },
+    ]);
+  });
+
+  it("projects raw ACP plans and terminal tools without duplicate companions", () => {
     const events = normalizeWorklabEvents([
       {
         type: "acp_session_update",
@@ -124,13 +266,13 @@ describe("worklab event timeline normalization", () => {
           toolCallId: "tool-2",
           title: "Build",
           status: "completed",
-          rawOutput: "private-result",
+          rawOutput: "Build passed",
         },
       },
       {
         type: "user",
         message: {
-          content: [{ type: "tool_result", tool_use_id: "tool-2", content: "private-result" }],
+          content: [{ type: "tool_result", tool_use_id: "tool-2", content: "Build passed" }],
         },
       },
     ]);
@@ -143,18 +285,32 @@ describe("worklab event timeline normalization", () => {
         entries: [{ content: "Verify the build", priority: "high", status: "in_progress" }],
       },
       {
-        type: "acp_session_update",
-        updateType: "tool_call_update",
-        title: "ACP tool · Build",
-        items: [
-          { label: "Status", detail: "Completed" },
-        ],
+        type: "assistant",
+        source: "acp",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id: "acp:legacy-tool:1",
+              name: "Build",
+              input: {},
+            },
+            {
+              type: "tool_result",
+              tool_use_id: "acp:legacy-tool:1",
+              content: "Build passed",
+              is_error: false,
+            },
+          ],
+        },
+        _worklab_acp_projected: true,
+        _worklab_display_key: "acp:legacy-tool:1",
       },
     ]);
-    expect(JSON.stringify(events)).not.toMatch(/private|rawOutput|response|_meta|sessionId/);
+    expect(JSON.stringify(events)).not.toMatch(/private|rawOutput|response|_meta|sessionId|tool-2/);
   });
 
-  it("compacts a realistic ACP stream without exposing private protocol payloads", () => {
+  it("compacts a realistic legacy ACP stream into native reasoning and tool blocks", () => {
     const events = normalizeWorklabEvents([
       {
         type: "sdk_event",
@@ -163,7 +319,7 @@ describe("worklab event timeline normalization", () => {
           sessionId: "PRIVATE_SESSION_SENTINEL",
           update: {
             sessionUpdate: "agent_thought_chunk",
-            content: { type: "text", text: "PRIVATE_REASONING_SENTINEL" },
+            content: { type: "text", text: "Reviewing " },
             rawInput: "PRIVATE_RAW_INPUT_SENTINEL",
           },
         },
@@ -175,7 +331,7 @@ describe("worklab event timeline normalization", () => {
           message: {
             content: [{
               type: "thinking",
-              thinking: "PRIVATE_REASONING_SENTINEL",
+              thinking: "Reviewing ",
               signature: "PRIVATE_SESSION_SENTINEL",
             }],
           },
@@ -188,7 +344,7 @@ describe("worklab event timeline normalization", () => {
           sessionId: "PRIVATE_SESSION_SENTINEL",
           update: {
             sessionUpdate: "agent_thought_chunk",
-            content: { type: "text", text: "PRIVATE_REASONING_SENTINEL" },
+            content: { type: "text", text: "the workspace." },
             rawOutput: "PRIVATE_RAW_OUTPUT_SENTINEL",
           },
         },
@@ -200,7 +356,7 @@ describe("worklab event timeline normalization", () => {
           message: {
             content: [{
               type: "thinking",
-              thinking: "PRIVATE_REASONING_SENTINEL",
+              thinking: "the workspace.",
               signature: "PRIVATE_SESSION_SENTINEL",
             }],
           },
@@ -282,7 +438,7 @@ describe("worklab event timeline normalization", () => {
             sessionUpdate: "tool_call_update",
             toolCallId: "tool-1",
             status: "completed",
-            rawOutput: "PRIVATE_RAW_OUTPUT_SENTINEL",
+            rawOutput: "Checks passed",
           },
         },
       },
@@ -294,7 +450,7 @@ describe("worklab event timeline normalization", () => {
             content: [{
               type: "tool_result",
               tool_use_id: "tool-1",
-              content: "PRIVATE_RAW_OUTPUT_SENTINEL",
+              content: "Checks passed",
             }],
           },
         },
@@ -310,7 +466,7 @@ describe("worklab event timeline normalization", () => {
             title: "Inspect files",
             kind: "read",
             status: "pending",
-            rawInput: { path: "PRIVATE_RAW_INPUT_SENTINEL" },
+            rawInput: { path: "/workspace/src" },
           },
         },
       },
@@ -323,7 +479,7 @@ describe("worklab event timeline normalization", () => {
               type: "tool_use",
               id: "tool-2",
               name: "Inspect files",
-              input: { path: "PRIVATE_RAW_INPUT_SENTINEL" },
+              input: { path: "/workspace/src" },
             }],
           },
         },
@@ -332,29 +488,48 @@ describe("worklab event timeline normalization", () => {
 
     expect(events).toEqual([
       {
-        type: "acp_session_update",
-        updateType: "agent_thought_chunk",
-        title: "ACP agent activity",
-        detail: "Private status or reasoning was streamed but is not displayed.",
+        type: "assistant",
+        source: "acp",
+        message: { content: [{ type: "thinking", text: "Reviewing the workspace." }] },
+        _worklab_acp_projected: true,
+        _worklab_display_key: "acp:legacy-thought:1",
       },
       { type: "text", text: "### Hello", source: "acp" },
       {
-        type: "acp_session_update",
-        updateType: "tool_call_update",
-        title: "ACP tool · Run checks",
-        items: [
-          { label: "Kind", detail: "Execute" },
-          { label: "Status", detail: "Completed" },
-        ],
+        type: "assistant",
+        source: "acp",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id: "acp:legacy-tool:1",
+              name: "Run checks",
+              input: { token: "[redacted]" },
+            },
+            {
+              type: "tool_result",
+              tool_use_id: "acp:legacy-tool:1",
+              content: "Checks passed",
+              is_error: false,
+            },
+          ],
+        },
+        _worklab_acp_projected: true,
+        _worklab_display_key: "acp:legacy-tool:1",
       },
       {
-        type: "acp_session_update",
-        updateType: "tool_call",
-        title: "ACP tool · Inspect files",
-        items: [
-          { label: "Kind", detail: "Read" },
-          { label: "Status", detail: "Pending" },
-        ],
+        type: "assistant",
+        source: "acp",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "acp:legacy-tool:2",
+            name: "Inspect files",
+            input: { path: "/workspace/src" },
+          }],
+        },
+        _worklab_acp_projected: true,
+        _worklab_display_key: "acp:legacy-tool:2",
       },
     ]);
 
@@ -362,11 +537,11 @@ describe("worklab event timeline normalization", () => {
     for (const sentinel of [
       "PRIVATE_RAW_INPUT_SENTINEL",
       "PRIVATE_RAW_OUTPUT_SENTINEL",
-      "PRIVATE_REASONING_SENTINEL",
       "PRIVATE_SESSION_SENTINEL",
     ]) {
       expect(serialized).not.toContain(sentinel);
     }
+    expect(serialized).not.toMatch(/ACP agent activity|ACP tool ·|tool-1|tool-2/);
   });
 
   it("strictly projects normalized ACP context and provider lifecycle events", () => {
