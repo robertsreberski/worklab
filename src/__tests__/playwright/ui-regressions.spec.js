@@ -66,9 +66,14 @@ async function waitForHealth(url, processRef) {
 }
 
 async function requestJson(path, { method = "GET", body, ok = [200] } = {}) {
+  const headers = {
+    Origin: baseUrl,
+    "Sec-Fetch-Site": "same-origin",
+    ...(body ? { "Content-Type": "application/json" } : {}),
+  };
   const response = await fetch(`${baseUrl}${path}`, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!ok.includes(response.status)) {
