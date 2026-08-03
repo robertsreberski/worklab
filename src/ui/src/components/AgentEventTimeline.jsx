@@ -596,6 +596,12 @@ function displaySubagentContent(value) {
   return structuredPreview(value) || "";
 }
 
+export function subagentRowOutput(row) {
+  if (!hasDisplayValue(row?.content)) return "";
+  if (row.kind === "tool" && !row.isError) return "";
+  return displaySubagentContent(row.content);
+}
+
 export function subagentGroupFailed(group) {
   return Boolean(group?.closed?.isError);
 }
@@ -651,23 +657,24 @@ function SubagentGroupBlock({ group, streaming = false }) {
               </span>
             </div>
           )}
-          {rows.map((row, index) => (
-            <div class="agentlog-phase-row agentlog-phase-sub agentlog-subagent-row" key={`${row.kind}-${index}`}>
-              <span class="agentlog-subagent-row-content">
-                <span class="agentlog-subagent-row-label">
-                  {row.agentPath ? `${row.agentPath} · ` : ""}
-                  {row.kind === "tool" ? row.name : row.kind === "thinking" ? "Thinking" : "Message"}
-                  {row.kind === "tool" && row.isError ? " — failed" : ""}
+          {rows.map((row, index) => {
+            const output = subagentRowOutput(row);
+            return (
+              <div class="agentlog-phase-row agentlog-phase-sub agentlog-subagent-row" key={`${row.kind}-${index}`}>
+                <span class="agentlog-subagent-row-content">
+                  <span class="agentlog-subagent-row-label">
+                    {row.agentPath ? `${row.agentPath} · ` : ""}
+                    {row.kind === "tool" ? row.name : row.kind === "thinking" ? "Thinking" : "Message"}
+                    {row.kind === "tool" && row.isError ? " — failed" : ""}
+                  </span>
+                  {output ? <span class="agentlog-subagent-output">{output}</span> : null}
                 </span>
-                {row.kind !== "tool" && row.content ? (
-                  <span class="agentlog-subagent-output">{displaySubagentContent(row.content)}</span>
-                ) : null}
-              </span>
-              {row.kind === "tool" && row.durationMs != null && (
-                <span class="agentlog-phase-duration">{formatDuration(row.durationMs)}</span>
-              )}
-            </div>
-          ))}
+                {row.kind === "tool" && row.durationMs != null && (
+                  <span class="agentlog-phase-duration">{formatDuration(row.durationMs)}</span>
+                )}
+              </div>
+            );
+          })}
           {closed?.content && (
             <div class="agentlog-phase-row agentlog-subagent-row">
               <span class="agentlog-subagent-row-content">

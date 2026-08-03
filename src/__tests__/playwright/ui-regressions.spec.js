@@ -1849,6 +1849,7 @@ test("native subagent activity stays folded, expandable, failed, and mobile-safe
   await header.click();
   await expect(header).toHaveAttribute("aria-expanded", "true");
   await expect(group.locator(".agentlog-subagent-row", { hasText: "/root/reviewer · reviewer▸Read — failed" })).toBeVisible();
+  await expect(group.locator(".agentlog-subagent-output", { hasText: "Seeded child tool failure stays nested and wraps safely." })).toBeVisible();
   await expect(group.locator(".agentlog-subagent-output", { hasText: childLongToken })).toBeVisible();
   await expect(group.locator(".agentlog-subagent-row", { hasText: "Reviewer found a blocking issue." })).toBeVisible();
 

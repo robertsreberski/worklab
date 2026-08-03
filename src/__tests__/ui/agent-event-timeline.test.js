@@ -7,6 +7,7 @@ import {
   providerRequestTargetLabel,
   runtimeWarningText,
   subagentGroupFailed,
+  subagentRowOutput,
   toolCallHasError,
 } from "../../ui/src/components/AgentEventTimeline.jsx";
 import { fileEditSummary } from "../../ui/src/components/ToolCallBlock.jsx";
@@ -511,6 +512,16 @@ describe("native subagent grouping", () => {
     const group = { closed: { isError: true } };
     expect(subagentGroupFailed(group)).toBe(true);
     expect(toolCallHasError({ is_error: false, output: "launched" }, group)).toBe(true);
+  });
+
+  it("shows failed child tool detail without duplicating successful tool output", () => {
+    expect(subagentRowOutput({
+      kind: "tool",
+      isError: true,
+      content: "Permission denied while reading secrets.txt",
+    })).toBe("Permission denied while reading secrets.txt");
+    expect(subagentRowOutput({ kind: "tool", isError: false, content: "file contents" })).toBe("");
+    expect(subagentRowOutput({ kind: "text", content: "Child summary" })).toBe("Child summary");
   });
 
   it("hides the raw task lifecycle events that subagent_activity supersedes", () => {
