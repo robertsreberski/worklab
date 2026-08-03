@@ -324,6 +324,7 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = 
   };
   const agent = getAgentByName(db, agentName);
   if (!agent) throw runInputError(400, "invalid_state", `agent ${agentName} not found`);
+  const acpProfile = getAcpProfileForAgent({ db, agentName });
   const settings = readSettings(db);
   const runSnapshot = loadRunSnapshot(db, runId);
   const runDiagnostics = safeParseJson(runSnapshot?.diagnostics_json, {});
@@ -337,7 +338,15 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = 
     renderResumeSnapshot(runDiagnostics?.resume_snapshot),
     renderWorktreeConflictRetryContext(runDiagnostics),
   ].filter(Boolean).join("\n\n");
-  const projectRunContext = resolveTaskProjectRunContext({ db, config, task, runSnapshot });
+  const projectRunContext = resolveTaskProjectRunContext({
+    db,
+    config,
+    task,
+    runSnapshot,
+    agentOwnedWorkdir: acpProfile?.workspaceOwner === "agent"
+      ? acpProfile.canonicalWorkspace
+      : null,
+  });
   const repositoryInstructions = loadRepositoryInstructions(projectRunContext.effectiveWorkdir);
   const repositoryGitRoot = findRepositoryGitRoot(projectRunContext.effectiveWorkdir);
   const qaOutputDir = resolveRunArtifactDir({
@@ -425,6 +434,7 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = 
     settings,
     delegation,
     webhookTrigger,
+    acpProfile,
     runStartedAt: runSnapshot?.started_at || null,
   };
 }
@@ -727,7 +737,7 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
 
 export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, priorRunId = null, contextCache = null, worklabToolSurfaceMarkdown = "", now = Date.now() }) {
   const setup = loadTaskRunSetup({ config, db, taskId, agentName, runId, mode });
-  const acpProfile = getAcpProfileForAgent({ db, agentName });
+  const acpProfile = setup.acpProfile;
   const agentOwnsAcpConfiguration = acpProfile?.configurationOwner === "agent";
   const { agent, task, skills, memory, learningMemories, learningMemoryContext, journalTail, commentRows, pinnedKb, mcpServers, delegation } = setup;
   const capabilityPolicy = applyPlanningToolPolicy({

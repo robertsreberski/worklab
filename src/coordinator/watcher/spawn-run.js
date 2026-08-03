@@ -73,20 +73,27 @@ export function spawnTaskRun({
   const { agent, providerKind } = assertAgentRunnable(db, agentName);
   const settings = readSettings(db);
   const runId = newRunId();
+  const acpProfile = providerKind === "acp" ? getAcpProfileByAgentName(db, agentName) : null;
   const projectRunContext = resolveTaskProjectRunContext({
     db,
     config: { workspace, repoRoot },
     task,
+    agentOwnedWorkdir: acpProfile?.workspace_owner === "agent"
+      ? acpProfile.canonical_workspace
+      : null,
   });
-  const sourceWorkspace = projectRunContext.effectiveWorkdir || workspace || repoRoot || "";
+  let sourceWorkspace = projectRunContext.effectiveWorkdir || workspace || repoRoot || "";
   const wantsProjectWorktree = shouldUseProjectWorktree(mode, projectRunContext.project);
   const acpPreflight = assertAcpTaskRunPreflight({
     agent,
-    profile: providerKind === "acp" ? getAcpProfileByAgentName(db, agentName) : null,
+    profile: acpProfile,
     runKind: kind,
     workspace: sourceWorkspace,
     willUseWorktree: wantsProjectWorktree,
   });
+  if (acpPreflight?.workspaceOwner === "agent") {
+    sourceWorkspace = acpPreflight.canonicalWorkspace;
+  }
   if (projectRunContext.project?.workdir) {
     mkdirSync(projectRunContext.project.workdir, { recursive: true });
   }

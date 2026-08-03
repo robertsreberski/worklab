@@ -150,13 +150,23 @@ export function projectContextHash(project) {
     .slice(0, 16);
 }
 
-export function resolveTaskProjectRunContext({ db, config = {}, task, runSnapshot = null }) {
+export function resolveTaskProjectRunContext({
+  db,
+  config = {},
+  task,
+  runSnapshot = null,
+  agentOwnedWorkdir = null,
+}) {
   const projectIdSource = runSnapshot && "project_id" in runSnapshot
     ? runSnapshot.project_id
     : task?.project_id;
   const projectRow = projectIdSource ? resolveProjectRow(db, projectIdSource) : null;
   const project = projectFromRow(projectRow);
-  const fallbackWorkdir = project?.workdir || config.workspace || config.repoRoot || process.cwd();
+  const fallbackWorkdir = project?.workdir
+    || agentOwnedWorkdir
+    || config.workspace
+    || config.repoRoot
+    || process.cwd();
   const effectiveWorkdir = runSnapshot?.workdir || fallbackWorkdir;
   return {
     project,
