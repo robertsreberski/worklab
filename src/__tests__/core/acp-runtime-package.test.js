@@ -117,10 +117,10 @@ describe("installed @mono-agent/agent-runtime ACP contract", () => {
     });
   });
 
-  it("enforces the installed 0.18.1 sealed-session lifecycle through raw ACP NDJSON", async () => {
-    // Keep this exact: 0.18.0 still emits unauthenticated acp:v1 handles. The
-    // lifecycle below is the installed-package contract Worklab relies on.
-    expect(runtimePackage.version).toBe("0.18.1");
+  it("enforces the installed 0.18.2 sealed-session lifecycle through raw ACP NDJSON", async () => {
+    // Keep this exact: the lifecycle below is the installed-package contract
+    // Worklab relies on, not a mocked facade assertion.
+    expect(runtimePackage.version).toBe("0.18.2");
 
     const publicLog = [];
     const firstLog = join(root, "first.ndjson");

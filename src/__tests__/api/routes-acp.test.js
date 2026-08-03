@@ -69,7 +69,10 @@ async function createGeneric(agent, cwd, body = {}) {
 }
 
 function makeAcpTestServer(options = {}) {
-  return makeTestServer({ ...options, sharedRequestHarness: false });
+  // Most cases need request isolation, not a dedicated TCP listener. Reuse the
+  // routed harness so the full parallel suite does not contend for local
+  // listeners; the explicit header-isolation case below still opts out.
+  return makeTestServer(options);
 }
 
 describe("ACP API", () => {
@@ -250,10 +253,12 @@ describe("ACP API", () => {
     const first = makeAcpTestServer({
       dataDir: firstDataDir,
       acpControls: { discoverMono: firstDiscoverMono },
+      sharedRequestHarness: false,
     });
     const second = makeAcpTestServer({
       dataDir: secondDataDir,
       acpControls: { discoverMono: secondDiscoverMono },
+      sharedRequestHarness: false,
     });
     const firstToken = readMcpToken(firstDataDir);
 

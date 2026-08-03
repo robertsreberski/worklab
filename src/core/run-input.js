@@ -30,7 +30,6 @@ import { formatTaskArtifactsForPrompt, loadTaskArtifacts } from "./run-artifacts
 import { collectGitDiffArtifactsForRun } from "./artifact-collection.js";
 import { taskInstructionAttachments } from "./task-attachments.js";
 import { buildDelegationContext } from "./delegation.js";
-import { buildNativeSubagentContext } from "./native-subagents.js";
 import { formatWorklabResultText } from "./worklab-result/contract.js";
 import { renderResumeSnapshot } from "@mono-agent/agent-runtime/agent/transcript.js";
 import { getAcpProfileForAgent } from "./acp-profiles.js";
@@ -398,19 +397,6 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = 
 
   const pinnedKb = kbListPinned({ dataDir: config.dataDir, limit: settings.kb_pinned_limit });
   const delegation = buildDelegationContext({ db, task, settings });
-  const nativeSubagents = buildNativeSubagentContext({
-    db,
-    config,
-    task,
-    parentAgent: agent,
-    agentName,
-    runId,
-    mode,
-    settings,
-    env: runEnv,
-    loadCapabilities: loadAgentCapabilities,
-  });
-
   return {
     task,
     agent,
@@ -438,7 +424,6 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = 
     pinnedKb,
     settings,
     delegation,
-    nativeSubagents,
     webhookTrigger,
     runStartedAt: runSnapshot?.started_at || null,
   };
@@ -627,12 +612,6 @@ function diagnosticsForPrompt(prompt, setup) {
     learningMemories: Array.isArray(setup.learningMemories) ? setup.learningMemories.length : 0,
     resumeContext: !!setup.resumeContext,
     planning: setup.planningDiagnostics || null,
-    nativeSubagents: setup.nativeSubagents ? {
-      provider: setup.nativeSubagents.provider,
-      mode: setup.nativeSubagents.mode,
-      teamId: setup.nativeSubagents.teamId,
-      count: setup.nativeSubagents.teammates?.length || 0,
-    } : null,
   };
 }
 
@@ -678,23 +657,6 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
     ].join(":");
   });
   const delegation = setup.delegation || {};
-  const nativeSubagents = setup.nativeSubagents || null;
-  const nativeSubagentsSignature = nativeSubagents
-    ? [
-      nativeSubagents.provider,
-      nativeSubagents.mode,
-      nativeSubagents.teamId || "",
-      nativeSubagents.maxChildrenPerRound || "",
-      nativeSubagents.maxParallelChildren || "",
-      (nativeSubagents.teammates || []).map((agent) => [
-        agent.name,
-        agent.modelRef,
-        agent.effort,
-        (agent.allowedTools || []).join(","),
-        Object.keys(agent.mcpServers || {}).join(","),
-      ].join(":")).join("|"),
-    ].join("\n")
-    : "";
   const delegationSignature = [
     delegation.enabled ? "1" : "0",
     delegation.canDelegate ? "1" : "0",
@@ -755,7 +717,6 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
     attachmentsHash: shortHash(attachmentSignature.join("|")),
     resolvedBlockersHash: shortHash(blockerSignature.join("|")),
     delegationHash: shortHash(delegationSignature),
-    nativeSubagentsHash: shortHash(nativeSubagentsSignature),
     webhookHash: shortHash(JSON.stringify(setup.webhookTrigger || {})),
     planningHash: shortHash(planningSignature),
     memoryHash: shortHash(setup.memory || ""),
@@ -768,7 +729,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
   const setup = loadTaskRunSetup({ config, db, taskId, agentName, runId, mode });
   const acpProfile = getAcpProfileForAgent({ db, agentName });
   const agentOwnsAcpConfiguration = acpProfile?.configurationOwner === "agent";
-  const { agent, task, skills, memory, learningMemories, learningMemoryContext, journalTail, commentRows, pinnedKb, mcpServers, delegation, nativeSubagents } = setup;
+  const { agent, task, skills, memory, learningMemories, learningMemoryContext, journalTail, commentRows, pinnedKb, mcpServers, delegation } = setup;
   const capabilityPolicy = applyPlanningToolPolicy({
     mode,
     settings: setup.settings,
@@ -821,7 +782,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       taskArtifactsMarkdown: formatTaskArtifactsForPrompt(taskArtifacts),
       webhookTrigger: setup.webhookTrigger,
       worklabToolSurfaceMarkdown,
-      allowedTools, disallowedTools, mcpServers, delegation, nativeSubagents,
+      allowedTools, disallowedTools, mcpServers, delegation,
     };
     const cached = cache.get(cacheKey);
     const prompt = cached || buildSystemPrompt(promptInput, mode);
@@ -892,7 +853,6 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       repositoryInstructions: setup.repositoryInstructions,
       repositoryGitRoot: setup.repositoryGitRoot,
       delegation,
-      nativeSubagents,
     }, "review");
     if (!cached) cache.set(cacheKey, prompt);
     const diagnostics = {

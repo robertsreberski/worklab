@@ -27,8 +27,8 @@ function seedAgent(db, name, instructions = `Instructions for ${name}`, patch = 
   db.prepare(`
     INSERT INTO agents
       (name, display_name, sdk, model, effort, instructions, builtin_allowlist,
-       builtin_allowlist_mode, subagent_mode, enabled, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       builtin_allowlist_mode, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     name,
     patch.display_name || name,
@@ -38,7 +38,6 @@ function seedAgent(db, name, instructions = `Instructions for ${name}`, patch = 
     instructions,
     JSON.stringify(patch.builtin_allowlist || []),
     patch.builtin_allowlist_mode || "all",
-    patch.subagent_mode || "advisory",
     patch.enabled === false ? 0 : 1,
     now,
     now,
@@ -254,83 +253,6 @@ describe("run input assembly", () => {
       expect(input.systemPrompt).toContain("Every delegated subtask's suggested_agent must be one of the agents listed in Available agents");
       expect(input.systemPrompt).toContain("`helper`");
       expect(input.systemPrompt).not.toContain("`executor`");
-    });
-  });
-
-  it("builds native subagent context from same-runtime team agents", () => {
-    withRunInputDb(({ db, config }) => {
-      seedAgent(db, "owner", "Lead the Pi work.", {
-        model: "pi:openai:gpt-5.5",
-        sdk: "pi",
-        subagent_mode: "advisory",
-      });
-      seedAgent(db, "helper", "Investigate bounded questions.", {
-        model: "pi:openai:gpt-5.4-mini",
-        sdk: "pi",
-        builtin_allowlist_mode: "custom",
-        builtin_allowlist: ["Read", "Grep", "Edit"],
-      });
-      seedAgent(db, "claude-helper", "Different runtime.", {
-        model: "claude:claude-sonnet-4-6",
-        sdk: "claude",
-      });
-      seedAgent(db, "outside", "Not on the team.", {
-        model: "pi:openai:gpt-5.4-mini",
-        sdk: "pi",
-      });
-      const team = seedTeam(db, { lead_agent: "owner", members: ["helper", "claude-helper"] });
-      const task = seedTask(db, { stage: "execute", owner_agent: "owner", team_id: team.id });
-
-      const input = buildTaskRunInput({
-        db,
-        config,
-        taskId: task.id,
-        agentName: "owner",
-        runId: "run-native-subagents",
-        mode: "execute",
-      });
-
-      expect(input.nativeSubagents).toMatchObject({
-        provider: "pi",
-        mode: "advisory",
-        toolName: "AskAgent",
-        maxChildrenPerRound: expect.any(Number),
-        maxParallelChildren: expect.any(Number),
-      });
-      expect(input.nativeSubagents.teammates.map((agent) => agent.name)).toEqual(["helper"]);
-      expect(input.nativeSubagents.teammates[0].allowedTools).toEqual(["Read", "Grep"]);
-      expect(input.nativeSubagents.teammates[0].mcpServers).toEqual({});
-      expect(input.systemPrompt).toContain("## Native teammate subagents");
-      const nativeSection = input.systemPrompt.split("## Native teammate subagents")[1].split("\n## Workspace")[0];
-      expect(nativeSection).toContain("`helper`");
-      expect(nativeSection).not.toContain("`claude-helper`");
-      expect(nativeSection).not.toContain("`outside`");
-    });
-  });
-
-  it("omits native subagents when no effective team is resolved", () => {
-    withRunInputDb(({ db, config }) => {
-      seedAgent(db, "owner", "Lead the Pi work.", {
-        model: "pi:openai:gpt-5.5",
-        sdk: "pi",
-      });
-      seedAgent(db, "helper", "Investigate bounded questions.", {
-        model: "pi:openai:gpt-5.4-mini",
-        sdk: "pi",
-      });
-      const task = seedTask(db, { stage: "execute", owner_agent: "owner" });
-
-      const input = buildTaskRunInput({
-        db,
-        config,
-        taskId: task.id,
-        agentName: "owner",
-        runId: "run-no-team-subagents",
-        mode: "execute",
-      });
-
-      expect(input.nativeSubagents).toBeNull();
-      expect(input.systemPrompt).not.toContain("## Native teammate subagents");
     });
   });
 

@@ -169,7 +169,6 @@ describe("agents CRUD", () => {
     expect(res.body.agent.effort).toBe("medium");
     expect(res.body.agent.allow_self_review).toBe(true);
     expect(res.body.agent.browser_tools_review_only).toBe(false);
-    expect(res.body.agent.subagent_mode).toBe("advisory");
     expect(res.body.agent.daily_budget_usd).toBeUndefined();
     expect(res.body.agent.per_run_budget_usd).toBeUndefined();
   });
@@ -427,14 +426,46 @@ describe("agents CRUD", () => {
       model: "claude:claude-sonnet-4-6",
       allow_self_review: false,
       browser_tools_review_only: true,
-      subagent_mode: "workspace",
     }).expect(201);
 
     expect(res.body.agent.allow_self_review).toBe(false);
     expect(res.body.agent.browser_tools_review_only).toBe(true);
-    expect(res.body.agent.subagent_mode).toBe("workspace");
-    const row = db.prepare("SELECT allow_self_review, browser_tools_review_only, subagent_mode FROM agents WHERE name = ?").get("reviewer");
-    expect(row).toEqual({ allow_self_review: 0, browser_tools_review_only: 1, subagent_mode: "workspace" });
+    const row = db.prepare("SELECT allow_self_review, browser_tools_review_only FROM agents WHERE name = ?").get("reviewer");
+    expect(row).toEqual({ allow_self_review: 0, browser_tools_review_only: 1 });
+  });
+
+  it("rejects the removed roster-backed subagent_mode on create and update", async () => {
+    const { agent } = makeTestServer();
+    const created = await agent.post("/api/agents").send({
+      name: "legacy-subagents",
+      display_name: "Legacy Subagents",
+      model: "claude:claude-sonnet-4-6",
+      subagent_mode: "workspace",
+    }).expect(400);
+    expect(created.body.error).toMatchObject({ code: "removed_field" });
+    expect(created.body.error.message).toMatch(/Worklab subtasks/);
+
+    await agent.post("/api/agents").send({
+      name: "current-agent",
+      display_name: "Current Agent",
+      model: "claude:claude-sonnet-4-6",
+    }).expect(201).expect(({ body }) => {
+      expect(body.agent).not.toHaveProperty("subagent_mode");
+    });
+    const current = await agent.get("/api/agents/current-agent").expect(200);
+    expect(current.body.agent).not.toHaveProperty("subagent_mode");
+    await agent.patch("/api/agents/current-agent").send({
+      ...current.body.agent,
+      display_name: "Current Agent Saved",
+    }).expect(200).expect(({ body }) => {
+      expect(body.agent.display_name).toBe("Current Agent Saved");
+      expect(body.agent).not.toHaveProperty("subagent_mode");
+    });
+    const patched = await agent.patch("/api/agents/current-agent").send({
+      subagent_mode: "disabled",
+    }).expect(400);
+    expect(patched.body.error).toMatchObject({ code: "removed_field" });
+    expect(patched.body.error.message).toMatch(/Native CLI subagents/);
   });
 
   it("POST /api/agents generates a unique slug from display_name when name is omitted", async () => {
@@ -566,14 +597,12 @@ describe("agents CRUD", () => {
     const res = await agent.patch("/api/agents/coder").send({
       allow_self_review: false,
       browser_tools_review_only: true,
-      subagent_mode: "disabled",
     }).expect(200);
 
     expect(res.body.agent.allow_self_review).toBe(false);
     expect(res.body.agent.browser_tools_review_only).toBe(true);
-    expect(res.body.agent.subagent_mode).toBe("disabled");
-    const row = db.prepare("SELECT allow_self_review, browser_tools_review_only, subagent_mode FROM agents WHERE name = ?").get("coder");
-    expect(row).toEqual({ allow_self_review: 0, browser_tools_review_only: 1, subagent_mode: "disabled" });
+    const row = db.prepare("SELECT allow_self_review, browser_tools_review_only FROM agents WHERE name = ?").get("coder");
+    expect(row).toEqual({ allow_self_review: 0, browser_tools_review_only: 1 });
   });
 
   it("rejects invalid policy fields", async () => {
@@ -592,12 +621,6 @@ describe("agents CRUD", () => {
       browser_tools_review_only: "yes",
     }).expect(400);
 
-    await agent.post("/api/agents").send({
-      name: "bad-subagent-mode",
-      display_name: "Bad Subagent Mode",
-      model: "claude:claude-sonnet-4-6",
-      subagent_mode: "always",
-    }).expect(400);
   });
 
   it("PATCH preserves explicit empty custom allowlists", async () => {

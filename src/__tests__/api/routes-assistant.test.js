@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { makeTestServer } from "../helpers/test-server.js";
 import { writeSettings } from "../../core/settings.js";
 import { DEFAULT_ASSISTANT_THREAD_ID } from "../../core/index.js";
+import { SUBAGENT_ACTIVITY_ROW_LIMIT } from "../../core/run-events.js";
 
 function makeConfig(dataDir) {
   return {
@@ -511,7 +512,7 @@ describe("assistant routes", () => {
     expect(run.body.run.error_text).toMatch(/max turns/);
   });
 
-  it("returns tail assistant run events with truncation metadata", async () => {
+  it("returns tail assistant visible items with truncation metadata", async () => {
     const { agent, assistant } = setup({
       runAgent: vi.fn(async (_systemPrompt, options) => {
         options.onEvent?.({ type: "assistant", message: { content: [{ type: "thinking", text: "One" }] } });
@@ -531,9 +532,187 @@ describe("assistant routes", () => {
     await assistant.waitIdle();
 
     const run = await agent.get(`/api/assistant/runs/${started.body.run.id}?events=tail&limit=2`).expect(200);
-    expect(run.body.run.events).toHaveLength(2);
+    // Consecutive thinking frames are one visible item, so the two-item tail
+    // intentionally carries all three raw frames plus the terminal event.
+    expect(run.body.run.events).toHaveLength(4);
     expect(run.body.run.event_count).toBeGreaterThan(2);
     expect(run.body.run.events_truncated).toBe(true);
+  });
+
+  it("bounds one assistant subagent group even when the requested tail is wider", async () => {
+    const nestedCount = SUBAGENT_ACTIVITY_ROW_LIMIT + 25;
+    const { agent, assistant } = setup({
+      runAgent: vi.fn(async (_systemPrompt, options) => {
+        options.onEvent?.({
+          type: "assistant",
+          message: { content: [{ type: "tool_use", id: "spawn-assistant", name: "Agent", input: {} }] },
+        });
+        options.onEvent?.({
+          type: "subagent_activity",
+          phase: "agent_started",
+          id: "agent:spawn-assistant",
+          subagent: { id: "spawn-assistant", name: "reviewer", callIndex: 0 },
+        });
+        for (let index = 0; index < nestedCount; index += 1) {
+          options.onEvent?.({
+            type: "subagent_activity",
+            phase: "message",
+            id: `agent:spawn-assistant:message-${index}`,
+            kind: "text",
+            content: `child ${index}`,
+            subagent: { id: "spawn-assistant", name: "reviewer", callIndex: 0 },
+          });
+        }
+        options.onEvent?.({
+          type: "subagent_activity",
+          phase: "agent_completed",
+          id: "agent:spawn-assistant",
+          subagent: { id: "spawn-assistant", name: "reviewer", callIndex: 0 },
+        });
+        return {
+          text: assistantJson({ reply_text: "Done.", summary: "Done." }),
+          events: [],
+          usage: {},
+          durationMs: 1,
+          numTurns: 1,
+        };
+      }),
+    });
+
+    const started = await agent.post("/api/assistant/messages").send({ body: "Use a helper." }).expect(202);
+    await assistant.waitIdle();
+    const run = await agent.get(`/api/assistant/runs/${started.body.run.id}?events=tail&limit=500`).expect(200);
+    const activity = run.body.run.events.filter((event) => event.type === "subagent_activity");
+
+    expect(activity.filter((event) => event.phase === "message")).toHaveLength(SUBAGENT_ACTIVITY_ROW_LIMIT);
+    expect(activity.find((event) => event.phase === "agent_started")?._worklab_subagent_omitted_rows).toBe(25);
+    expect(activity.at(-1)?.phase).toBe("agent_completed");
+    expect(run.body.run.events_truncated).toBe(true);
+  });
+
+  it("bounds flat assistant subagent arguments before persistence and broadcast", async () => {
+    const oversizedArguments = "x".repeat(1_000_000);
+    const runAgent = vi.fn(async (_systemPrompt, options) => {
+      options.onEvent?.({
+        type: "subagent_activity",
+        phase: "tool_started",
+        id: "agent:writer:tool:write",
+        tool_name: "Write",
+        arguments: oversizedArguments,
+        subagent: { id: "writer", name: "writer", callIndex: 0 },
+      });
+      return {
+        text: assistantJson({ reply_text: "Done.", summary: "Done." }),
+        events: [],
+        usage: {},
+        durationMs: 1,
+        numTurns: 1,
+      };
+    });
+    const { agent, assistant, broker, db } = setup({ runAgent });
+    const broadcast = vi.spyOn(broker, "broadcast");
+
+    const started = await agent.post("/api/assistant/messages").send({ body: "Use a writer." }).expect(202);
+    await assistant.waitIdle();
+
+    const persistedEvents = JSON.parse(db.prepare(`
+      SELECT events FROM assistant_agent_logs WHERE assistant_run_id = ?
+    `).get(started.body.run.id).events);
+    const persisted = persistedEvents.find((event) => event.type === "subagent_activity");
+    const direct = broadcast.mock.calls.find(([channel, event]) => (
+      channel === `assistant:${started.body.run.id}` && event?.type === "subagent_activity"
+    ))?.[1];
+    const global = broadcast.mock.calls.find(([channel, event]) => (
+      channel === "global"
+      && event?.type === "assistant_run_event"
+      && event.event?.type === "subagent_activity"
+    ))?.[1]?.event;
+
+    for (const event of [persisted, direct, global]) {
+      expect(event).toMatchObject({
+        arguments_truncated: true,
+        arguments_original_length: 1_000_000,
+      });
+      expect(event.arguments.length).toBeLessThan(20_000);
+      expect(event.arguments).toContain("[truncated assistant subagent arguments:");
+    }
+
+    const run = db.prepare("SELECT raw_output_path FROM assistant_runs WHERE id = ?").get(started.body.run.id);
+    expect(readFileSync(run.raw_output_path, "utf8")).toContain(oversizedArguments);
+  });
+
+  it("leaves absent subagent arguments unmarked and safely bounds non-JSON values", async () => {
+    const circularArguments = { operation: "read" };
+    circularArguments.self = circularArguments;
+    const runAgent = vi.fn(async (_systemPrompt, options) => {
+      options.onEvent?.({
+        type: "subagent_activity",
+        phase: "tool_started",
+        id: "agent:reader:tool:no-arguments",
+        tool_name: "Read",
+        arguments: undefined,
+        subagent: { id: "reader", name: "reader", callIndex: 0 },
+      });
+      options.onEvent?.({
+        type: "subagent_activity",
+        phase: "tool_started",
+        id: "agent:reader:tool:circular-arguments",
+        tool_name: "Read",
+        arguments: circularArguments,
+        subagent: { id: "reader", name: "reader", callIndex: 0 },
+      });
+      return {
+        text: assistantJson({ reply_text: "Done.", summary: "Done." }),
+        events: [],
+        usage: {},
+        durationMs: 1,
+        numTurns: 1,
+      };
+    });
+    const { agent, assistant, broker, db } = setup({ runAgent });
+    const broadcast = vi.spyOn(broker, "broadcast");
+
+    const started = await agent.post("/api/assistant/messages").send({ body: "Use a reader." }).expect(202);
+    await assistant.waitIdle();
+
+    const persistedEvents = JSON.parse(db.prepare(`
+      SELECT events FROM assistant_agent_logs WHERE assistant_run_id = ?
+    `).get(started.body.run.id).events);
+    const absent = persistedEvents.find((event) => event.id === "agent:reader:tool:no-arguments");
+    const nonSerializable = persistedEvents.find((event) => event.id === "agent:reader:tool:circular-arguments");
+    const directAbsent = broadcast.mock.calls.find(([channel, event]) => (
+      channel === `assistant:${started.body.run.id}` && event?.id === absent.id
+    ))?.[1];
+    const directNonSerializable = broadcast.mock.calls.find(([channel, event]) => (
+      channel === `assistant:${started.body.run.id}` && event?.id === nonSerializable.id
+    ))?.[1];
+    const globalNonSerializable = broadcast.mock.calls.find(([channel, event]) => (
+      channel === "global"
+      && event?.type === "assistant_run_event"
+      && event.event?.id === nonSerializable.id
+    ))?.[1]?.event;
+
+    for (const event of [absent, directAbsent]) {
+      expect(event).not.toHaveProperty("arguments_truncated");
+      expect(event).not.toHaveProperty("arguments_original_length");
+      expect(event).not.toHaveProperty("arguments_serialization_error");
+    }
+    for (const event of [nonSerializable, directNonSerializable, globalNonSerializable]) {
+      expect(event).toMatchObject({
+        arguments: "[assistant subagent arguments unavailable: value is not JSON-serializable]",
+        arguments_truncated: true,
+        arguments_serialization_error: true,
+      });
+      expect(event).not.toHaveProperty("arguments_original_length");
+      expect(() => JSON.stringify(event)).not.toThrow();
+    }
+
+    const run = db.prepare("SELECT raw_output_path FROM assistant_runs WHERE id = ?").get(started.body.run.id);
+    const rawEvents = readFileSync(run.raw_output_path, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(rawEvents.find((event) => event.id === "agent:reader:tool:no-arguments"))
+      .not.toHaveProperty("arguments_truncated");
+    expect(rawEvents.find((event) => event.id === "agent:reader:tool:circular-arguments"))
+      .toMatchObject({ arguments_serialization_error: true });
   });
 
   it("persists readable provider failures on assistant messages", async () => {

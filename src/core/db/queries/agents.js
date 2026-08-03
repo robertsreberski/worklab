@@ -85,7 +85,6 @@ export function listAgentsWithRunStats(db, since) {
       a.builtin_allowlist_mode,
       a.allow_self_review,
       a.browser_tools_review_only,
-      a.subagent_mode,
       a.execution_mode,
       a.enabled,
       CASE WHEN p.id IS NULL THEN 'local' ELSE 'external' END AS kind,
@@ -128,7 +127,6 @@ export function listAgentSummariesWithRunStats(db, since) {
       a.effort,
       a.context_window,
       a.fast_mode,
-      a.subagent_mode,
       a.execution_mode,
       a.enabled,
       CASE WHEN p.id IS NULL THEN 'local' ELSE 'external' END AS kind,
@@ -178,7 +176,6 @@ export function insertAgent(db, {
   builtinAllowlistMode,
   allowSelfReview,
   browserToolsReviewOnly,
-  subagentMode,
   executionMode,
   enabled,
   createdAt,
@@ -189,15 +186,14 @@ export function insertAgent(db, {
       (name, display_name, description, sdk, model, effort, context_window, fast_mode, instructions,
        skills_allowlist, skills_allowlist_mode, mcp_allowlist, mcp_allowlist_mode,
        builtin_allowlist, builtin_allowlist_mode, allow_self_review,
-       browser_tools_review_only, subagent_mode, execution_mode, enabled, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       browser_tools_review_only, execution_mode, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     name, displayName, description, sdk, model, effort, contextWindow || "default", fastMode === false ? 0 : 1, instructions,
     skillsAllowlistJson, skillsAllowlistMode,
     mcpAllowlistJson, mcpAllowlistMode,
     builtinAllowlistJson, builtinAllowlistMode,
     allowSelfReview, browserToolsReviewOnly,
-    subagentMode || "advisory",
     executionMode || "sdk",
     enabled, createdAt, updatedAt,
   );

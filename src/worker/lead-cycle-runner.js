@@ -245,7 +245,6 @@ export function buildLeadSystemPrompt({
   deletableTasks = [],
   recentCycles,
   maxTaskCreations,
-  nativeSubagents,
 }) {
   const normalizedGoalContract = normalizeTeamGoalContract(goalContract || root.goal_contract_json || {}, {
     teamGoal: team.goal || "",
@@ -277,7 +276,6 @@ export function buildLeadSystemPrompt({
     `## Team roster (the only agents you may target via suggested_agent)`,
     describeMembers(members),
     leadAgent ? `(Lead: ${leadAgent.name})` : "",
-    nativeSubagents?.promptMarkdown ? `## Native teammate subagents\n${nativeSubagents.promptMarkdown}` : "",
     goalBlock,
     goalStatusBlock,
     `## Open child tasks under the team root`,
@@ -380,7 +378,7 @@ export async function runLeadCycle(ctx) {
   } catch (err) {
     return { kind: "lead_cycle", error: err.message || String(err) };
   }
-  const { agent, skills, skillDirs, mcpServers, allowedTools, disallowedTools, toolPolicy, qaOutputDir, nativeSubagents } = setup;
+  const { agent, skills, skillDirs, mcpServers, allowedTools, disallowedTools, toolPolicy, qaOutputDir } = setup;
   const model = resolveModel(agent.model);
   const sdkEvents = createSdkEventCoalescer((event) => emit({ type: "sdk_event", event }));
 
@@ -399,7 +397,6 @@ export async function runLeadCycle(ctx) {
     deletableTasks,
     recentCycles,
     maxTaskCreations,
-    nativeSubagents,
   });
 
   emit({ type: "prompt_built", diagnostics: { lead_cycle: true, team_id: team.id, project_id: project.id } });
@@ -424,7 +421,6 @@ export async function runLeadCycle(ctx) {
       allowedTools,
       disallowedTools,
       toolPolicy,
-      nativeSubagents,
       permissionMode: "bypassPermissions",
       maxTurns: maxTurnsForModel(model, 16),
       outputSchema: WORKLAB_LEAD_CYCLE_JSON_SCHEMA,

@@ -33,12 +33,61 @@ function truncateText(value, { limit, rawLogPath: path, label }) {
 }
 
 function jsonSize(value) {
-  try { return JSON.stringify(value).length; } catch { return Infinity; }
+  try {
+    const serialized = JSON.stringify(value);
+    return typeof serialized === "string" ? serialized.length : 0;
+  } catch {
+    return Infinity;
+  }
+}
+
+function truncateSubagentActivity(event, { limit, rawLogPath: path }) {
+  if (event?.type !== "subagent_activity" || !("arguments" in event)) return event;
+  const value = event.arguments;
+  if (value === undefined) return event;
+  let raw = value;
+  let size = typeof value === "string" ? value.length : 0;
+  if (typeof value !== "string") {
+    try {
+      raw = JSON.stringify(value, null, 2);
+      if (typeof raw !== "string") return event;
+      size = raw.length;
+    } catch {
+      return {
+        ...event,
+        arguments: "[assistant subagent arguments unavailable: value is not JSON-serializable]",
+        arguments_truncated: true,
+        arguments_serialization_error: true,
+        raw_output_path: path || null,
+      };
+    }
+  }
+  if (!limit || size <= limit) return event;
+  const preview = truncateText(raw, {
+    limit,
+    rawLogPath: path,
+    label: "assistant subagent arguments",
+  });
+  return {
+    ...event,
+    arguments: typeof value === "string"
+      ? preview
+      : {
+          truncated: true,
+          original_length: size,
+          raw_output_path: path || null,
+          preview,
+        },
+    arguments_truncated: true,
+    arguments_original_length: size,
+    raw_output_path: path || null,
+  };
 }
 
 export function truncateAssistantEvent(event, { limit = 12_000, rawLogPath: path } = {}) {
-  const content = event?.message?.content;
-  if (!Array.isArray(content)) return event;
+  const boundedEvent = truncateSubagentActivity(event, { limit, rawLogPath: path });
+  const content = boundedEvent?.message?.content;
+  if (!Array.isArray(content)) return boundedEvent;
   let changed = false;
   const nextContent = content.map((block) => {
     if (!block || typeof block !== "object") return block;
@@ -66,7 +115,9 @@ export function truncateAssistantEvent(event, { limit = 12_000, rawLogPath: path
     }
     return next;
   });
-  return changed ? { ...event, message: { ...event.message, content: nextContent } } : event;
+  return changed
+    ? { ...boundedEvent, message: { ...boundedEvent.message, content: nextContent } }
+    : boundedEvent;
 }
 
 export function warningRows(events = [], extras = []) {

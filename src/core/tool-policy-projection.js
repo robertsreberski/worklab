@@ -24,11 +24,12 @@
 // hand Claude agents tools Worklab never granted.
 //
 // One exact planning restriction is translatable. Worklab's full "read-only
-// shell" shape asks for every read/search/web tool plus Bash while denying only
-// Write/Edit. These runtimes express that as `permissionMode: "plan"` rather
-// than as a tool list. Narrower shapes are not equivalent: notably, native plan
-// mode would re-enable Bash for `read_only_no_shell` and would widen a custom
-// subset. Those shapes must stay intact so the runtime fails closed.
+// shell" shape asks for every read/search/web tool, the native helper entry
+// points and controls, Skill, and Bash while denying only Write/Edit. These
+// runtimes express that as `permissionMode: "plan"` rather than as a tool list.
+// Narrower shapes are not equivalent: notably, native plan mode would re-enable
+// Bash for `read_only_no_shell` and would widen a custom subset. Those shapes
+// must stay intact so the runtime fails closed.
 //
 // This requires agent-runtime >= 0.15.3 and will break if that floor is lowered.
 // Under Codex's read-only sandbox every MCP tool call is gated behind
@@ -65,7 +66,18 @@ const PLAN_PERMISSION_MODE = "plan";
 // away, because agent-runtime pins `networkAccess: false` there. Kept in sync
 // with READ_ONLY_TOOLS in planning-harness.js.
 const NETWORK_TOOLS = ["WebFetch", "WebSearch"];
-const NATIVE_PLAN_ALLOWED_TOOLS = ["Read", "Glob", "Grep", ...NETWORK_TOOLS, "Bash"];
+const NATIVE_PLAN_ALLOWED_TOOLS = [
+  "Read",
+  "Glob",
+  "Grep",
+  ...NETWORK_TOOLS,
+  "Agent",
+  "Task",
+  "TaskOutput",
+  "TaskStop",
+  "Skill",
+  "Bash",
+];
 const NATIVE_PLAN_DISALLOWED_TOOLS = ["Write", "Edit"];
 
 // Index RUNTIME_CAPABILITIES directly — runtimeCapabilities() throws on an

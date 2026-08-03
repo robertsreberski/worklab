@@ -535,6 +535,14 @@ describe("openDb + runMigrations", () => {
     expect(row.value).toBe(String(SCHEMA_VERSION));
   });
 
+  it("keeps the retired subagent_mode column as an inert downgrade tombstone", () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+    const column = db.prepare("PRAGMA table_info(agents)").all()
+      .find((entry) => entry.name === "subagent_mode");
+    expect(column).toMatchObject({ notnull: 1, dflt_value: "'advisory'" });
+  });
+
   it("refuses a newer schema before performing or relabeling migrations", () => {
     const db = openDb(":memory:");
     db.exec(`

@@ -123,38 +123,19 @@ describe("CLI provider adapters", () => {
     expect(cmd.args.slice(-2)).toEqual(["--", "do work"]);
   });
 
-  it("passes native teammate subagents to Claude Code CLI", () => {
+  it("passes native Claude tools to the CLI without injecting agent definitions", () => {
     const cmd = buildCliCommand({
       sdk: "claude-code",
       model: "claude-sonnet-4-6",
       cwd: "/repo",
       systemPrompt: "system",
       prompt: "do work",
-      allowedTools: ["Read"],
-      nativeSubagents: {
-        provider: "claude",
-        teammates: [{
-          name: "helper",
-          description: "Reads focused code paths.",
-          helperSystemPrompt: "You are the helper.",
-          allowedTools: ["Read", "Grep"],
-          modelRef: "claude:claude-haiku-4-5-20251001",
-        }],
-      },
+      allowedTools: ["Read", "Agent", "Task", "TaskOutput", "TaskStop", "Skill"],
     });
-    const agentsIndex = cmd.args.indexOf("--agents");
-    expect(agentsIndex).toBeGreaterThanOrEqual(0);
-    expect(JSON.parse(cmd.args[agentsIndex + 1])).toEqual({
-      helper: {
-        description: "Reads focused code paths.",
-        prompt: "You are the helper.",
-        tools: ["Read", "Grep"],
-        model: "haiku",
-      },
-    });
+    expect(cmd.args).not.toContain("--agents");
     expect(cmd.args).toEqual(expect.arrayContaining([
-      "--tools", "Read,Task",
-      "--allowedTools", "Read Task",
+      "--tools", "Read,Agent,Task,TaskOutput,TaskStop,Skill",
+      "--allowedTools", "Read Agent Task TaskOutput TaskStop Skill",
     ]));
   });
 

@@ -144,4 +144,69 @@ describe("assistant run stream state", () => {
 
     unsubscribe();
   });
+
+  it("keeps a completed live subagent group bounded with its lifecycle bookends", async () => {
+    const snapshots = [];
+    const unsubscribe = subscribeAssistantRunState("assistant-run-1", (snapshot) => snapshots.push(snapshot), {
+      subscribe: true,
+      pollMs: 0,
+    });
+    await vi.waitFor(() => expect(snapshots.at(-1)).toMatchObject({ loading: false }));
+    const stream = FakeEventSource.instances[0];
+    let seq = 1;
+    const send = (event) => stream.onmessage({
+      data: JSON.stringify({
+        type: "assistant_run_event",
+        thread_id: "personal",
+        run_id: "assistant-run-1",
+        event_seq: seq,
+        event: { ...event, _event_seq: seq++ },
+      }),
+    });
+    send({
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id: "spawn-live", name: "Agent", input: {} }] },
+    });
+    send({
+      type: "subagent_activity",
+      phase: "agent_started",
+      id: "agent:spawn-live",
+      subagent: { id: "spawn-live", name: "reviewer", callIndex: 0 },
+    });
+    for (let index = 0; index < 225; index += 1) {
+      send({
+        type: "subagent_activity",
+        phase: "message",
+        id: `agent:spawn-live:message-${index}`,
+        kind: "text",
+        content: `child ${index}`,
+        subagent: { id: "spawn-live", name: "reviewer", callIndex: 0 },
+      });
+    }
+    send({
+      type: "subagent_activity",
+      phase: "agent_completed",
+      id: "agent:spawn-live",
+      subagent: { id: "spawn-live", name: "reviewer", callIndex: 0 },
+    });
+    stream.onmessage({
+      data: JSON.stringify({
+        type: "assistant_run_ended",
+        thread_id: "personal",
+        run_id: "assistant-run-1",
+        status: "succeeded",
+        run: { id: "assistant-run-1", status: "succeeded" },
+      }),
+    });
+
+    await vi.waitFor(() => expect(snapshots.at(-1).done).toBe(true));
+    const latest = snapshots.at(-1);
+    const activity = latest.events.filter((event) => event.type === "subagent_activity");
+    expect(activity.filter((event) => event.phase === "message")).toHaveLength(200);
+    expect(activity.find((event) => event.phase === "agent_started")?._worklab_subagent_omitted_rows).toBe(25);
+    expect(activity.at(-1)?.phase).toBe("agent_completed");
+    expect(latest.eventsTruncated).toBe(true);
+
+    unsubscribe();
+  });
 });

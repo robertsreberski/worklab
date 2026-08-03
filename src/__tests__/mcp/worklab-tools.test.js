@@ -488,6 +488,17 @@ describe("worklab-tools handlers", () => {
     });
   });
 
+  it("agent_create rejects the removed roster-backed subagent_mode", async () => {
+    const c = ctx();
+    seedDb(c.dataDir, () => {});
+
+    await expect(createToolHandlers(c).agent_create({
+      display_name: "Legacy Subagent Owner",
+      model: "pi:openai-codex:gpt-5.5",
+      subagent_mode: "workspace",
+    })).rejects.toThrow(/use Worklab subtasks/);
+  });
+
   it("agent_create creates Codex CLI agents with explicit execution mode", async () => {
     const c = ctx();
     seedDb(c.dataDir, () => {});

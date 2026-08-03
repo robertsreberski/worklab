@@ -135,6 +135,28 @@ describe("generateResponse pi-backed dispatch", () => {
     }))).toBe(true);
   });
 
+  it("exposes the real Pi Agent bridge with Worklab's read-only inline ceiling", async () => {
+    let agentTool = null;
+    const inspectTools = (context) => {
+      agentTool = context.tools.find((tool) => tool.name === "Agent") || null;
+      return textMessage("Agent bridge inspected");
+    };
+
+    const result = await generateResponse("You are a test assistant.", {
+      model: resolveModel("pi:openai:gpt-5.5"),
+      effort: "medium",
+      messages: [{ role: "user", content: "inspect tools" }],
+      allowedTools: ["Read", "Bash", "Agent", "Task", "Skill"],
+      disallowedTools: [],
+      ...setupFauxRuntime([inspectTools]),
+    });
+
+    expect(result.text).toBe("Agent bridge inspected");
+    expect(agentTool).toBeTruthy();
+    expect(agentTool.parameters.properties.tools.description).toContain("Available: Read. Omit for a read-only helper.");
+    expect(agentTool.description).toContain("Tools you may grant a subagent you build: Read.");
+  });
+
   // Worklab passes the typed toolLimits/compaction policy objects, so
   // agent-runtime must never fall back to the deprecated `settings` bag.
   it("passes typed run policies instead of the deprecated settings bag", async () => {

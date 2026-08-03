@@ -6,6 +6,9 @@ import {
   normaliseAgentTimelineEvents,
   providerRequestTargetLabel,
   runtimeWarningText,
+  subagentGroupFailed,
+  subagentRowOutput,
+  toolCallHasError,
 } from "../../ui/src/components/AgentEventTimeline.jsx";
 import { fileEditSummary } from "../../ui/src/components/ToolCallBlock.jsx";
 import { normalizeWorklabEvents } from "../../ui/src/components/EventTimeline.jsx";
@@ -354,5 +357,180 @@ describe("agent event timeline normalization", () => {
         line_stats: { added_lines: 4, removed_lines: 1 },
       }],
     })).toBe("update exact_slack_catchup.py (+4 -1)");
+  });
+});
+
+describe("native subagent grouping", () => {
+  const parentToolUse = {
+    type: "assistant",
+    message: { content: [{ type: "tool_use", id: "toolu_parent", name: "Agent", input: { subagent_type: "reviewer" } }] },
+  };
+  const activity = (phase, extra = {}) => ({
+    type: "subagent_activity",
+    subagent: { id: "toolu_parent", nativeId: "a700", name: "reviewer", callIndex: 0, label: "Review the diff" },
+    phase,
+    ...extra,
+  });
+
+  it("folds a delegation under the Agent tool call that started it", () => {
+    const items = groupAgentTimelineEvents([
+      parentToolUse,
+      activity("agent_started", { id: "agent:a700", name: "Agent(reviewer)" }),
+      activity("started", { id: "agent:a700:t1", name: "reviewer▸Read" }),
+      activity("completed", { id: "agent:a700:t1", name: "reviewer▸Read", executionMs: 39, isError: false, content: "ok" }),
+      activity("agent_completed", { id: "agent:a700", executionMs: 5692, totalTokens: 37035, content: "Found 3 issues", isError: false }),
+      { type: "assistant", message: { content: [{ type: "text", text: "Done." }] } },
+    ]);
+
+    // One tool call carrying the group, then the parent's own text — the
+    // child's rows must not appear as siblings in the parent's timeline.
+    expect(items).toHaveLength(2);
+    expect(items[0]._toolCall).toBe(true);
+    expect(items[0].toolUse.name).toBe("Agent");
+    expect(items[0].subagentGroup).toBeTruthy();
+    expect(items[0].subagentGroup.done).toBe(true);
+    expect(items[0].subagentGroup.rows).toHaveLength(2);
+    expect(items[0].subagentGroup.closed).toMatchObject({ executionMs: 5692, totalTokens: 37035 });
+    expect(items[1]).toMatchObject({ type: "text", text: "Done." });
+  });
+
+  it("attaches retained toolUseId-only activity to its parent tool call", () => {
+    const legacyActivity = (phase, extra = {}) => ({
+      type: "subagent_activity",
+      subagent: {
+        toolUseId: "toolu_parent",
+        nativeId: "legacy-a700",
+        name: "reviewer",
+        callIndex: 0,
+      },
+      phase,
+      ...extra,
+    });
+    const items = groupAgentTimelineEvents([
+      parentToolUse,
+      legacyActivity("agent_started", { id: "agent:legacy-a700" }),
+      legacyActivity("message", { id: "agent:legacy-a700:m1", kind: "text", content: "Legacy result" }),
+      legacyActivity("agent_completed", { id: "agent:legacy-a700", isError: false }),
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      _toolCall: true,
+      toolUse: { tool_use_id: "toolu_parent", name: "Agent" },
+      subagentGroup: {
+        _groupId: "toolu_parent",
+        done: true,
+        subagent: { toolUseId: "toolu_parent", nativeId: "legacy-a700" },
+      },
+    });
+    expect(items[0].subagentGroup.rows).toHaveLength(1);
+    expect(items[0].subagentGroup.rows[0]).toMatchObject({ phase: "message", content: "Legacy result" });
+  });
+
+  it("renders an unclaimed delegation standalone rather than dropping it", () => {
+    // No parent tool_use: a truncated log, or a run resumed mid-delegation.
+    const items = groupAgentTimelineEvents([
+      activity("agent_started", { id: "agent:a700", name: "Agent(reviewer)" }),
+      activity("started", { id: "agent:a700:t1", name: "reviewer▸Read" }),
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]._subagentGroup).toBe(true);
+    expect(items[0].done).toBe(false);
+    expect(items[0].subagent.name).toBe("reviewer");
+  });
+
+  it("keeps concurrent delegations in separate groups", () => {
+    const second = (phase, extra = {}) => ({
+      type: "subagent_activity",
+      subagent: { id: "toolu_second", nativeId: "b800", name: "reviewer", callIndex: 1 },
+      phase,
+      ...extra,
+    });
+    const items = groupAgentTimelineEvents([
+      parentToolUse,
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "toolu_second", name: "Agent", input: {} }] },
+      },
+      activity("agent_started", { id: "agent:a700" }),
+      second("agent_started", { id: "agent:b800" }),
+      activity("started", { id: "agent:a700:t1", name: "reviewer▸Read" }),
+      second("started", { id: "agent:b800:t9", name: "reviewer▸Grep" }),
+    ]);
+
+    const groups = items.filter((item) => item._toolCall).map((item) => item.subagentGroup);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].subagent.id).toBe("toolu_parent");
+    expect(groups[1].subagent.id).toBe("toolu_second");
+    expect(groups[0].rows[0].name).toBe("reviewer▸Read");
+    expect(groups[1].rows[0].name).toBe("reviewer▸Grep");
+  });
+
+  it("does not attach activity to an unrelated tool even when ids collide", () => {
+    const items = groupAgentTimelineEvents([
+      { type: "tool_use", tool_use_id: "toolu_parent", name: "Read", input: {} },
+      activity("agent_started", { id: "agent:toolu_parent" }),
+    ]);
+
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ _toolCall: true, toolUse: { name: "Read" }, subagentGroup: null });
+    expect(items[1]._subagentGroup).toBe(true);
+  });
+
+  it("keeps nested Codex paths inside the root spawn group", () => {
+    const spawn = {
+      type: "tool_use",
+      tool_use_id: "spawn-1",
+      name: "codex_spawnAgent",
+      input: { prompt: "Review" },
+    };
+    const items = groupAgentTimelineEvents([
+      spawn,
+      {
+        type: "subagent_activity",
+        phase: "agent_started",
+        id: "agent:spawn-1",
+        subagent: { id: "spawn-1", nativeId: "child-1", name: "codex", callIndex: 0 },
+      },
+      {
+        type: "subagent_activity",
+        phase: "message",
+        id: "agent:spawn-1:child-2:m1",
+        kind: "text",
+        content: "nested result",
+        subagent: { id: "spawn-1", nativeId: "child-2", name: "codex", callIndex: 0, agentPath: "root/reviewer" },
+      },
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0].subagentGroup.rows).toHaveLength(1);
+    expect(items[0].subagentGroup.rows[0].subagent.agentPath).toBe("root/reviewer");
+  });
+
+  it("lets child failure override a successful launch result", () => {
+    const group = { closed: { isError: true } };
+    expect(subagentGroupFailed(group)).toBe(true);
+    expect(toolCallHasError({ is_error: false, output: "launched" }, group)).toBe(true);
+  });
+
+  it("shows failed child tool detail without duplicating successful tool output", () => {
+    expect(subagentRowOutput({
+      kind: "tool",
+      isError: true,
+      content: "Permission denied while reading secrets.txt",
+    })).toBe("Permission denied while reading secrets.txt");
+    expect(subagentRowOutput({ kind: "tool", isError: false, content: "file contents" })).toBe("");
+    expect(subagentRowOutput({ kind: "text", content: "Child summary" })).toBe("Child summary");
+  });
+
+  it("hides the raw task lifecycle events that subagent_activity supersedes", () => {
+    const normalized = normalizeWorklabEvents([
+      { type: "cli_event", raw: { type: "system", subtype: "task_started", task_id: "a700" } },
+      { type: "cli_event", raw: { type: "system", subtype: "task_updated", task_id: "a700" } },
+      { type: "cli_event", raw: { type: "system", subtype: "task_notification", task_id: "a700" } },
+      { type: "cli_event", raw: { type: "system", subtype: "background_tasks_changed", tasks: [] } },
+    ]);
+    expect(normalized).toEqual([]);
   });
 });

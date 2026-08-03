@@ -136,6 +136,22 @@ Start in the UI, not in config files:
 Runtime data defaults to `~/.worklab`; task workspaces default to
 `~/worklab-workspace`.
 
+## Native Runtime Capabilities
+
+Worklab leaves provider-native helpers available to supported runtimes. Claude
+can use its Agent/Task profiles and skills, including inspecting or stopping
+helpers it launched in the background; Codex can use collaboration subagents
+with repository instructions, and Pi can create bounded inline read-only
+helpers. Their nested work is folded into the parent run's activity log. These
+ephemeral helpers are separate from a Worklab team roster: teams delegate
+durable child tasks, not runtime profiles or runtime-local task state.
+
+Claude user, project, and local settings are treated as trusted executable
+configuration. They may load native agents and skills, but also hooks and
+plugins outside Worklab's capability tiles. Worklab's Skills allowlist governs
+Worklab-managed prompt packs; it does not sandbox provider-native settings. Run
+Claude against only repositories and settings you trust.
+
 ## External Agents Over ACP
 
 Worklab can run external agents through ACP v1 over stdio. Open **Agents**,

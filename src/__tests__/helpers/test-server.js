@@ -5,8 +5,8 @@ import { createServer } from "../../api/server.js";
 
 const ROUTE_HEADER = "x-worklab-test-app";
 const SAME_ORIGIN_HEADERS = Object.freeze({
-  host: "worklab-test.ts.net",
-  origin: "http://worklab-test.ts.net",
+  host: "127.0.0.1",
+  origin: "http://127.0.0.1",
   "sec-fetch-site": "same-origin",
 });
 const routedApps = new Map();

@@ -53,8 +53,13 @@ import { withMentions } from "../lib/with-mentions.js";
 
 function rowToAgent(row) {
   if (!row) return null;
+  // `subagent_mode` remains in the physical schema for one downgrade window,
+  // but it is not part of the current agent contract. Keep the tombstone from
+  // escaping through SELECT * and being round-tripped into a rejected PATCH.
+  const publicRow = { ...row };
+  delete publicRow.subagent_mode;
   return {
-    ...row,
+    ...publicRow,
     enabled: !!row.enabled,
     skills_allowlist: parseStoredAllowlist(row.skills_allowlist),
     skills_allowlist_mode: storedAllowlistMode(row.skills_allowlist_mode),
@@ -64,7 +69,6 @@ function rowToAgent(row) {
     builtin_allowlist_mode: storedAllowlistMode(row.builtin_allowlist_mode),
     allow_self_review: !!row.allow_self_review,
     browser_tools_review_only: !!row.browser_tools_review_only,
-    subagent_mode: normalizeSubagentMode(row.subagent_mode, "advisory"),
     execution_mode: row.execution_mode || "sdk",
     context_window: normalizeContextWindow(row.context_window),
     fast_mode: effectiveFastModeForRow(row),
@@ -77,10 +81,11 @@ function rowToAgent(row) {
 
 function rowToAgentSummary(row) {
   if (!row) return null;
+  const publicRow = { ...row };
+  delete publicRow.subagent_mode;
   return {
-    ...row,
+    ...publicRow,
     enabled: !!row.enabled,
-    subagent_mode: normalizeSubagentMode(row.subagent_mode, "advisory"),
     execution_mode: row.execution_mode || "sdk",
     context_window: normalizeContextWindow(row.context_window),
     fast_mode: effectiveFastModeForRow(row),
@@ -104,7 +109,6 @@ const PATCHABLE = [
   "builtin_allowlist_mode",
   "allow_self_review",
   "browser_tools_review_only",
-  "subagent_mode",
   "execution_mode",
   "enabled",
   "require_human_approval",
@@ -114,7 +118,14 @@ const PATCHABLE = [
 ];
 
 const VALID_EXECUTION_MODES = new Set(["sdk", "cli"]);
-const VALID_SUBAGENT_MODES = new Set(["disabled", "advisory", "workspace"]);
+const REMOVED_SUBAGENT_MODE_MESSAGE =
+  "subagent_mode was removed; use Worklab subtasks for durable team delegation. Native CLI subagents are controlled by the selected runtime.";
+
+function rejectRemovedSubagentMode(body) {
+  return body && Object.prototype.hasOwnProperty.call(body, "subagent_mode")
+    ? REMOVED_SUBAGENT_MODE_MESSAGE
+    : null;
+}
 
 function acpProfileManagedError(db, agentName) {
   const profile = getAcpProfileForAgent({ db, agentName });
@@ -134,16 +145,6 @@ function normalizeExecutionMode(value, fallback = "sdk") {
   const trimmed = value.trim();
   if (!VALID_EXECUTION_MODES.has(trimmed)) {
     throw new Error(`execution_mode must be one of: ${[...VALID_EXECUTION_MODES].join(", ")}`);
-  }
-  return trimmed;
-}
-
-function normalizeSubagentMode(value, fallback = "advisory") {
-  if (value === undefined || value === null || value === "") return fallback;
-  if (typeof value !== "string") throw new Error("subagent_mode must be a string");
-  const trimmed = value.trim();
-  if (!VALID_SUBAGENT_MODES.has(trimmed)) {
-    throw new Error(`subagent_mode must be one of: ${[...VALID_SUBAGENT_MODES].join(", ")}`);
   }
   return trimmed;
 }
@@ -377,6 +378,11 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
   app.post("/api/agents", (req, res) => {
     const { name, display_name, model } = req.body || {};
 
+    const removedFieldError = rejectRemovedSubagentMode(req.body);
+    if (removedFieldError) {
+      return res.status(400).json({ error: { code: "removed_field", message: removedFieldError } });
+    }
+
     if (!display_name || !model) {
       return res.status(400).json({ error: { code: "validation", message: "display_name and explicit model reference required" } });
     }
@@ -424,13 +430,11 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     const enabled = req.body.enabled === false ? 0 : 1;
     let allowSelfReview;
     let browserToolsReviewOnly;
-    let subagentMode;
     let contextWindow;
     let fastMode;
     try {
       allowSelfReview = normalizeBooleanField("allow_self_review", req.body.allow_self_review, true);
       browserToolsReviewOnly = normalizeBooleanField("browser_tools_review_only", req.body.browser_tools_review_only, false);
-      subagentMode = normalizeSubagentMode(req.body.subagent_mode, "advisory");
     } catch (err) {
       return res.status(400).json({ error: { code: "validation", message: err.message } });
     }
@@ -500,7 +504,6 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       builtinAllowlistMode: builtinAllow.mode,
       allowSelfReview,
       browserToolsReviewOnly,
-      subagentMode,
       executionMode,
       enabled,
       createdAt: now,
@@ -591,6 +594,11 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     const ownershipError = acpProfileManagedError(db, req.params.name);
     if (ownershipError) return res.status(409).json({ error: ownershipError });
 
+    const removedFieldError = rejectRemovedSubagentMode(req.body);
+    if (removedFieldError) {
+      return res.status(400).json({ error: { code: "removed_field", message: removedFieldError } });
+    }
+
     const existingExecutionMode = existing.execution_mode || "sdk";
     let targetExecutionMode;
     try {
@@ -667,12 +675,6 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
           }
         } else if (k === "execution_mode") {
           values.push(targetExecutionMode);
-        } else if (k === "subagent_mode") {
-          try {
-            values.push(normalizeSubagentMode(req.body[k], existing.subagent_mode || "advisory"));
-          } catch (err) {
-            return res.status(400).json({ error: { code: "validation", message: err.message } });
-          }
         } else if (k === "require_human_approval") {
           try {
             values.push(normalizeBooleanField(k, req.body[k], false));

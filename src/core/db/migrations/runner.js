@@ -982,6 +982,10 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "agents", "builtin_allowlist_mode", "builtin_allowlist_mode TEXT NOT NULL DEFAULT 'all'");
   addColumnIfMissing(db, "agents", "allow_self_review", "allow_self_review INTEGER NOT NULL DEFAULT 1");
   addColumnIfMissing(db, "agents", "browser_tools_review_only", "browser_tools_review_only INTEGER NOT NULL DEFAULT 0");
+  // v49 compatibility tombstone: roster-backed native subagents were removed,
+  // but retain the physical column for one release so databases can still be
+  // opened by the previous Worklab version. Runtime/API code must not read or
+  // write it; a later migration may drop it after the downgrade window closes.
   addColumnIfMissing(db, "agents", "subagent_mode", "subagent_mode TEXT NOT NULL DEFAULT 'advisory'");
   // v33: per-agent budgets retired in favor of team budgets. Columns dropped
   // by `dropLegacyTeamReplacedColumns`; we keep them creatable on legacy DBs

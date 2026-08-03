@@ -274,7 +274,7 @@ describe("generateClaudeResponse", () => {
     expect(mockQuery.mock.calls[0][0].options.model).toBe("claude-opus-4-7[1m]");
   });
 
-  it("passes native teammate subagents to the Claude SDK Task surface", async () => {
+  it("passes native Claude tools through the SDK without injecting agent definitions", async () => {
     mockQuery.mockReturnValue(mockStream([
       { type: "result", subtype: "success", result: "done", usage: {}, duration_ms: 1, num_turns: 1 },
     ]));
@@ -283,34 +283,15 @@ describe("generateClaudeResponse", () => {
       messages: [{ role: "user", content: "hi" }],
       model: { sdk: "claude", model: "claude-sonnet-4-6" },
       effort: "medium",
-      allowedTools: ["Read"],
-      nativeSubagents: {
-        provider: "claude",
-        teammates: [{
-          name: "helper",
-          description: "Reads focused code paths.",
-          helperSystemPrompt: "You are the helper.",
-          allowedTools: ["Read", "Grep"],
-          disallowedTools: ["Edit"],
-          modelRef: "claude:claude-opus-4-7",
-          mcpServers: { mock: { command: "node", args: ["mock.js"] } },
-        }],
-      },
+      allowedTools: ["Read", "Agent", "Task", "TaskOutput", "TaskStop", "Skill"],
       onEvent: () => {},
     });
 
     const options = mockQuery.mock.calls[0][0].options;
-    expect(options.allowedTools).toEqual(["Read", "Task"]);
-    expect(options.agents).toEqual({
-      helper: {
-        description: "Reads focused code paths.",
-        prompt: "You are the helper.",
-        tools: ["Read", "Grep"],
-        disallowedTools: ["Edit"],
-        model: "opus",
-        mcpServers: [{ mock: { command: "node", args: ["mock.js"] } }],
-      },
-    });
+    const nativeTools = ["Read", "Agent", "Task", "TaskOutput", "TaskStop", "Skill"];
+    expect(options.tools).toEqual(nativeTools);
+    expect(options.allowedTools).toEqual(nativeTools);
+    expect(options.agents).toBeUndefined();
   });
 
   it("uses a prior provider session to resume Claude and returns the current session id", async () => {

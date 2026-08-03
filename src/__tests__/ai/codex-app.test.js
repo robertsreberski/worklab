@@ -210,7 +210,7 @@ describe("generateCodexAppResponse", () => {
     }
   });
 
-  it("enables Codex collaboration mode for native teammate subagents", async () => {
+  it("normalizes Codex collaboration activity without injecting teammate profiles", async () => {
     const dir = mkdtempSync(join(tmpdir(), "worklab-codex-app-"));
     const logPath = join(dir, "requests.jsonl");
     const script = writeFakeCodexAppServer(dir);
@@ -225,64 +225,47 @@ describe("generateCodexAppResponse", () => {
         codexAppServerCommand: script,
         codexAppServerArgs: [],
         codexAppServerEnv: { FAKE_CODEX_REQUEST_LOG: logPath, FAKE_CODEX_MODE: "collab_event" },
-        nativeSubagents: {
-          provider: "codex",
-          mode: "advisory",
-          teammates: [{
-            name: "helper",
-            displayName: "Helper",
-            description: "Reads focused code paths.",
-            helperSystemPrompt: "You are the helper.",
-            model: { model: "gpt-5.4-mini" },
-            effort: "low",
-          }],
-        },
         onEvent: (event) => events.push(event),
       });
       const requests = readRequests(logPath);
       const turnStart = requests.find((request) => request.method === "turn/start");
 
       expect(result.error).toBeNull();
-      expect(requests.some((request) => request.method === "collaborationMode/list")).toBe(true);
-      expect(turnStart.params.collaborationMode).toMatchObject({
-        mode: "default",
-        teammates: [{
-          name: "helper",
-          model: "gpt-5.4-mini",
-          reasoningEffort: "low",
-        }],
-      });
+      expect(requests.some((request) => request.method === "collaborationMode/list")).toBe(false);
+      expect(turnStart.params.collaborationMode).toBeUndefined();
       expect(events).toContainEqual({
-        type: "assistant",
-        message: {
-          content: [{
-            type: "tool_use",
-            id: "collab1",
-            name: "codex_spawnAgent",
-            input: {
-              prompt: "Inspect the router.",
-              model: "gpt-5.4",
-              reasoningEffort: "medium",
-              receiverThreadIds: [],
-            },
-          }],
+        type: "subagent_activity",
+        subagent: {
+          id: "collab1",
+          nativeId: "thread-helper",
+          name: "codex",
+          callIndex: 0,
+        },
+        phase: "agent_started",
+        id: "agent:collab1",
+        name: "Agent(codex)",
+        arguments: {
+          name: "codex",
+          prompt: "Inspect the router.",
         },
       });
       expect(events).toContainEqual({
-        type: "user",
-        message: {
-          content: [{
-            type: "tool_result",
-            tool_use_id: "collab1",
-            content: {
-              status: "completed",
-              receiverThreadIds: ["thread-helper"],
-              agentsStates: [{ agentId: "helper", status: "completed" }],
-            },
-            is_error: false,
-          }],
+        type: "subagent_activity",
+        subagent: {
+          id: "collab1",
+          nativeId: "thread-helper",
+          name: "codex",
+          callIndex: 0,
         },
+        phase: "agent_completed",
+        id: "agent:collab1",
+        name: "Agent(codex)",
+        content: "Parent Codex turn ended before the subagent completed.",
+        isError: true,
       });
+      expect(events.some((event) => event.message?.content?.some?.(
+        (block) => block.name === "codex_spawnAgent",
+      ))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

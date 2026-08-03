@@ -136,7 +136,19 @@ describe("codex tool policy projection", () => {
     try {
       const result = await runCodex(dir, {
         // The shape applyPlanningToolPolicy produces for read_only_shell_allowlist.
-        allowedTools: ["Read", "Glob", "Grep", "WebFetch", "WebSearch", "Bash"],
+        allowedTools: [
+          "Read",
+          "Glob",
+          "Grep",
+          "WebFetch",
+          "WebSearch",
+          "Agent",
+          "Task",
+          "TaskOutput",
+          "TaskStop",
+          "Skill",
+          "Bash",
+        ],
         disallowedTools: ["Write", "Edit"],
         toolPolicy: { planning: true, policy: "read_only_shell_allowlist" },
       }, { events });
@@ -217,6 +229,63 @@ describe("codex tool policy projection", () => {
       expect(result.text).toBe("fallback ok");
       expect(claudeCalls).toHaveLength(1);
       expect(claudeCalls[0].options.allowedTools).toEqual(WORKLAB_BUILTIN_TOOLS);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 20000);
+
+  it("removes Codex plan mode before a Claude planning fallback", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-codex-plan-fallback-"));
+    const claudeCalls = [];
+    const planTools = [
+      "Read", "Glob", "Grep", "WebFetch", "WebSearch", "Agent", "Task",
+      "TaskOutput", "TaskStop", "Skill", "Bash",
+    ];
+    try {
+      const result = await generateResponse("system", {
+        model: "codex:gpt-5.5",
+        executionMode: "cli",
+        effort: "low",
+        messages: [{ role: "user", content: "plan the work" }],
+        cwd: dir,
+        dataDir: dir,
+        settings: {},
+        allowedTools: planTools,
+        disallowedTools: ["Write", "Edit"],
+        toolPolicy: { planning: true, policy: "read_only_shell_allowlist" },
+        codexAppServerCommand: writeMinimalCodexAppServer(dir, { hangThreadStart: true }),
+        codexAppServerArgs: [],
+        codexThreadStartTimeoutMs: 50,
+        codexThreadStartAttempts: 1,
+        fallbackChain: [{
+          model: { sdk: "claude", model: "claude-sonnet-4-6" },
+          executionMode: "sdk",
+        }],
+        claudeAgentQuery: (params) => {
+          claudeCalls.push(params);
+          return {
+            async *[Symbol.asyncIterator]() {
+              yield {
+                type: "result",
+                result: "fallback plan ok",
+                usage: {},
+                duration_ms: 1,
+                num_turns: 1,
+              };
+            },
+            close: () => {},
+          };
+        },
+      });
+
+      expect(result.error).toBeFalsy();
+      expect(result.text).toBe("fallback plan ok");
+      expect(claudeCalls).toHaveLength(1);
+      expect(claudeCalls[0].options).toMatchObject({
+        permissionMode: "bypassPermissions",
+        allowedTools: planTools,
+        disallowedTools: ["Write", "Edit"],
+      });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
