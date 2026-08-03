@@ -253,10 +253,12 @@ describe("ACP API", () => {
     const first = makeAcpTestServer({
       dataDir: firstDataDir,
       acpControls: { discoverMono: firstDiscoverMono },
+      sharedRequestHarness: false,
     });
     const second = makeAcpTestServer({
       dataDir: secondDataDir,
       acpControls: { discoverMono: secondDiscoverMono },
+      sharedRequestHarness: false,
     });
     const firstToken = readMcpToken(firstDataDir);
 
