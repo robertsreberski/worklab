@@ -146,11 +146,11 @@ describe("spawnWorker ACP interactions", () => {
           }),
           update({
             sessionUpdate: "agent_thought_chunk",
-            content: { type: "text", text: `${privateReasoning}-continued` },
+            content: { type: "text", text: "-continued" },
           }),
           sdkEvent({
             type: "assistant",
-            message: { content: [{ type: "thinking", text: `${privateReasoning}-continued` }] },
+            message: { content: [{ type: "thinking", text: "-continued" }] },
           }),
           update({
             sessionUpdate: "agent_message_chunk",
@@ -176,7 +176,7 @@ describe("spawnWorker ACP interactions", () => {
             title: "Read agenda",
             kind: "read",
             status: "in_progress",
-            rawInput: { token: privateInput },
+            rawInput: { query: privateInput },
           }),
           sdkEvent({
             type: "assistant",
@@ -185,7 +185,7 @@ describe("spawnWorker ACP interactions", () => {
                 type: "tool_use",
                 id: "provider-tool-private",
                 name: "Read agenda",
-                input: { token: privateInput },
+                input: { query: privateInput },
               }],
             },
           }),
@@ -236,34 +236,48 @@ describe("spawnWorker ACP interactions", () => {
         db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runId).events,
       );
       const projected = displayEvents.filter((event) => event._worklab_acp_projected === true);
-      const message = projected.find((event) => (
-        event.update?.sessionUpdate === "agent_message_chunk"
-      ));
-      const activity = projected.filter((event) => (
-        event.update?.sessionUpdate === "agent_thought_chunk"
-      ));
-      const tool = projected.find((event) => (
-        event.update?.sessionUpdate === "tool_call_update"
-      ));
+      const blockTypes = (event) => event.message?.content?.map((block) => block.type) || [];
+      const message = projected.find((event) => blockTypes(event).includes("text"));
+      const activity = projected.filter((event) => blockTypes(event).includes("thinking"));
+      const tool = projected.find((event) => blockTypes(event).includes("tool_use"));
 
       expect(projected).toHaveLength(3);
       expect(activity).toHaveLength(1);
+      expect(activity[0]).toMatchObject({
+        _worklab_display_revision: 2,
+        _worklab_raw_event_count: 2,
+        message: {
+          content: [{ type: "thinking", text: `${privateReasoning}-continued` }],
+        },
+      });
       expect(message).toMatchObject({
         _worklab_display_revision: 2,
         _worklab_raw_event_count: 2,
-        update: { content: { type: "text", text: "### Hello" } },
+        message: { content: [{ type: "text", text: "### Hello" }] },
       });
       expect(tool).toMatchObject({
         _worklab_display_revision: 2,
-        update: {
-          title: "Read agenda",
-          kind: "read",
-          status: "completed",
-        },
+        _worklab_raw_event_count: 2,
+        message: { content: [
+          {
+            type: "tool_use",
+            id: tool._worklab_display_key,
+            name: "Read agenda",
+            input: { query: privateInput },
+          },
+          {
+            type: "tool_result",
+            tool_use_id: tool._worklab_display_key,
+            content: privateOutput,
+            is_error: false,
+          },
+        ] },
       });
-      expect(JSON.stringify({ displayEvents, broadcasts })).not.toMatch(
-        /PRIVATE_|provider-message-private|provider-tool-private/u,
-      );
+      const serializedDisplay = JSON.stringify({ displayEvents, broadcasts });
+      expect(serializedDisplay).not.toMatch(/provider-message-private|provider-tool-private/u);
+      expect(serializedDisplay).toContain(privateReasoning);
+      expect(serializedDisplay).toContain(privateInput);
+      expect(serializedDisplay).toContain(privateOutput);
 
       const rawLog = readFileSync(run.raw_output_path, "utf8");
       expect(rawLog).toContain(privateReasoning);
