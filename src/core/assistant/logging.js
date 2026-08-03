@@ -33,19 +33,36 @@ function truncateText(value, { limit, rawLogPath: path, label }) {
 }
 
 function jsonSize(value) {
-  try { return JSON.stringify(value).length; } catch { return Infinity; }
+  try {
+    const serialized = JSON.stringify(value);
+    return typeof serialized === "string" ? serialized.length : 0;
+  } catch {
+    return Infinity;
+  }
 }
 
 function truncateSubagentActivity(event, { limit, rawLogPath: path }) {
   if (event?.type !== "subagent_activity" || !("arguments" in event)) return event;
   const value = event.arguments;
-  const size = typeof value === "string" ? value.length : jsonSize(value);
+  if (value === undefined) return event;
+  let raw = value;
+  let size = typeof value === "string" ? value.length : 0;
+  if (typeof value !== "string") {
+    try {
+      raw = JSON.stringify(value, null, 2);
+      if (typeof raw !== "string") return event;
+      size = raw.length;
+    } catch {
+      return {
+        ...event,
+        arguments: "[assistant subagent arguments unavailable: value is not JSON-serializable]",
+        arguments_truncated: true,
+        arguments_serialization_error: true,
+        raw_output_path: path || null,
+      };
+    }
+  }
   if (!limit || size <= limit) return event;
-  const raw = typeof value === "string"
-    ? value
-    : (() => {
-        try { return JSON.stringify(value, null, 2); } catch { return String(value); }
-      })();
   const preview = truncateText(raw, {
     limit,
     rawLogPath: path,

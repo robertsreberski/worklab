@@ -414,8 +414,10 @@ Return only one JSON object with this exact schema:
     const recordEvent = (event) => {
       if (!this.isRunRunning(runId)) return;
       const raw = { ...event, _event_seq: events.length };
-      appendFileSync(logPath, `${JSON.stringify(raw)}\n`);
       const next = truncateAssistantEvent(raw, { rawLogPath: logPath });
+      let rawLine;
+      try { rawLine = JSON.stringify(raw); } catch { rawLine = JSON.stringify(next); }
+      appendFileSync(logPath, `${rawLine}\n`);
       events.push(next);
       schedulePersist();
       this.broker?.broadcast?.(`assistant:${runId}`, next);

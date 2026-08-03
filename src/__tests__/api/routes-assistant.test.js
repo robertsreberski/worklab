@@ -641,6 +641,69 @@ describe("assistant routes", () => {
     expect(readFileSync(run.raw_output_path, "utf8")).toContain(oversizedArguments);
   });
 
+  it("leaves absent subagent arguments unmarked and safely bounds non-JSON values", async () => {
+    const circularArguments = { operation: "read" };
+    circularArguments.self = circularArguments;
+    const runAgent = vi.fn(async (_systemPrompt, options) => {
+      options.onEvent?.({
+        type: "subagent_activity",
+        phase: "tool_started",
+        id: "agent:reader:tool:no-arguments",
+        tool_name: "Read",
+        arguments: undefined,
+        subagent: { id: "reader", name: "reader", callIndex: 0 },
+      });
+      options.onEvent?.({
+        type: "subagent_activity",
+        phase: "tool_started",
+        id: "agent:reader:tool:circular-arguments",
+        tool_name: "Read",
+        arguments: circularArguments,
+        subagent: { id: "reader", name: "reader", callIndex: 0 },
+      });
+      return {
+        text: assistantJson({ reply_text: "Done.", summary: "Done." }),
+        events: [],
+        usage: {},
+        durationMs: 1,
+        numTurns: 1,
+      };
+    });
+    const { agent, assistant, broker, db } = setup({ runAgent });
+    const broadcast = vi.spyOn(broker, "broadcast");
+
+    const started = await agent.post("/api/assistant/messages").send({ body: "Use a reader." }).expect(202);
+    await assistant.waitIdle();
+
+    const persistedEvents = JSON.parse(db.prepare(`
+      SELECT events FROM assistant_agent_logs WHERE assistant_run_id = ?
+    `).get(started.body.run.id).events);
+    const absent = persistedEvents.find((event) => event.id === "agent:reader:tool:no-arguments");
+    const nonSerializable = persistedEvents.find((event) => event.id === "agent:reader:tool:circular-arguments");
+    const directAbsent = broadcast.mock.calls.find(([channel, event]) => (
+      channel === `assistant:${started.body.run.id}` && event?.id === absent.id
+    ))?.[1];
+
+    for (const event of [absent, directAbsent]) {
+      expect(event).not.toHaveProperty("arguments_truncated");
+      expect(event).not.toHaveProperty("arguments_original_length");
+      expect(event).not.toHaveProperty("arguments_serialization_error");
+    }
+    expect(nonSerializable).toMatchObject({
+      arguments: "[assistant subagent arguments unavailable: value is not JSON-serializable]",
+      arguments_truncated: true,
+      arguments_serialization_error: true,
+    });
+    expect(nonSerializable).not.toHaveProperty("arguments_original_length");
+
+    const run = db.prepare("SELECT raw_output_path FROM assistant_runs WHERE id = ?").get(started.body.run.id);
+    const rawEvents = readFileSync(run.raw_output_path, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(rawEvents.find((event) => event.id === "agent:reader:tool:no-arguments"))
+      .not.toHaveProperty("arguments_truncated");
+    expect(rawEvents.find((event) => event.id === "agent:reader:tool:circular-arguments"))
+      .toMatchObject({ arguments_serialization_error: true });
+  });
+
   it("persists readable provider failures on assistant messages", async () => {
     const runAgent = vi.fn(async () => ({
       error: "Your input exceeds the context window of this model. Please adjust your input and try again.",
