@@ -94,6 +94,23 @@ export function normalizeToolTokenEvent(event) {
 
   const content = event.message?.content || event.content;
   if ((event.type === "assistant" || event.type === "message" || event.type === "user") && Array.isArray(content)) {
+    if (event._worklab_acp_projected === true) {
+      const toolUse = content.find((block) => block?.type === "tool_use");
+      if (toolUse) {
+        const toolUseId = toolUse.tool_use_id || toolUse.id;
+        const toolResult = content.find((block) => (
+          block?.type === "tool_result"
+          && (block.tool_use_id || block.id) === toolUseId
+        ));
+        const token = normalizeToolTokenEvent(toolUse);
+        return token ? {
+          ...token,
+          status: toolResult
+            ? (toolResult.is_error || toolResult.error ? "error" : "done")
+            : "running",
+        } : null;
+      }
+    }
     for (let index = content.length - 1; index >= 0; index -= 1) {
       const next = normalizeToolTokenEvent(content[index]);
       if (next) return next;
