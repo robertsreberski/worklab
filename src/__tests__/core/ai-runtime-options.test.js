@@ -499,4 +499,30 @@ describe("generateResponse Codex runtime options", () => {
       warning_kind: "tool_policy_downgraded",
     }));
   });
+
+  it("keeps direct-run planning warnings when every fallback entry is invalid", async () => {
+    const onEvent = vi.fn();
+    mockRun.mockResolvedValue({ text: "ok" });
+
+    await generateResponse("sys", {
+      model: resolveModel("codex:gpt-5.5"),
+      executionMode: "cli",
+      messages: [{ role: "user", content: "hi" }],
+      allowedTools: [
+        "Read", "Glob", "Grep", "WebFetch", "WebSearch", "Agent", "Task",
+        "TaskOutput", "TaskStop", "Skill", "Bash",
+      ],
+      disallowedTools: ["Write", "Edit"],
+      toolPolicy: { planning: true, policy: "read_only_shell_allowlist" },
+      fallbackChain: [null, {}, { attempts: 2 }],
+      onEvent,
+    });
+
+    expect(mockCreateRuntime).toHaveBeenCalledOnce();
+    expect(mockCreateRouterRuntime).not.toHaveBeenCalled();
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: "runtime_warning",
+      warning_kind: "tool_policy_downgraded",
+    }));
+  });
 });

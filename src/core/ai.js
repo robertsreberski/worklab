@@ -715,7 +715,7 @@ export async function generateResponse(systemPrompt, options) {
         + `${projected.droppedNetworkTools.join(", ")} are unavailable for this run.`,
     });
   }
-  if (!fallbackChain) warnToolPolicyDowngrade(resolved, toolPolicy);
+  if (!fallbackChain?.length) warnToolPolicyDowngrade(resolved, toolPolicy);
 
   // Provider-native discovery options share one run-level bag. Router attempts
   // replace only `model`, so selecting these from the primary SDK would make a
