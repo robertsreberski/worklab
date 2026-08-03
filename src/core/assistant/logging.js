@@ -36,9 +36,41 @@ function jsonSize(value) {
   try { return JSON.stringify(value).length; } catch { return Infinity; }
 }
 
+function truncateSubagentActivity(event, { limit, rawLogPath: path }) {
+  if (event?.type !== "subagent_activity" || !("arguments" in event)) return event;
+  const value = event.arguments;
+  const size = typeof value === "string" ? value.length : jsonSize(value);
+  if (!limit || size <= limit) return event;
+  const raw = typeof value === "string"
+    ? value
+    : (() => {
+        try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+      })();
+  const preview = truncateText(raw, {
+    limit,
+    rawLogPath: path,
+    label: "assistant subagent arguments",
+  });
+  return {
+    ...event,
+    arguments: typeof value === "string"
+      ? preview
+      : {
+          truncated: true,
+          original_length: size,
+          raw_output_path: path || null,
+          preview,
+        },
+    arguments_truncated: true,
+    arguments_original_length: size,
+    raw_output_path: path || null,
+  };
+}
+
 export function truncateAssistantEvent(event, { limit = 12_000, rawLogPath: path } = {}) {
-  const content = event?.message?.content;
-  if (!Array.isArray(content)) return event;
+  const boundedEvent = truncateSubagentActivity(event, { limit, rawLogPath: path });
+  const content = boundedEvent?.message?.content;
+  if (!Array.isArray(content)) return boundedEvent;
   let changed = false;
   const nextContent = content.map((block) => {
     if (!block || typeof block !== "object") return block;
@@ -66,7 +98,9 @@ export function truncateAssistantEvent(event, { limit = 12_000, rawLogPath: path
     }
     return next;
   });
-  return changed ? { ...event, message: { ...event.message, content: nextContent } } : event;
+  return changed
+    ? { ...boundedEvent, message: { ...boundedEvent.message, content: nextContent } }
+    : boundedEvent;
 }
 
 export function warningRows(events = [], extras = []) {

@@ -590,6 +590,57 @@ describe("assistant routes", () => {
     expect(run.body.run.events_truncated).toBe(true);
   });
 
+  it("bounds flat assistant subagent arguments before persistence and broadcast", async () => {
+    const oversizedArguments = "x".repeat(1_000_000);
+    const runAgent = vi.fn(async (_systemPrompt, options) => {
+      options.onEvent?.({
+        type: "subagent_activity",
+        phase: "tool_started",
+        id: "agent:writer:tool:write",
+        tool_name: "Write",
+        arguments: oversizedArguments,
+        subagent: { id: "writer", name: "writer", callIndex: 0 },
+      });
+      return {
+        text: assistantJson({ reply_text: "Done.", summary: "Done." }),
+        events: [],
+        usage: {},
+        durationMs: 1,
+        numTurns: 1,
+      };
+    });
+    const { agent, assistant, broker, db } = setup({ runAgent });
+    const broadcast = vi.spyOn(broker, "broadcast");
+
+    const started = await agent.post("/api/assistant/messages").send({ body: "Use a writer." }).expect(202);
+    await assistant.waitIdle();
+
+    const persistedEvents = JSON.parse(db.prepare(`
+      SELECT events FROM assistant_agent_logs WHERE assistant_run_id = ?
+    `).get(started.body.run.id).events);
+    const persisted = persistedEvents.find((event) => event.type === "subagent_activity");
+    const direct = broadcast.mock.calls.find(([channel, event]) => (
+      channel === `assistant:${started.body.run.id}` && event?.type === "subagent_activity"
+    ))?.[1];
+    const global = broadcast.mock.calls.find(([channel, event]) => (
+      channel === "global"
+      && event?.type === "assistant_run_event"
+      && event.event?.type === "subagent_activity"
+    ))?.[1]?.event;
+
+    for (const event of [persisted, direct, global]) {
+      expect(event).toMatchObject({
+        arguments_truncated: true,
+        arguments_original_length: 1_000_000,
+      });
+      expect(event.arguments.length).toBeLessThan(20_000);
+      expect(event.arguments).toContain("[truncated assistant subagent arguments:");
+    }
+
+    const run = db.prepare("SELECT raw_output_path FROM assistant_runs WHERE id = ?").get(started.body.run.id);
+    expect(readFileSync(run.raw_output_path, "utf8")).toContain(oversizedArguments);
+  });
+
   it("persists readable provider failures on assistant messages", async () => {
     const runAgent = vi.fn(async () => ({
       error: "Your input exceeds the context window of this model. Please adjust your input and try again.",
