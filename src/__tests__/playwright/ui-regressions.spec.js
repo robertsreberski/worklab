@@ -254,7 +254,7 @@ test.beforeAll(async () => {
   dataDir = mkdtempSync(join(tmpdir(), "worklab-ui-data-"));
   workspaceDir = mkdtempSync(join(tmpdir(), "worklab-ui-workspace-"));
   const port = await findFreePort();
-  baseUrl = `http://localhost:${port}`;
+  baseUrl = `http://127.0.0.1:${port}`;
 
   serverProcess = spawn(process.execPath, ["src/cli/index.js", "serve"], {
     cwd: repoRoot,
@@ -262,6 +262,7 @@ test.beforeAll(async () => {
       ...process.env,
       WORKLAB_DATA_DIR: dataDir,
       WORKLAB_WORKSPACE: workspaceDir,
+      WORKLAB_HOST: "127.0.0.1",
       WORKLAB_PORT: String(port),
       WORKLAB_LOG_LEVEL: "error",
     },
@@ -503,6 +504,43 @@ test.beforeAll(async () => {
     "run-complete-existing",
     JSON.stringify([
       { type: "text", text: "Completed seeded run", ts: now - 12_000 },
+      {
+        type: "assistant",
+        source: "acp",
+        message: {
+          content: [{ type: "thinking", text: "Reviewing today's agenda" }],
+        },
+        _worklab_acp_projected: true,
+        _worklab_display_key: "acp:thought:seeded",
+        _worklab_first_event_seq: 2,
+        _worklab_last_event_seq: 4,
+        _event_seq: 4,
+      },
+      {
+        type: "assistant",
+        source: "acp",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id: "acp:tool:seeded",
+              name: "Read agenda",
+              input: { date: "today" },
+            },
+            {
+              type: "tool_result",
+              tool_use_id: "acp:tool:seeded",
+              content: "Agenda confirmed",
+              is_error: false,
+            },
+          ],
+        },
+        _worklab_acp_projected: true,
+        _worklab_display_key: "acp:tool:seeded",
+        _worklab_first_event_seq: 5,
+        _worklab_last_event_seq: 8,
+        _event_seq: 8,
+      },
       {
         type: "assistant",
         message: {
@@ -1830,6 +1868,25 @@ test("task detail deep-linked run opens highlighted history", async ({ page }) =
   await expect(run).toBeVisible();
   await expect(run.locator(".run-card-events")).toBeVisible();
   await expect(run).toContainText("Completed seeded run");
+});
+
+test("native ACP reasoning and tool activity use the standard timeline blocks", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/tasks/${taskId}?run=run-complete-existing`);
+  const run = page.locator(".run-card.highlighted").first();
+  await expect(run.locator(".run-card-events")).toBeVisible();
+
+  await expect(run.locator(".agentlog-thinking", { hasText: "Reviewing today's agenda" })).toBeVisible();
+  const tool = run.locator(".tool-call", { hasText: "Read agenda" });
+  await expect(tool).toBeVisible();
+  await expect(tool).toHaveAttribute("title", "ok");
+  await expect(run).not.toContainText("ACP tool call started");
+  await expect(run).not.toContainText("ACP tool ·");
+  await expect(run).not.toContainText("ACP agent activity");
+
+  await tool.locator(".tool-call-header").click();
+  await expect(tool.locator(".tool-call-section", { hasText: "INPUT" })).toContainText("today");
+  await expect(tool.locator(".tool-call-section", { hasText: "OUTPUT" })).toContainText("Agenda confirmed");
+  await expect(run).not.toContainText("provider-acp-tool-id");
 });
 
 test("native subagent activity stays folded, expandable, failed, and mobile-safe", async ({ page }) => {
