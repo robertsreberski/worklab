@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { buildTaskRunInput } from "../../core/run-input.js";
+import { buildNextTaskRunPreview, buildTaskRunInput } from "../../core/run-input.js";
 import { WORKLAB_RESULT_JSON_SCHEMA } from "../../core/worklab-result/contract.js";
 import { appendJournalEntry, writeMemory } from "../../core/journal.js";
 import { recordAgentMemoryCandidates } from "../../core/agent-learning.js";
@@ -152,6 +152,51 @@ function promptText(input) {
 }
 
 describe("ACP run input", () => {
+  it("reports the canonical agent-owned workspace in a projectless run preview", () => {
+    withFixture(({ db, config, dataDir, workspace }) => {
+      const globalWorkspace = join(dataDir, "global-workspace");
+      mkdirSync(globalWorkspace);
+      const canonicalWorkspace = realpathSync(workspace);
+      config.workspace = globalWorkspace;
+      config.repoRoot = globalWorkspace;
+      seedAgent(db, {
+        name: "external-owner",
+        profileId: PROFILE_ID,
+      });
+      seedAcpProfile(db, {
+        id: PROFILE_ID,
+        agentName: "external-owner",
+        driver: "mono",
+        workspace: canonicalWorkspace,
+      });
+      const now = 1_700_000_000_000;
+      db.prepare(`
+        INSERT INTO tasks
+          (id, task_key, root_task_id, title, instructions, stage, owner_agent, created_at, updated_at)
+        VALUES ('task-preview', 'ACP-PREVIEW', 'task-preview', 'Preview task', 'Preview it.',
+                'execute', 'external-owner', ?, ?)
+      `).run(now, now);
+
+      const preview = buildNextTaskRunPreview({
+        db,
+        config,
+        taskId: "task-preview",
+        now,
+      });
+
+      expect(preview).toMatchObject({
+        project_id: null,
+        workdir: canonicalWorkspace,
+      });
+      expect(preview.input.metadata).toMatchObject({
+        project_id: null,
+        workdir: canonicalWorkspace,
+      });
+      expect(promptText({ messages: preview.messages })).toContain(`Workspace: \`${canonicalWorkspace}\``);
+      expect(JSON.stringify(preview)).not.toContain(globalWorkspace);
+    });
+  });
+
   it("sends only task-owned context and local resource links to Mono", () => {
     withFixture(({ db, config, dataDir, workspace }) => {
       seedAgent(db, {
