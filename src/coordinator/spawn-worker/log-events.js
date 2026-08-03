@@ -39,6 +39,9 @@ function truncateToolResultValue(value, options) {
     });
     return { value: next, truncated, originalLength };
   }
+  if (value && typeof value === "object") {
+    return truncateStructuredDisplayValue(value, options);
+  }
   return { value, truncated: false, originalLength: 0 };
 }
 
