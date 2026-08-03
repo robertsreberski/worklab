@@ -217,6 +217,13 @@ function limitRunEvents(events, limit) {
   return tailRunEventsByVisibleItems(events, limit);
 }
 
+function eventOrder(event) {
+  const firstDisplaySeq = Number(event?._worklab_first_event_seq);
+  if (Number.isFinite(firstDisplaySeq)) return firstDisplaySeq;
+  const eventSeq = Number(event?._event_seq);
+  return Number.isFinite(eventSeq) ? eventSeq : null;
+}
+
 export function mergeRunEvents(current = [], incoming = [], { limit = null } = {}) {
   const merged = [];
   const positions = new Map();
@@ -231,8 +238,10 @@ export function mergeRunEvents(current = [], incoming = [], { limit = null } = {
     merged.push(event);
   }
   merged.sort((a, b) => {
-    if (a?._event_seq == null || b?._event_seq == null) return 0;
-    return Number(a._event_seq) - Number(b._event_seq);
+    const left = eventOrder(a);
+    const right = eventOrder(b);
+    if (left == null || right == null) return 0;
+    return left - right;
   });
   return limitRunEvents(merged, limit);
 }
@@ -256,6 +265,7 @@ function ensureRunStream(runId) {
     eventCount: 0,
     eventsTruncated: false,
     fullHistoryLoaded: false,
+    hasDisplayProjection: false,
     maxEvents: DEFAULT_MAX_EVENTS,
     toolUsesById: new Map(),
     streamRefCount: 0,
@@ -359,6 +369,9 @@ function applyRunHydration(entry, data, maxEvents, { fullHistory = false } = {})
     ]);
   }
   if (data?.log?.events?.length) {
+    if (data.log.events.some((event) => event?._worklab_display_key)) {
+      entry.hasDisplayProjection = true;
+    }
     rememberToolUses(entry, data.log.events);
     entry.events = limitRunEvents(
       mergeRunEvents(entry.events, data.log.events),
@@ -445,6 +458,7 @@ function openRunStream(runId, entry) {
       return;
     }
     const previousCount = Number(entry.eventCount || entry.events.length || 0);
+    if (payload?._worklab_display_key) entry.hasDisplayProjection = true;
     rememberToolUses(entry, [payload]);
     const companionEvents = companionToolUseEvents(entry, payload);
     const todoState = todoStateFromToolEvents(entry.run?.todo_state, [...companionEvents, payload]);
@@ -467,7 +481,7 @@ function openRunStream(runId, entry) {
     entry.events = limitRunEvents(mergedEvents, entry.maxEvents);
     entry.eventCount = Math.max(
       previousCount,
-      Number.isFinite(seq) ? seq : 0,
+      !entry.hasDisplayProjection && Number.isFinite(seq) ? seq : 0,
       inferredCount,
       entry.events.length,
     );

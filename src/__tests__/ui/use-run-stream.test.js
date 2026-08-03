@@ -197,6 +197,77 @@ describe("shared run stream subscriptions", () => {
     unsubscribe();
   });
 
+  it("counts projected ACP revisions as semantic events instead of raw sequence gaps", async () => {
+    const snapshots = [];
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        run: { id: "run-acp-count", status: "running", process_status: "running" },
+        log: { events: [], event_count: 0, events_truncated: false },
+      }),
+    }));
+
+    const unsubscribe = subscribeRunState("run-acp-count", (snapshot) => snapshots.push(snapshot), {
+      subscribe: true,
+      maxEvents: 10,
+    });
+    await vi.waitFor(() => expect(snapshots.at(-1)).toMatchObject({ loading: false }));
+
+    const projected = (text, revision, eventSeq) => ({
+      type: "assistant",
+      source: "acp",
+      message: { content: [{ type: "thinking", text }] },
+      _worklab_acp_projected: true,
+      _worklab_display_key: "acp:thought:1",
+      _worklab_display_revision: revision,
+      _worklab_first_event_seq: 100,
+      _worklab_last_event_seq: eventSeq,
+      _event_seq: eventSeq,
+    });
+    FakeEventSource.instances[0].onmessage({ data: JSON.stringify(projected("Review", 1, 100)) });
+    FakeEventSource.instances[0].onmessage({ data: JSON.stringify(projected("Review files", 2, 150)) });
+    FakeEventSource.instances[0].onmessage({
+      data: JSON.stringify({ type: "final", text: "Done", _event_seq: 151 }),
+    });
+
+    await vi.waitFor(() => expect(snapshots.at(-1).events).toHaveLength(2));
+    const latest = snapshots.at(-1);
+    expect(latest.events[0]).toMatchObject({
+      _worklab_display_key: "acp:thought:1",
+      _worklab_display_revision: 2,
+    });
+    expect(latest.eventCount).toBe(2);
+    expect(latest.eventsTruncated).toBe(false);
+
+    unsubscribe();
+  });
+
+  it("keeps projected tool rows ordered by their first event when completions arrive out of order", () => {
+    const projectedTool = (key, firstEventSeq, eventSeq, status) => ({
+      type: "assistant",
+      source: "acp",
+      message: { content: [{ type: "tool_use", id: key, name: key, input: {} }] },
+      _worklab_acp_projected: true,
+      _worklab_display_key: key,
+      _worklab_first_event_seq: firstEventSeq,
+      _worklab_last_event_seq: eventSeq,
+      _event_seq: eventSeq,
+      status,
+    });
+    let events = mergeRunEvents([], [
+      projectedTool("acp:tool:1", 10, 10, "running"),
+      projectedTool("acp:tool:2", 20, 20, "running"),
+    ]);
+    events = mergeRunEvents(events, [projectedTool("acp:tool:2", 20, 30, "done")]);
+    events = mergeRunEvents(events, [projectedTool("acp:tool:1", 10, 40, "done")]);
+
+    expect(events.map((event) => event._worklab_display_key)).toEqual([
+      "acp:tool:1",
+      "acp:tool:2",
+    ]);
+    expect(events.map((event) => event._event_seq)).toEqual([40, 30]);
+  });
+
   it("keeps paired tool calls atomic when the live tail crosses a raw event boundary", async () => {
     const snapshots = [];
     globalThis.fetch = vi.fn(async () => ({

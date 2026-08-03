@@ -285,6 +285,7 @@ export function spawnWorker({
         : rawEvent;
       event = truncateDisplayEvent(displaySource, { limit: logInlineLimit, rawLogPath });
       const displayKey = projection.displayKey || event?._worklab_display_key || null;
+      let priorDisplayIndex = -1;
       if (displayKey) {
         const previous = displayMetadata.get(displayKey) || {
           firstEventSeq: rawEvent._event_seq,
@@ -305,10 +306,10 @@ export function spawnWorker({
           _worklab_last_event_seq: rawEvent._event_seq,
           _worklab_raw_event_count: metadata.rawEventCount,
         };
-        const priorIndex = events.findIndex((candidate) => candidate?._worklab_display_key === displayKey);
-        if (priorIndex >= 0) events.splice(priorIndex, 1);
+        priorDisplayIndex = events.findIndex((candidate) => candidate?._worklab_display_key === displayKey);
       }
-      events.push(event);
+      if (priorDisplayIndex >= 0) events[priorDisplayIndex] = event;
+      else events.push(event);
     }
     if (rawEvent.type === "runtime_warning") {
       warnings.push({
