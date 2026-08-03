@@ -568,6 +568,43 @@ describe("worklab_result contract", () => {
       expect(bad.ok).toBe(false);
     });
 
+    it("reports nested evidence field paths and accepts a valid evidence object", () => {
+      const base = {
+        schema: "worklab.v2",
+        stage: "review",
+        decision: "approve",
+        summary: "ok",
+      };
+      const malformed = normalizeWorklabResult({
+        ...base,
+        verification_evidence: [{
+          kind: "test",
+          command_or_url: { command: "npm test" },
+          exit_code_or_status: "0",
+          snippet: "Tests passed",
+          reason: "",
+        }],
+      });
+
+      expect(malformed.ok).toBe(false);
+      expect(malformed.error).toMatch(/verification_evidence(?:\.0|\[0\])\.command_or_url/u);
+
+      const evidence = {
+        kind: "test",
+        command_or_url: "npm test",
+        exit_code_or_status: "0",
+        snippet: "Tests passed",
+        reason: "",
+      };
+      const valid = normalizeWorklabResult({
+        ...base,
+        verification_evidence: [evidence],
+      });
+
+      expect(valid.ok).toBe(true);
+      expect(valid.result.verification_evidence).toEqual([evidence]);
+    });
+
     it("exposes verification_evidence in the JSON schema", () => {
       const ve = WORKLAB_RESULT_JSON_SCHEMA.properties.verification_evidence;
       expect(ve.type).toBe("array");

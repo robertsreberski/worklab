@@ -158,7 +158,24 @@ function formatReviewEvidence(priorRun, execution) {
 function resultContract(mode) {
   const stage = ["plan", "execute", "review"].includes(mode) ? mode : "execute";
   const decision = stage === "review" ? "approve" : "advance";
+  const allowedDecisions = stage === "review"
+    ? ["approve", "reject"]
+    : ["advance", "pause", "block"];
   const allowed = stage === "review" ? "approve or reject" : "advance, pause, or block";
+  const schema = {
+    ...WORKLAB_RESULT_JSON_SCHEMA,
+    properties: {
+      ...WORKLAB_RESULT_JSON_SCHEMA.properties,
+      stage: {
+        ...WORKLAB_RESULT_JSON_SCHEMA.properties.stage,
+        enum: [stage],
+      },
+      decision: {
+        ...WORKLAB_RESULT_JSON_SCHEMA.properties.decision,
+        enum: allowedDecisions,
+      },
+    },
+  };
   const shape = {
     schema: "worklab.v2",
     stage,
@@ -184,9 +201,16 @@ function resultContract(mode) {
   return [
     "Finish with exactly one terminal JSON object and no prose around it.",
     `Allowed decision values for this ${stage} run: ${allowed}.`,
-    "Keep fields that do not apply empty.",
+    "The JSON Schema below is authoritative. Every populated array item must match its `items` schema; never replace a required object with a string.",
+    "In particular, every `verification_evidence` entry must be an object with `kind`, `command_or_url`, `exit_code_or_status`, `snippet`, and `reason`. Use an empty array when there is no evidence.",
+    "Keep fields that do not apply empty, following the valid skeleton below.",
+    "### Valid empty-field skeleton",
     "```json",
     JSON.stringify(shape, null, 2),
+    "```",
+    "### Required JSON Schema",
+    "```json",
+    JSON.stringify(schema, null, 2),
     "```",
   ].join("\n");
 }

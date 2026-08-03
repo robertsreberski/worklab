@@ -280,7 +280,10 @@ export function normalizeWorklabResult(value, fallback = {}) {
   if (!parsed.success) {
     return {
       ok: false,
-      error: parsed.error.issues.map((issue) => issue.message).join("; "),
+      error: parsed.error.issues.map((issue) => {
+        const path = Array.isArray(issue.path) ? issue.path.map(String).filter(Boolean).join(".") : "";
+        return path ? `${path}: ${issue.message}` : issue.message;
+      }).join("; "),
       result: null,
     };
   }

@@ -151,6 +151,29 @@ function promptText(input) {
   return input.messages[0].content.find((block) => block.type === "text")?.text || "";
 }
 
+function fencedJsonValues(body) {
+  return [...body.matchAll(/```json\n([\s\S]*?)\n```/gu)]
+    .map((match) => JSON.parse(match[1]));
+}
+
+function resultSchemaFromBody(body) {
+  return fencedJsonValues(body).find((value) => (
+    value?.type === "object"
+    && value?.properties?.schema?.enum?.includes?.("worklab.v2")
+  ));
+}
+
+function resultSkeletonFromBody(body) {
+  return fencedJsonValues(body).find((value) => value?.schema === "worklab.v2");
+}
+
+function expectedScopedResultSchema(stage, decisions) {
+  const schema = structuredClone(WORKLAB_RESULT_JSON_SCHEMA);
+  schema.properties.stage.enum = [stage];
+  schema.properties.decision.enum = decisions;
+  return schema;
+}
+
 describe("ACP run input", () => {
   it("reports the canonical agent-owned workspace in a projectless run preview", () => {
     withFixture(({ db, config, dataDir, workspace }) => {
@@ -384,8 +407,32 @@ describe("ACP run input", () => {
         },
       ]);
 
-      const contractJson = body.match(/```json\n([\s\S]*?)\n```/)?.[1];
-      const contractExample = JSON.parse(contractJson);
+      const contractSchema = resultSchemaFromBody(body);
+      expect(contractSchema).toEqual(expectedScopedResultSchema(
+        "execute",
+        ["advance", "pause", "block"],
+      ));
+      expect(contractSchema.properties.verification_evidence).toEqual(
+        WORKLAB_RESULT_JSON_SCHEMA.properties.verification_evidence,
+      );
+      expect(contractSchema.properties.verification_evidence.items).toMatchObject({
+        type: "object",
+        additionalProperties: false,
+        required: ["kind", "command_or_url", "exit_code_or_status", "snippet", "reason"],
+        properties: {
+          kind: {
+            type: "string",
+            enum: ["test", "build", "lint", "manual_check", "screenshot", "n_a"],
+          },
+          command_or_url: { type: "string" },
+          exit_code_or_status: { type: "string" },
+          snippet: { type: "string" },
+          reason: { type: "string" },
+        },
+      });
+
+      const contractExample = resultSkeletonFromBody(body);
+      expect(contractExample).toMatchObject({ stage: "execute", decision: "advance" });
       for (const field of WORKLAB_RESULT_JSON_SCHEMA.required) {
         expect(contractExample).toHaveProperty(field);
       }
@@ -494,6 +541,15 @@ describe("ACP run input", () => {
       expect(body).toContain("FOCUSED_TEST_EVIDENCE_ALLOWED");
       expect(body).toContain("Allowed decision values for this review run: approve or reject.");
       expect(body).toContain('"stage": "review"');
+      expect(resultSchemaFromBody(body)).toEqual(expectedScopedResultSchema(
+        "review",
+        ["approve", "reject"],
+      ));
+      const contractExample = resultSkeletonFromBody(body);
+      expect(contractExample).toMatchObject({ stage: "review", decision: "approve" });
+      for (const field of WORKLAB_RESULT_JSON_SCHEMA.required) {
+        expect(contractExample).toHaveProperty(field);
+      }
       expect(input.priorEvents).toEqual([]);
       expect(input.execution).not.toHaveProperty("events");
       expect(JSON.stringify(input)).not.toContain("RAW_TOOL_EVENT_SECRET");
